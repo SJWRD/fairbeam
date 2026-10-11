@@ -3,6 +3,7 @@
 From python/ using the bundled environment and fresh output outside Git:
 python -m tests.test_multihole_coupler --preflight --out C:\\study\\multihole-plan
 python -m tests.test_multihole_coupler --fdtd --mesh 24 --out C:\\study\\multihole\\n24
+python -m tests.test_multihole_coupler --fdtd --mesh 32 --distance 85 --cap-ns 120 --out C:\\study\\multihole\\n32_far
 python -m tests.test_multihole_coupler --study --out C:\\study\\multihole
 """
 import argparse
@@ -323,7 +324,7 @@ class MultiholeControls(unittest.TestCase):
                 distance_mm=f.FAR_DISTANCE if name.endswith("far") else f.DISTANCE,
                 pml=f.DEEP_PML if name.endswith("pml") else f.PML,
                 end_db=-90. if name.endswith("time") else f.END_DB,
-                cap_s=2*f.CAP_S if name.endswith("time") else f.CAP_S,
+                cap_s=f.FAR_CAP_S if name.endswith("far") else 2*f.CAP_S if name.endswith("time") else f.CAP_S,
                 target_passes=True, all_native_complete=True, closed_wall_floor_abs=0.)
             return matrices.get(name, np.zeros((201, 4, 4), complex)), row
         with tempfile.TemporaryDirectory() as temp, patch.object(f, "matrix", side_effect=fake):
@@ -357,6 +358,19 @@ class MultiholeControls(unittest.TestCase):
             self.assertFalse(progress["qualified"])
             self.assertIsNone(progress["active_launcher_pid"])
             self.assertTrue((out/"port1.worker.json").is_file())
+
+    def test_distance_control_rejects_the_old_capped_duration(self):
+        def fake(path):
+            name = path.name
+            n = int(name[1:].split("_")[0])
+            row = dict(n=n, closed=False, inset=True,
+                distance_mm=f.FAR_DISTANCE if name.endswith("far") else f.DISTANCE,
+                pml=f.PML, end_db=f.END_DB, cap_s=f.CAP_S,
+                target_passes=True, all_native_complete=True, closed_wall_floor_abs=0.)
+            return np.zeros((201, 4, 4), complex), row
+        with tempfile.TemporaryDirectory() as temp, patch.object(f, "matrix", side_effect=fake):
+            with self.assertRaisesRegex(ValueError, "independent control identity"):
+                f.study(temp)
 
 
 def main():

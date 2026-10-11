@@ -25,7 +25,8 @@ FREQUENCIES = np.linspace(7e9, 11e9, 201)
 MESHES = (24, 32, 48)
 DISTANCE, FAR_DISTANCE, PML, DEEP_PML = 65., 85., 8, 12
 CAP_S, END_DB, THREADS = 60e-9, -80., 4
-PROTOCOL = "parallel-four-aperture-v1"
+FAR_CAP_S = 2*CAP_S  # The longer empty-guide section needs more decay time.
+PROTOCOL = "parallel-four-aperture-v2"
 LIMITS = dict(coupled_target_abs=.01, isolated_target_abs=.005,
               complex_mesh_abs=.005, complex_control_abs=.003,
               isolation_mesh_abs=1e-4, directivity_db_min=40., directivity_db_tolerance=.5,
@@ -321,7 +322,7 @@ def study(root):
         if (row["n"], row["closed"], row["inset"], row["distance_mm"], row["pml"], row["end_db"], row["cap_s"]) != (n, False, True, DISTANCE, PML, END_DB, CAP_S):
             raise ValueError("incorrect main mesh-cohort identity")
     controls = {}
-    for name, expected in (("far", (FAR_DISTANCE, PML, END_DB, CAP_S)),
+    for name, expected in (("far", (FAR_DISTANCE, PML, END_DB, FAR_CAP_S)),
                            ("pml", (DISTANCE, DEEP_PML, END_DB, CAP_S)),
                            ("time", (DISTANCE, PML, -90., 2*CAP_S))):
         actual, row = matrix(root/f"n32_{name}")
