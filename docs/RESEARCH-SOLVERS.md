@@ -134,8 +134,42 @@ whole complex matrix, without clipping, with tolerance 0.001; reciprocity tolera
 
 ### Qualification still needed
 
+Driven Elmer runs now follow the designer's ordinary Run dock and publish a project
+bundle under Results. S11, impedance, Smith and directivity use the existing tabs and
+comparison tools. The research dialog remains for cavity and periodic experiments.
+The bundle retains the admitted input hash and FEM settings. Native Elmer complex
+S11 uses `exp(-i omega t)`; export conjugates it to the shared `exp(+i omega t)`
+convention. Raw native files remain unchanged. Completion does not become an FDTD
+energy-convergence badge, and unknown accepted power and efficiency stay null.
+
+Refine both the maximum cell size and the substrate thickness cell count (2–10),
+then increase the air padding separately. The 10,000-element admission limit remains
+in force. Reaching that limit is not evidence of convergence. A common-coordinate
+FDTD mesh is not automatically equivalent to a finite-element mesh: its staggered
+current probe needs a nondegenerate contour, and sheet-edge placement changes its
+effective electrical geometry. Use each method's appropriate mesh and convergence
+controls when comparing results.
+
 Establish terminal-width, mesh and padding convergence with a sufficiently dense resonance
 sweep. Compare a consistent finite feed model across solvers before claiming agreement.
 Add matched-terminal and accepted/radiated-power controls before exposing gain/efficiency.
 The existing native waveguide test and analytical far-field test do not establish arbitrary
 Design accuracy. Keep this path explicitly experimental; openEMS remains the default.
+
+The October 11 patch comparison did **not** qualify the driven adapter. With PEC sheets,
+a 32 × 40 mm patch, a 1.524 mm substrate (relative permittivity 3.38), and a 1 mm
+terminal, the production openEMS mesh sampled its S11 minimum near 2.45 GHz, while
+the 7 mm Elmer mesh sampled its minimum at 2.25 GHz (50 MHz sweep spacing).
+The maximum complex-S11 change between the 8 mm and 7 mm FEM meshes was 0.128,
+above the study's 0.03 criterion. Increasing substrate layers from two to four
+changed complex S11 by only 0.0016 at the three checked frequencies. Increasing
+the air margin from 40 to 60 mm on the 12 mm mesh changed it by 0.052.
+Neither control explains the full discrepancy. Local surface and adjacent-air
+refinement also did not establish agreement and was not promoted into the adapter.
+
+At 2.45 GHz the 7 mm FEM and fine production openEMS meshes differed by about
+0.02 dB in peak directivity and 4.9% in a solid-angle-weighted relative L2 pattern
+comparison. This normalized pattern agreement does not validate input impedance,
+gain, efficiency, or the remaining S11 discrepancy. The production openEMS
+20-to-40 cells-per-wavelength comparison also exceeded the study's strict complex
+S11 criterion (0.065 versus 0.03), so it is not an exact reference solution.

@@ -250,6 +250,11 @@ def execute(snapshot, outdir, checksum):
         result = periodic_cell.run(spec["normalized"], outdir, executable=spec["path"])
     value = validate_result({**result, "backend": backend, "research_schema": "fairbeam-research-result-1"}, backend)
     value["input_sha256"] = hashlib.sha256(raw).hexdigest()
+    if value.get('schema') == 'fairbeam.elmer-driven-result/1':
+        from .elmer_bundle import result_bundle
+        bundle_bytes = encode(result_bundle(spec['design'], value))
+        (outdir / 'bundle.json').write_bytes(bundle_bytes)
+        value['bundle_sha256'] = hashlib.sha256(bundle_bytes).hexdigest()
     target = outdir / "result.json"
     tmp = target.with_suffix(".json.tmp")
     tmp.write_bytes(encode(value))

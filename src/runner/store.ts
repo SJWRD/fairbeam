@@ -708,7 +708,7 @@ export function detach() {
 }
 
 export function attach(job: Job) {
-  if (job.kind === "research") { openResearch(job.id); return; }
+  if (job.kind === "research" && job.research?.settings.analysis !== "driven") { openResearch(job.id); return; }
   detach();
   lastSeq = 0;
   attachedFinished = isTerminal(job.status);

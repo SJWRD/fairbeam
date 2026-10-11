@@ -610,11 +610,12 @@ class App:
         self.render_jobs = blender_job.RenderManager(self.models_dir.parent)
 
         def finished(job):
-            if job.kind == "research":
-                return  # research results never become antenna viewer bundles
+            if job.kind == "research" and not job.bundle:
+                return  # cavity/periodic results have no ordinary viewer bundle
             if self.projects_dir.exists():
                 rebuild_index(self.projects_dir)
-            self.studies.on_finished(job)  # a mesh convergence study queues its next density
+            if job.kind != "research":
+                self.studies.on_finished(job)  # a mesh convergence study queues its next density
 
         self.manager = manager or JobManager(self.jobs_dir, self.projects_dir, python=self.python,
                                              sim_root=self.sim_root)
@@ -639,7 +640,7 @@ class App:
     # ---- endpoint implementations (return JSON-able objects or raise ApiError)
 
     def health(self) -> dict:
-        return {"ok": True, "api": 1, "research": True, "elmer_driven": 1, **self.versions, "cpu_count": self.cpu,
+        return {"ok": True, "api": 1, "research": True, "elmer_driven": 2, **self.versions, "cpu_count": self.cpu,
                 "physical_cores": self.physical, "host_cpu": resources.host_cpu_name(),
                 "default_threads": resources.auto_threads(self.cpu, self.physical),
                 "throughput": resources.measured_throughput(self.projects_dir, resources.host_cpu_name()),

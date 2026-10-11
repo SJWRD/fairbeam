@@ -658,7 +658,8 @@ class JobManager:
         from .research import prepare
         spec = prepare(body)
         design_model = (spec.get("design") or {}).get("model", {})
-        return self.submit(model=f"research:{spec['backend']}", model_path="", threads=1,
+        driven = spec['backend'] == 'elmer' and spec.get('settings', {}).get('analysis') == 'driven'
+        return self.submit(model=design_model['id'] if driven else f"research:{spec['backend']}", model_path="", threads=1,
                            kind="research", research_input=spec,
                            model_id=design_model.get("id"),
                            name=(f"{design_model.get('name') or design_model.get('id')} · Elmer"
@@ -894,6 +895,22 @@ class JobManager:
                 if job.result.get("input_sha256") != job.research["snapshot_sha256"]:
                     raise ValueError("research result does not match admitted input")
                 job.research["result_sha256"] = checksum
+                if code == 0 and job.result.get('schema') == 'fairbeam.elmer-driven-result/1':
+                    import hashlib
+                    source = job.dir / 'research/bundle.json'
+                    if source.is_symlink() or source.stat().st_size > 32 * 1024 * 1024:
+                        raise ValueError('Invalid FEM result bundle')
+                    raw = source.read_bytes()
+                    if hashlib.sha256(raw).hexdigest() != job.result.get('bundle_sha256'):
+                        raise ValueError('FEM result bundle checksum mismatch')
+                    exported = json.loads(raw)
+                    if exported.get('model', {}).get('id') != job.model_id or exported.get('experimental', {}).get('input_sha256') != job.research['snapshot_sha256']:
+                        raise ValueError('FEM result bundle input identity mismatch')
+                    self.projects_dir.mkdir(parents=True, exist_ok=True)
+                    filename = f'elmer-{job.id}.json'
+                    with (self.projects_dir / filename).open('xb') as output:
+                        output.write(raw)
+                    job.bundle = filename
             except (OSError, ValueError, TypeError) as exc:
                 job.result = None
                 result_error = str(exc)

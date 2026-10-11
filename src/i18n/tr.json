@@ -4680,6 +4680,8 @@
   "elmerAntenna.farfield_hz": "Uzak alan frekansı (GHz)",
   "elmerAntenna.points": "Tarama noktası (3–21)",
   "elmerAntenna.cell_mm": "En büyük hava hücresi (mm)",
+  "elmerAntenna.dielectric_cells": "Substrat kalınlığındaki hücre sayısı (2–10)",
+  "elmerAntenna.resultsNote": "Deneysel FEM sonucu. Mesh, besleme ve dış sınır yakınsaması doğrulanmadı. Uzak alan, kazanç veya verim değil yönlülük gösterir.",
   "elmerAntenna.padding_mm": "Hava payı (mm)",
   "elmerAntenna.feed_width_mm": "FEM besleme genişliği (mm)",
   "elmerAntenna.boundary": "Hava bölgesi geometriye bu pay eklenerek hesaplanır. Birinci mertebe soğurucu duvarlar kullanılır. Sonuçlara güvenmeden önce daha ince mesh ve daha büyük hava payıyla tekrarlayın.",

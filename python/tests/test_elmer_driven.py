@@ -7,6 +7,30 @@ from fairbeam.elmer_driven import prepare, huygens_pattern, C0, MU0, EPS0
 
 
 class DrivenTests(unittest.TestCase):
+    def test_shared_results_preserve_design_and_do_not_claim_gain_or_convergence(self):
+        from fairbeam.elmer_bundle import result_bundle
+        d=blank_design('p','Patch'); original=copy.deepcopy(d)
+        settings=dict(analysis='driven',accept_finite_feed=True,approximate_metals=True,
+                      cell_mm=12,padding_mm=40,feed_width_mm=1,f_min_hz=2e9,f_max_hz=3e9,
+                      farfield_hz=2.5e9,points=3)
+        result=dict(schema='fairbeam.elmer-driven-result/1',status='results_exported',
+                    precision_converged=False,settings=settings,limitations=['Experimental'],
+                    frequency_hz=[2e9,2.5e9,3e9],s11_real=[0,.2,0],s11_imag=[.1,0,-.1],
+                    farfield=dict(frequency_hz=2.5e9,theta_deg=list(range(0,181,5)),
+                       phi_deg=list(range(0,360,5)),directivity=np.ones((37,72)).tolist(),
+                       gain_qualified=False,peak_directivity_dbi=0,radiated_power_w=1))
+        b=result_bundle(d,result)
+        self.assertEqual(d,original)
+        self.assertEqual(b['model']['id'],'p')
+        self.assertIsNone(b['run'])
+        self.assertEqual(b['solver']['engine'],'Elmer')
+        self.assertNotIn('preview',b)
+        self.assertIsNone(b['results']['farfield'][0]['rad_efficiency'])
+        self.assertIsNone(b['results']['farfield'][0]['pacc_w'])
+        self.assertAlmostEqual(b['results']['ports']['1']['zin_re'][1],75)
+        self.assertEqual(b['results']['ports']['1']['s11_im'],[-.1,0,.1])
+        self.assertEqual(b['ports'][0]['stop'][0]-b['ports'][0]['start'][0],1)
+
     def test_pec_approximation_is_explicit_and_preserves_conductivity(self):
         d = blank_design('p', 'Patch')
         metal = next(m for m in d['materials'] if m['kind'] == 'metal')
@@ -29,7 +53,7 @@ class DrivenTests(unittest.TestCase):
         self.assertTrue(all(len(e[1])==8 for e in m['elements']))
 
     def test_bad_inputs_and_resource_limits(self):
-        for kwargs in ({'cell_mm':1e-12},{'padding_mm':float('nan')},{'feed_width_mm':0}):
+        for kwargs in ({'cell_mm':1e-12},{'padding_mm':float('nan')},{'feed_width_mm':0},{'dielectric_cells':1},{'dielectric_cells':True}):
             with self.assertRaises(ValueError):prepare(blank_design('p','Patch'),**kwargs)
         d=blank_design('p','Patch');d['ports'].append(copy.deepcopy(d['ports'][0]));d['ports'][1]['number']=2
         with self.assertRaises(ValueError):prepare(d)

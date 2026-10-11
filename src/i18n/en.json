@@ -4761,6 +4761,8 @@
   "elmerAntenna.farfield_hz": "Far-field frequency (GHz)",
   "elmerAntenna.points": "Sweep points (3–21)",
   "elmerAntenna.cell_mm": "Maximum air cell (mm)",
+  "elmerAntenna.dielectric_cells": "Substrate thickness cells (2–10)",
+  "elmerAntenna.resultsNote": "Experimental FEM result. Mesh, feed and outer-boundary convergence are not qualified. Far field shows directivity, not gain or efficiency.",
   "elmerAntenna.padding_mm": "Air padding (mm)",
   "elmerAntenna.feed_width_mm": "FEM feed width (mm)",
   "elmerAntenna.boundary": "The air region follows your geometry plus this padding. First-order absorbing walls are used. Repeat with finer mesh and larger padding before trusting results.",

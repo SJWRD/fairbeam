@@ -23,8 +23,10 @@ MU0 = 4e-7 * math.pi
 EPS0 = 1 / (MU0 * C0 * C0)
 
 
-def prepare(design, *, cell_mm=8., padding_mm=40., feed_width_mm=1., approximate_metals=False):
+def prepare(design, *, cell_mm=8., padding_mm=40., feed_width_mm=1., approximate_metals=False, dielectric_cells=2):
     check_design(design)
+    if type(dielectric_cells) is not int or not 2 <= dielectric_cells <= 10:
+        raise ValueError('Substrate thickness needs 2 to 10 cells')
     design = copy.deepcopy(design)
     if approximate_metals:
         for material in design.get('materials', []):
@@ -118,6 +120,8 @@ def prepare(design, *, cell_mm=8., padding_mm=40., feed_width_mm=1., approximate
         # Resolve substrate and feed gap through their thickness, even for coarse air cells.
         for left, right, _ in boxes:
             values.add(float((left[k] + right[k]) / 2))
+            if k == direction:
+                values.update(float(v) for v in np.linspace(left[k], right[k], dielectric_cells+1))
         if k == direction:
             values.add(float((lo[k] + hi[k]) / 2))
         breaks.append(sorted(values))
@@ -372,7 +376,7 @@ SCHEMA = 'fairbeam.elmer-driven-result/1'
 
 
 def settings_mesh(design, settings):
-    allowed={'analysis','cell_mm','padding_mm','feed_width_mm','f_min_hz','f_max_hz','points','farfield_hz','accept_finite_feed','approximate_metals'}
+    allowed={'analysis','cell_mm','padding_mm','feed_width_mm','dielectric_cells','f_min_hz','f_max_hz','points','farfield_hz','accept_finite_feed','approximate_metals'}
     if set(settings)-allowed or settings.get('analysis')!='driven' or settings.get('accept_finite_feed') is not True:
         raise ValueError('Explicit experimental finite-feed acceptance is required')
     for key in ('f_min_hz','f_max_hz','farfield_hz'):
@@ -386,7 +390,7 @@ def settings_mesh(design, settings):
         raise ValueError('Initial driven sweep supports 3 to 21 frequency points')
     if type(settings.get('approximate_metals', False)) is not bool:
         raise ValueError('approximate_metals must be boolean')
-    return prepare(design,cell_mm=settings.get('cell_mm',12),padding_mm=settings.get('padding_mm',40),feed_width_mm=settings.get('feed_width_mm',1),approximate_metals=settings.get('approximate_metals',False))
+    return prepare(design,cell_mm=settings.get('cell_mm',12),padding_mm=settings.get('padding_mm',40),feed_width_mm=settings.get('feed_width_mm',1),approximate_metals=settings.get('approximate_metals',False),dielectric_cells=settings.get('dielectric_cells',2))
 
 
 def run(design, settings, outdir, root):
