@@ -23,7 +23,7 @@ export default defineConfig(({ mode }) => ({
   server: {
     port: 5310,
     strictPort: true,
-    watch: { ignored: ["**/.sim/**", "**/python/**"] },
+    watch: { ignored: ["**/.sim/**", "**/python/**", "**/src-tauri/target/**"] },
     // local run server (`fairbeam serve`); target from FAIRBEAM_API, default port 5320
     proxy: { "/api": { target: process.env.FAIRBEAM_API ?? "http://127.0.0.1:5320", changeOrigin: false } },
   },

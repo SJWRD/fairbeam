@@ -6,6 +6,8 @@ import importlib.util
 import json
 from pathlib import Path
 import sys
+import shutil
+import subprocess
 import tempfile
 import threading
 import unittest
@@ -207,6 +209,7 @@ class RuntimePublicationRetry(unittest.TestCase):
             site.mkdir()
             (package / "__init__.py").write_text("from ._meta import __version__\n", encoding="utf-8")
             (package / "_meta.py").write_text("__version__ = '1.2.3'\n", encoding="utf-8")
+            (package.parent / "fairbeam_elmer.py").write_text("# standalone adapter\n", encoding="utf-8")
             app = root / "app"
             staging = root / "app.new"
             real_replace = install.os.replace
@@ -231,8 +234,46 @@ class RuntimePublicationRetry(unittest.TestCase):
             self.assertEqual(len(publications), 2)
             sleep.assert_called_once()
             self.assertTrue((app / "fairbeam" / "__init__.py").is_file())
+            self.assertEqual((app / "fairbeam_elmer.py").read_text(encoding="utf-8"), "# standalone adapter\n")
             self.assertFalse(staging.exists())
             self.assertEqual((site / "fairbeam.pth").read_text(encoding="utf-8"), str(app) + "\n")
+
+    def test_packaged_elmer_adapter_imports_without_checkout_on_pythonpath(self):
+        repo = INSTALL_PATH.parent.parent
+        resources_map = json.loads((repo / "src-tauri/tauri.conf.json").read_text(encoding="utf-8"))["bundle"]["resources"]
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "runtime"
+            resources = Path(tmp) / "resources"
+            site = Path(tmp) / "site"
+            root.mkdir(); site.mkdir()
+            for source, target in resources_map.items():
+                if not target.startswith("python/"):
+                    continue
+                for item in (repo / "src-tauri").glob(source):
+                    dest = resources / target
+                    if target.endswith("/"):
+                        dest /= item.name
+                    dest.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copy2(item, dest)
+            with mock.patch.object(install, "site_packages", return_value=site):
+                install.install_app(root, resources, Path(sys.executable))
+            code = "import sys; sys.path.insert(0, sys.argv[1]); import fairbeam_elmer; from pathlib import Path; assert Path(fairbeam_elmer.__file__).parent == Path(sys.argv[1]); from fairbeam import research; assert callable(fairbeam_elmer.run_cavity); assert research.probe({'backend':'elmer','path':sys.argv[2]})['available'] is False"
+            result = subprocess.run([sys.executable, "-I", "-c", code, str(root / "app"), str(root / "missing-elmer")],
+                                    cwd=tmp, capture_output=True, text=True, timeout=20)
+            self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_missing_adapter_does_not_replace_existing_runtime(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "runtime"
+            app = root / "app"
+            app.mkdir(parents=True)
+            (app / "keep.txt").write_text("existing runtime")
+            package = Path(tmp) / "resources/python/fairbeam"
+            package.mkdir(parents=True)
+            (package / "__init__.py").touch()
+            with self.assertRaises(SystemExit), redirect_stderr(StringIO()):
+                install.install_app(root, Path(tmp) / "resources", Path(sys.executable))
+            self.assertEqual((app / "keep.txt").read_text(), "existing runtime")
 
     def test_manifest_replacement_retries_with_temp_source_intact(self):
         with tempfile.TemporaryDirectory() as tmp:

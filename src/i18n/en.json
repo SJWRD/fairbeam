@@ -4739,5 +4739,16 @@
   "checks.explain.coax-port": "An axial coaxial TEM port needs concentric PEC conductors, a nondispersive dielectric, ordered radii and feed/probe planes inside its length. Check its radii, material references and offsets before running.",
   "export.coaxialPortWarning": "Port {port}: native coaxial TEM port export is unsupported; port skipped.",
   "checks.msg.coax-mesh.warning": "experimental coaxial CPU port: curved-conductor mesh can shift phase and impedance; refine the mesh and compare results before relying on them",
-  "checks.explain.coax-mesh": "Native openEMS parity was verified on a synthetic air-line control, not every design. Energy decay alone does not prove accuracy. Compare S-parameters and impedance across at least two transverse refinements and check the snapped measurement plane. CUDA/Metal are not qualified."
+  "checks.explain.coax-mesh": "Native openEMS parity was verified on a synthetic air-line control, not every design. Energy decay alone does not prove accuracy. Compare S-parameters and impedance across at least two transverse refinements and check the snapped measurement plane. CUDA/Metal are not qualified.",
+  "research.howTo": "How to run this experiment",
+  "research.guide": "Setup guide and limitations",
+  "research.periodic.setup": "Requires a separately built revision-4 periodic CPU solver. The regular openEMS installation cannot run this experiment; an empty path does not install it.",
+  "research.elmer.setup": "This runs a built-in cavity benchmark, not the current Design. Results are mode frequencies and field correlation, not antenna S-parameters.",
+  "research.periodic.step1": "Follow the setup guide to build the experimental periodic solver, then enter its executable path here.",
+  "research.periodic.step2": "Check capability. Start with the dielectric slab fixture, then compare results at 20, 30 and 40 cells per wavelength.",
+  "research.elmer.step1": "On Windows, use Install Elmer below if needed. On macOS/Linux, install ElmerSolver and ElmerGrid and enter their installation folder.",
+  "research.elmer.step2": "Check capability, select 0.025 m for the first cavity run, then repeat at 0.0125 m to compare the reported frequencies.",
+  "research.step3": "Start the research run. Its status and results appear in this panel’s history; closing the panel does not stop it.",
+  "research.periodic.pathHint": "Select the experimental executable, not a folder or the ordinary openEMS binary. Leave blank only if FAIRBEAM_PERIODIC_EXECUTABLE is configured on the server.",
+  "research.elmer.pathHint": "Enter the Elmer installation folder, or leave blank to use the managed installation, server configuration or PATH. Saved after a successful check."
 }

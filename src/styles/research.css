@@ -11,6 +11,9 @@
 .research-json { max-height: 300px; white-space: pre-wrap; overflow-wrap: anywhere; }
 .research-dialog .status-block { overflow-wrap: anywhere; }
 .research-dialog summary { cursor: pointer; padding-block: var(--al-space-2); }
+.research-guide ol { padding-left: var(--al-space-5); margin: 0 0 var(--al-space-2); }
+.research-guide li + li { margin-top: var(--al-space-2); }
+.research-guide a { color: var(--al-link); }
 .research-dialog .dialog-foot { gap: var(--al-gap-cluster); }
 .research-dialog .dialog-foot > .note { min-width: 0; }
 @media (max-width: 640px) {

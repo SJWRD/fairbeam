@@ -16,6 +16,12 @@ This is an opt-in research integration, not a production Floquet port or general
 
 You can instead set `FAIRBEAM_PERIODIC_EXECUTABLE` or `FAIRBEAM_ELMER_ROOT` in the run server's environment. Local path preferences are remembered in this browser profile. An availability check verifies the periodic capability handshake, or locates the Elmer executables; it does not certify arbitrary physical models or all Elmer runtime dependencies.
 
+### Installed-app adapter
+
+Fairbeam 0.7.4 includes `fairbeam_elmer.py` in the desktop bundle and copies it into the managed Python app directory during updates. If 0.7.3 reports `No module named fairbeam_elmer`, update Fairbeam; reinstalling the Elmer binaries alone does not repair the missing adapter.
+
+The panel includes a **How to run this experiment** guide. A missing periodic runtime is a prerequisite failure, not evidence of an Elmer installation problem. There is no automatic periodic backend installer: build the explicitly linked research backend first. On macOS its native build still needs platform qualification.
+
 ## Periodic unit cell
 
 Use the native CPU executable built from the [experimental periodic patch](../scripts/experimental-periodic/README.md). Stock openEMS and the normal GPU engine are not substitutes. The app accepts only the required capability revision and pins the executable and adjacent native library hashes when admitting a job.

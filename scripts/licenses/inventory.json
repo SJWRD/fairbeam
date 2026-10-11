@@ -8220,7 +8220,7 @@
   "inputs": {
     "package-lock.json": "f3d00271745ccabe9d4905cbf4dabfe68e4bf2081d73f32edc22224cffb6d803",
     "package.json": "041e855a26a61d67d1568536983d1506da7cd45fdbb58a3e009153fc474be653",
-    "runtime/install.py": "8f6711bb88b550aafb682b874d97e65794e39ca9ce731afd04c0a137c241f696",
+    "runtime/install.py": "82dbf6d9898ef499aa688b2ff4f3caa44337183e3afa261f7c1e3c81ed167ef9",
     "runtime/pins.json": "c6230e4adca699c6c9aae970b0f748b60cca3783cf6ddc344ded08db4ec9cd84",
     "runtime/requirements.txt": "8a06a606ca2adec73b5c4448003c94eacbb71afc95ab1297ee1bd584648a1e52",
     "runtime/setup-runtime.ps1": "e6e0cfd8c0c8e19c4eb54bd88eda086f17d116dc40f9680087e9d740f0811d9c",
@@ -8237,7 +8237,7 @@
     "scripts/third-party-licenses.py": "918347f0575d6ae3a517d798323c23e620b72ff60f9859d6239a3d3c54d19739",
     "src-tauri/Cargo.lock": "3190269af8f181773c8426d7fe7e6d8bd3b6c614d85853d6d769773c71b7f1e2",
     "src-tauri/Cargo.toml": "34d872fb6f83259380890763d9ec4b1e73fb849bbf7e09170e8fef7837dc44b1",
-    "vite.config.ts": "ca5cb3909da097442d8bbf9850f099264f48e63ccc79c96c9ce7cbe2c4351050",
+    "vite.config.ts": "22581a979a3dc7dcbe8d74f296d0b752b2111781cbd2a1bf87a6d3f895024cf0",
     "viewerImports": "7becea9a6e90194a7c75d14e7707a6d442748620f99db39af943845109f9b187"
   }
 }

@@ -4658,5 +4658,16 @@
   "checks.explain.coax-port": "Eksenel koaksiyel TEM port, eş merkezli PEC iletkenler, dispersiyonsuz dielektrik, sıralı yarıçaplar ve uzunluğunun içinde besleme ve ölçüm düzlemleri gerektirir. Çalıştırmadan önce yarıçapları, malzeme referanslarını ve kaydırmaları kontrol edin.",
   "export.coaxialPortWarning": "Port {port}: yerel koaksiyel TEM port dışa aktarımı desteklenmiyor; port atlandı.",
   "checks.msg.coax-mesh.warning": "deneysel koaksiyel CPU portu: eğri iletkenlerin mesh temsili fazı ve empedansı kaydırabilir; sonuçlara güvenmeden önce mesh'i inceltip sonuçları karşılaştırın",
-  "checks.explain.coax-mesh": "Doğrudan openEMS ile eşdeğerlik sentetik bir hava hattında doğrulandı; her tasarımda değil. Enerji sönümü tek başına doğruluğu kanıtlamaz. En az iki enine inceltmede S-parametrelerini ve empedansı karşılaştırın; mesh üzerinde seçilen ölçüm düzlemini kontrol edin. CUDA/Metal doğrulanmadı."
+  "checks.explain.coax-mesh": "Doğrudan openEMS ile eşdeğerlik sentetik bir hava hattında doğrulandı; her tasarımda değil. Enerji sönümü tek başına doğruluğu kanıtlamaz. En az iki enine inceltmede S-parametrelerini ve empedansı karşılaştırın; mesh üzerinde seçilen ölçüm düzlemini kontrol edin. CUDA/Metal doğrulanmadı.",
+  "research.howTo": "Bu deney nasıl çalıştırılır?",
+  "research.guide": "Kurulum kılavuzu ve sınırlar",
+  "research.periodic.setup": "Ayrıca derlenmiş revizyon-4 periyodik CPU çözücüsü gerekir. Normal openEMS kurulumu bu deneyi çalıştıramaz; yolu boş bırakmak çözücüyü kurmaz.",
+  "research.elmer.setup": "Açık Tasarım yerine hazır bir kavite karşılaştırma deneyi çalıştırılır. Sonuçlar anten S-parametreleri değil, mod frekansları ve alan korelasyonudur.",
+  "research.periodic.step1": "Kurulum kılavuzunu izleyerek deneysel periyodik çözücüyü derleyin, ardından çalıştırılabilir dosyanın yolunu buraya girin.",
+  "research.periodic.step2": "Uyumluluğu kontrol edin. Dielektrik levha örneğiyle başlayın; dalga boyu başına 20, 30 ve 40 hücrede sonuçları karşılaştırın.",
+  "research.elmer.step1": "Windows’ta gerekiyorsa aşağıdaki Elmer kurulumu düğmesini kullanın. macOS/Linux’ta ElmerSolver ve ElmerGrid kurup kurulum klasörünü girin.",
+  "research.elmer.step2": "Uyumluluğu kontrol edin, ilk kavite çalıştırması için 0.025 m seçin; ardından 0.0125 m ile tekrarlayıp frekansları karşılaştırın.",
+  "research.step3": "Araştırma çalıştırmasını başlatın. Durum ve sonuçlar bu panelin geçmişinde görünür; paneli kapatmak çalıştırmayı durdurmaz.",
+  "research.periodic.pathHint": "Klasör veya normal openEMS yerine deneysel çalıştırılabilir dosyayı seçin. Yalnızca sunucuda FAIRBEAM_PERIODIC_EXECUTABLE ayarlanmışsa boş bırakın.",
+  "research.elmer.pathHint": "Elmer kurulum klasörünü girin veya yönetilen kurulumu, sunucu ayarını ya da PATH’i kullanmak için boş bırakın. Başarılı kontrolden sonra kaydedilir."
 }

@@ -252,6 +252,7 @@ async function copyResources(root) {
     if (matches.length === 0) throw new Error(`No tracked files found under ${spec.prefix}`);
   }
   for (const [source, destination] of [
+    ['python/fairbeam_elmer.py', 'python/fairbeam_elmer.py'],
     ['runtime/pins.json', 'runtime/pins.json'],
     ['runtime/requirements.txt', 'runtime/requirements.txt'],
     ['runtime/install.py', 'runtime/install.py'],

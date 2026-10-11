@@ -201,6 +201,9 @@ def install_app(root: Path, resources: Path, py: Path) -> str:
     src = resources / "python" / "fairbeam"
     if not (src / "__init__.py").exists():
         fail(f"bundled Fairbeam package not found at {src}")
+    elmer = resources / "python" / "fairbeam_elmer.py"
+    if not elmer.is_file():
+        fail(f"bundled Elmer adapter not found at {elmer}; reinstall the latest Fairbeam package")
     app = root / "app"
     new = root / "app.new"
     try:
@@ -210,6 +213,7 @@ def install_app(root: Path, resources: Path, py: Path) -> str:
     except OSError as e:
         _in_use(new, e)
     shutil.copytree(src, new / "fairbeam", ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
+    shutil.copy2(elmer, new / "fairbeam_elmer.py")
     try:
         _retry_windows_file_operation(lambda: shutil.rmtree(app))
     except FileNotFoundError:

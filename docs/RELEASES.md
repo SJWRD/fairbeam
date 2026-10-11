@@ -169,6 +169,12 @@ editing them, or the prefill stops working.
 One entry per release, newest first. The installers are on the
 [release page](https://github.com/ismailakdag/fairbeam-releases/releases) of each version.
 
+### 0.7.4, 2026-10-11
+
+- Include the standalone Elmer adapter in desktop resources and managed runtime updates, fixing capability checks in installed apps. A staged-package regression verifies imports without the source checkout.
+- Explain the fixed Elmer cavity workflow and the separate experimental periodic CPU build requirement in English and Turkish, with setup instructions in the panel.
+- Align the folded Mesh menu as a readable vertical action list.
+
 ### 0.7.3, 2026-10-11
 
 - **Experimental coaxial TEM ports (CPU):** editable native openEMS ports, material references, generated geometry, saved projects and Python export. Mesh/probe/PML guards reject invalid setups. The editor and Checks warn that curved-conductor meshing can shift phase and impedance and require refinement checks. Same-model parity was verified on a synthetic air line; general accuracy and GPU support are not claimed. See [COAXIAL-PORTS.md](COAXIAL-PORTS.md).

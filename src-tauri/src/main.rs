@@ -552,6 +552,10 @@ mod external_link_tests {
             Some("https://fairbeam.org/guide.html")
         );
         assert_eq!(
+            external_url("research"),
+            Some("https://github.com/ismailakdag/fairbeam/blob/main/docs/RESEARCH-SOLVERS.md")
+        );
+        assert_eq!(
             external_url("issues"),
             Some("https://github.com/ismailakdag/fairbeam-releases/issues/new/choose")
         );
@@ -1495,6 +1499,7 @@ fn external_url(link: &str) -> Option<&'static str> {
         "source" => "https://github.com/ismailakdag/fairbeam",
         "repository" => "https://github.com/ismailakdag/fairbeam-releases",
         "docs" => "https://fairbeam.org/guide.html",
+        "research" => "https://github.com/ismailakdag/fairbeam/blob/main/docs/RESEARCH-SOLVERS.md",
         "issues" => "https://github.com/ismailakdag/fairbeam-releases/issues/new/choose",
         "openems" => "https://github.com/thliebig/openEMS",
         "licenses" => concat!("https://github.com/ismailakdag/fairbeam/blob/v", env!("CARGO_PKG_VERSION"), "/THIRD-PARTY-NOTICES.md"),
