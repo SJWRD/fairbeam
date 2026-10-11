@@ -116,11 +116,11 @@ export default function RunDialog() {
           </div>
           <button class="icon-btn" onClick={close} aria-label={t("common.close")}><X size={16} /></button>
         </div>
-        <div class="rd-body"><label class="dz-field"><span class="dz-label">{t("elmerDesign.solver")}</span>
+        <div class="rd-solver"><label class="dz-field"><span class="dz-label">{t("elmerDesign.solver")}</span>
           <select class="rp-select dz-input" aria-label={t("elmerDesign.solver")} value={solver()} disabled={busy()} onChange={e => setSolver(e.currentTarget.value)}>
             <option value="openems">openEMS</option><option value="elmer">{t("elmerDesign.option")}</option>
           </select></label></div>
-        <Show when={solver() === "openems"} fallback={<ElmerDesignRun close={close} />}>
+        <Show when={solver() === "openems"} fallback={<ElmerDesignRun close={close} useOpenEMS={() => setSolver("openems")} />}>
         <form class="rd-body" id="rd-form" onSubmit={run}>
           <Show when={errors().length}>
             <div class="status-block status-critical" role="alert">

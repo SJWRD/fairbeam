@@ -77,3 +77,45 @@ npm run check:research
 The browser check uses a synthetic API to exercise state and presentation. Native solver qualification is separate: retain actual input snapshots, raw outputs, numerical comparisons and solver hashes. Neither synthetic results nor a capability probe are evidence of numerical accuracy.
 
 The [Windows qualification record](benchmarks/research-solvers-windows-20261009.json) includes actual native fixture results, failed controls, refinement differences, binary hashes and the real HTTP queue checks. The slab's maximum absolute complex S-parameter error decreased from 0.00912 to 0.00364 to 0.00228 at 20/30/40 cells per wavelength. These are absolute complex-amplitude errors, not dB differences or relative percentages near a zero. This evidence covers those fixtures, not arbitrary designs.
+# Driven Elmer integration status
+
+The Design Run adapter currently solves closed PEC eigenmodes. It does **not** solve a
+driven patch antenna, S parameters, or radiation patterns. The normal openEMS path remains
+the antenna solver. Selecting Elmer for a Design with ports now explains this before
+submission and offers an explicit switch back to openEMS without changing the Design.
+
+For supported box Designs, the eigenmode enclosure initially follows the geometry envelope.
+The bounds remain editable. This convenience does not infer an open radiation boundary:
+the user still explicitly acknowledges six PEC walls.
+
+## Native scattering control
+
+`scripts/check-elmer-scattering.py` exercises Elmer's own two-port VectorHelmholtz control,
+pinned to upstream revision `5a8de867068be0568f09af40fb90fee300dfbede`. It retains downloaded
+inputs, binary and input hashes, logs, and the complex S matrix in a fresh output folder:
+
+```text
+python scripts/check-elmer-scattering.py --elmer-root <installation> --out <new-folder>
+```
+
+On the Windows Elmer 26.1 runtime, the 2.5 GHz control passed both upstream reference norms.
+Its maximum S-matrix singular value was 1.0000000000396843 and reciprocity error was
+4.24e-11. The S11 magnitude was -40.83097 dB. These are **waveguide control results**, not
+patch-antenna results or a qualification of the Design adapter. Passivity is checked on the
+whole complex matrix, without clipping, with tolerance 0.001; reciprocity tolerance is 1e-6.
+
+## Remaining work before enabling driven Design results
+
+The patch starter contains a zero-width ideal line feed, zero-thickness PEC sheets, and
+a lossy dielectric. The current volume-box eigenmode adapter represents none of these
+as a driven antenna. Removing its port check, silently widening the feed, dropping loss,
+or turning the air box into PEC walls would change the problem.
+
+The driven adapter needs conforming metal interfaces and feed support, a documented
+terminal definition and impedance normalization, material loss, open radiation boundaries,
+a frequency sweep, and a complex S-matrix result adapter. Far-field results additionally
+need a verified near-to-far transformation or a supported native extraction route; cavity
+eigenvectors cannot be relabeled as radiation patterns. Keep the original Design unchanged.
+Before enabling antenna output, check a matched feed control and a patch with a consistent
+feed model, plus a coarse refinement on the claimed observables. The native scattering
+control above is the first prerequisite, not a substitute for those checks.

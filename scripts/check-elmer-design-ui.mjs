@@ -22,6 +22,7 @@ try {
     await s.click('ribbon.tab.sim',{sel:'.rb-tab'});
     await s.click('ribbon.sim.run',{sel:'.rb-btn'});
     await s.wait('.rd-dialog');
+    assert.ok(await page.$eval('.rd-solver', e=>e.scrollHeight<=e.clientHeight), 'solver selector must not have an inner scrollbar');
     const selector='.rd-dialog select[aria-label]';
     assert.equal(await page.$eval(selector,e=>e.value),'openems');
     await page.select(selector,'elmer');
@@ -49,6 +50,23 @@ try {
     assert.equal(submitted.backend,'elmer'); assert.equal(submitted.settings.closed_pec,true);
     assert.deepEqual(submitted.settings.domain_mm,[0,0,0,100,50,200]);
     assert.ok(submitted.design.model.id);
+    // Reject antenna input before submitting; never drop a port to make an eigenmode run pass.
+    await page.evaluate(async()=>{
+      const store=await import('/src/designer/store.ts');
+      store.setDraft('ports',[{type:'lumped',number:1,R:50,start:[0,0,0],stop:[0,0,1],direction:'z'}]);
+    });
+    assert.ok(await page.$eval('[data-testid="elmer-design-form"] button[type=submit]',e=>e.disabled));
+    await s.click('elmerDesign.useOpenEMS');
+    await s.wait('#rd-form');
+    assert.equal(await page.evaluate(async()=>(await import('/src/designer/store.ts')).draft.ports.length),1,'switching solvers preserves the feed');
+    await page.evaluate(async()=>{(await import('/src/designer/store.ts')).setDraft('ports',[]);});
+    const envelope=await page.evaluate(async()=>{
+      const {elmerEnclosure}=await import('/src/designer/elmerDomain.ts');
+      const d={parts:[{name:'box',material:'air',primitives:[{kind:'box',start:[0,0,0],stop:['W',50,200]}]}]};
+      return {bounds:elmerEnclosure(d,{W:100}),invalid:elmerEnclosure(d,{})};
+    });
+    assert.deepEqual(envelope.bounds,[0,0,0,100,50,200]);
+    assert.equal(envelope.invalid,null,'unresolved expressions must not invent an enclosure');
     await page.select(selector,'openems'); await s.wait('#rd-form');
     assert.ok(await page.$('#rd-form select'),'openEMS engine controls preserved');
     assert.equal(await page.$('[data-testid="elmer-design-form"]'),null);
