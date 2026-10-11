@@ -1,7 +1,8 @@
 # Deploying fairbeam.org
 
 The public site is static: a landing page at `/` and a read-only demo of the viewer at `/app/`.
-Vercel builds the site from the public source repository, and only the build output is served at the domain.
+Build the site locally from reviewed public source, then upload the prebuilt output to Vercel.
+Only the build output is served at the domain.
 
 `npm run build:site` builds the static site for fairbeam.org into `site-dist/`. It holds the landing page from `landing/` at `/` and the viewer in read-only demo mode (`npm run build:demo`, base `/app/`, the example projects in `public/projects/`, no run server) at `/app/`. The Vercel settings are in `vercel.json`.
 
@@ -12,7 +13,7 @@ Vercel builds the site from the public source repository, and only the build out
 | `landing/` (the home page, `features.html`, `roadmap.html`, `privacy.html`, CSS and small scripts; the roadmap board is rendered into `roadmap.html` at build time), the scroll story under `/story/`, `tokens.css` copied from `design-system/` | Python package, models, install scripts, tests |
 | The docs under `/docs/`: the Markdown files listed in `landing/docs.json`, rendered at build time by `scripts/docs-render.mjs` (links between them go to their pages, other repository files to GitHub), with an overview page | The other Markdown files of the repository (they stay on GitHub) |
 | The viewer built with `--mode demo` under `/app/` (minified JS/CSS) | `src/` as source code (only the minified bundle ships) |
-| The 20 example projects in `public/projects/` (bundle JSON, listed in `index.json`) | The local run server; the demo never calls `/api` |
+| The example projects in `public/projects/` (bundle JSON, listed in `index.json`) | The local run server; the demo never calls `/api` |
 | Four example SVGs from `examples/drawings/`, IBM Plex woff2 files (OFL) | `.sim/`, raw openEMS output, anything git-ignored |
 
 The demo build (`VITE_FAIRBEAM_DEMO=1`, set in `.env.demo`) replaces the Run button with a
@@ -31,7 +32,7 @@ the export package.
 | Install command | `npm ci` |
 | Build command | `npm run build:site` (type-check, then `scripts/build-site.mjs`) |
 | Output directory | `site-dist` |
-| Node.js | 20 or newer (22 LTS is fine) |
+| Node.js | 24 LTS recommended; repository minimum 22.12.0 |
 
 It also sets these headers on every path: `X-Content-Type-Options: nosniff`,
 `Referrer-Policy: strict-origin-when-cross-origin`, `X-Frame-Options: SAMEORIGIN`,
@@ -46,7 +47,7 @@ framing stays allowed, so a site page can embed the demo. The cache rules are:
 Getting Started Guide opens, redirects to `/docs/getting-started.html` (and `landing/guide.html` does
 the same with a meta refresh where the redirect rules do not apply, as in a local preview).
 Git-triggered deployments are disabled (`git.deploymentEnabled: false` in `vercel.json`).
-Publish reviewed batches using the staged production workflow in [CI.md](CI.md).
+Publish reviewed batches using the local build and staged prebuilt production workflow in [CI.md](CI.md).
 
 The site also has one serverless function, `api/ping.js`, which receives the desktop app's opt-in
 install counts (see [TELEMETRY.md](TELEMETRY.md)). Vercel deploys every file in `api/` whose name does
@@ -75,13 +76,14 @@ project or another domain.
 2. **Create the project from the repository.**
    - Dashboard route: *Add New → Project → Import Git Repository*. Grant the Vercel GitHub app access to `ismailakdag/fairbeam` only, then import it.
    - Keep the root directory at the repository root. Vercel reads `vercel.json`, so leave the build settings as detected: framework *Other*, install `npm ci`, build `npm run build:site`, output `site-dist`.
-   - CLI route instead: run `vercel link` in the repository, then `vercel` for a preview deploy.
+   - CLI route instead: run `vercel link` in the repository, then follow the local prebuilt workflow in [CI.md](CI.md).
 3. **Check the preview URL.** On the Vercel preview:
-   - The landing page loads, and "Open the demo" opens `/app/` with the 14 projects.
+   - The landing page loads, and "Open the demo" opens `/app/` with the projects in `public/projects/index.json`.
    - "Load the demo in this page" shows the viewer inside the iframe (this checks `SAMEORIGIN`).
    - The response headers are present: `curl -I https://<preview>/app/`.
-4. **Publish production.** Build a staged production deployment with `vercel --prod --skip-domain`,
-   check its pages, then run `vercel promote <deployment-url>`. See [CI.md](CI.md).
+4. **Publish production.** Run `vercel pull --environment=production`, then `vercel build --prod`
+   locally. Upload with `vercel deploy --prebuilt --prod --skip-domain`, check its pages, then
+   run `vercel promote <deployment-url>`. Use the team scope and checks in [CI.md](CI.md).
 5. **Add the domain.** In the project, go to *Settings → Domains → Add* and enter `fairbeam.org` (see [Domains](#domains)).
 6. **Add the DNS record.** Vercel shows the record to create at the DNS provider for the domain (an `A` record
    for the apex, or a `CNAME` for a subdomain, pointing at `cname.vercel-dns.com.`). Use whatever value the dashboard shows. If the zone
