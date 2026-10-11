@@ -22,11 +22,16 @@ ROOT = Path(__file__).resolve().parents[2]
 C0, ETA0 = 299792458., 376.730313668
 A, B, F0 = 22.86, 10.16, 9e9  # own WR-90 cross-section, mm
 FREQUENCIES = np.linspace(7e9, 11e9, 201)
+# Narrow the source, not the comparison band: the 2 GHz pulse excited a late
+# response near cutoff. The entire requested band must still pass the measured
+# incident-wave floor. No physical dimensions or acceptance gates are fitted.
+SOURCE_FC = 1.65e9
+SOURCE_FMAX = F0+SOURCE_FC
 MESHES = (24, 32, 48)
 DISTANCE, FAR_DISTANCE, PML, DEEP_PML = 65., 85., 8, 12
 CAP_S, END_DB, THREADS = 60e-9, -80., 4
 FAR_CAP_S = 2*CAP_S  # The longer empty-guide section needs more decay time.
-PROTOCOL = "parallel-four-aperture-v2"
+PROTOCOL = "parallel-four-aperture-v3"
 LIMITS = dict(coupled_target_abs=.01, isolated_target_abs=.005,
               complex_mesh_abs=.005, complex_control_abs=.003,
               isolation_mesh_abs=1e-4, directivity_db_min=40., directivity_db_tolerance=.5,
@@ -126,6 +131,9 @@ def build(n, port, *, closed=False, inset=True, distance=DISTANCE, pml=PML, end_
         raise ValueError("declared mesh, port, wall, probe, distance, PML and clock controls required")
     sim = Simulation(FREQUENCIES[0], FREQUENCIES[-1], boundaries=["PEC"]*4+[f"PML_{pml}"]*2,
                      end_criteria_db=end_db, excitation="gauss")
+    sim.fdtd.SetGaussExcite(F0, SOURCE_FC)
+    sim.excitation = dict(type="gaussian", f0=F0, fc=SOURCE_FC,
+                          f_min=F0-SOURCE_FC, f_max=SOURCE_FMAX, dc_free=False)
     dx = A/n
     ny = int(np.ceil(B/dx))
     dz = 2.5/int(np.ceil(2.5/dx))
@@ -165,15 +173,16 @@ def build(n, port, *, closed=False, inset=True, distance=DISTANCE, pml=PML, end_
                 pml=pml, end_db=float(end_db), cap_s=float(cap_s), geometry=g, ports=sim.ports,
                 mesh_mm={a:v.tolist() for a,v in axes.items()}, native_lines=[len(axes[a]) for a in "xyz"],
                 native_cells=int(np.prod([len(axes[a]) for a in "xyz"])), declared_dt_s=float(dt),
-                max_timesteps=steps, source_duration_s=9/(np.pi*(FREQUENCIES[-1]-FREQUENCIES[0])/2),
+                max_timesteps=steps, source_duration_s=9/(np.pi*SOURCE_FC),
                 excitation=sim.excitation,
-                f_max_hz=float(FREQUENCIES[-1]), boundaries=sim.boundaries, scope=SCOPE, threads=THREADS)
+                f_max_hz=float(FREQUENCIES[-1]), native_f_max_hz=SOURCE_FMAX,
+                boundaries=sim.boundaries, scope=SCOPE, threads=THREADS)
     return sim, meta
 
 
 def trace_clock(data, native):
     data = np.asarray(data, float)
-    stride = int(1/(2*FREQUENCIES[-1]*native["dt_s"]*4))
+    stride = int(1/(2*SOURCE_FMAX*native["dt_s"]*4))
     if data.ndim != 2 or data.shape[0] < 3 or not np.isfinite(data).all() or stride < 1:
         raise ValueError("finite native traces required")
     t = data[:, 0]
@@ -196,7 +205,7 @@ def record_quality(meta):
         clock_ok=abs(native["dt_s"]/meta["declared_dt_s"]-1) < 1e-8,
         native_time_ok=native["timesteps"] > 0 and abs(native["numerical_time_s"]/(native["dt_s"]*native["timesteps"])-1) < 1e-8,
         header_ok=header.get("version") == "v0.37.0-rc3" and header.get("threads") == THREADS
-                  and header.get("nyquist_interval") == int(1/(2*FREQUENCIES[-1]*native["dt_s"]))
+                  and header.get("nyquist_interval") == int(1/(2*meta["native_f_max_hz"]*native["dt_s"]))
                   and abs(header.get("excitation_timesteps", -2)-math.ceil(meta["source_duration_s"]/native["dt_s"])) <= 1,
         source_completed=native["numerical_time_s"] > meta["source_duration_s"], native_stop=stopped(meta))
     return {k:bool(value) for k,value in quality.items()}
