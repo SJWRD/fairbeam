@@ -233,7 +233,23 @@ export function validateBundle(raw: unknown): Validation {
           || [p, ...members].some((feed) => feed.start["xyz".indexOf(feed.direction)] === feed.stop["xyz".indexOf(feed.direction)]))
         return { bundle: null, errors: [msg("validate.groupedPort", { n: i + 1 })], warnings };
     }
-    b.ports = all.filter((p) => isObj(p) && isVec3(p.start) && isVec3(p.stop) && isNum(p.R) && ["x", "y", "z"].includes(p.direction as string));
+    const validCoax = (p: Obj) => {
+      if (p.type !== "coaxial") return true;
+      const k = "xyz".indexOf(p.direction as string);
+      if (k < 0 || !isVec3(p.start) || !isVec3(p.stop)) return false;
+      const start = p.start as number[], stop = p.stop as number[], feed = p.feed_shift ?? 0;
+      if (!isNum(feed)) return false;
+      const length = Math.abs(stop[k] - start[k]);
+      return length > 0 && [0, 1, 2].every((j) => j === k || Math.abs(start[j] - stop[j]) <= 1e-9)
+        && isNum(p.r_i) && isNum(p.r_o) && isNum(p.r_os) && 0 < p.r_i && p.r_i < p.r_o && p.r_o < p.r_os
+        && feed >= 0 && feed < length
+        && isNum(p.measurement_shift) && p.measurement_shift > 0 && p.measurement_shift < length
+        && (p.excite === false || p.measurement_shift > feed)
+        && (p.mode ?? "TEM") === "TEM" && ["open", "short"].includes(String(p.termination ?? "open"))
+        && typeof p.conductor === "string" && !!p.conductor && (p.dielectric == null || typeof p.dielectric === "string")
+        && !("group" in p) && !("reference_impedance" in p) && !("Feed_R" in p) && !("feed_R" in p);
+    };
+    b.ports = all.filter((p) => isObj(p) && isVec3(p.start) && isVec3(p.stop) && isNum(p.R) && ["x", "y", "z"].includes(p.direction as string) && validCoax(p));
     if ((b.ports as unknown[]).length < all.length) warnings.push(msg("validate.ports", { n: all.length - (b.ports as unknown[]).length }));
     (b.ports as Obj[]).forEach((p, i) => { if (!isNum(p.number)) p.number = i + 1; });
   }

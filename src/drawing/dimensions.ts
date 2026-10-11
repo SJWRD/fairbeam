@@ -145,7 +145,7 @@ export function planDimensions(b: Bundle, views: Record<ViewId, ViewDef>): DimPl
 
   // ports: feed gap along the port direction, and the feed offset from the centre (or the edge)
   for (const port of b.ports) {
-    if (port.type === "waveguide") continue;   // no feed gap: the guide itself is dimensioned
+    if (port.type === "waveguide" || port.type === "coaxial") continue;   // no feed gap: the guide itself is dimensioned
     const dirAxis = ({ x: 0, y: 1, z: 2 } as Record<string, number>)[port.direction] ?? -1;
     const d = [0, 1, 2].map((k) => port.stop[k] - port.start[k]);
     const k = dirAxis >= 0 && Math.abs(d[dirAxis]) > EPS ? dirAxis : d.findIndex((x) => Math.abs(x) > EPS);

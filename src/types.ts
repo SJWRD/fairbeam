@@ -75,7 +75,7 @@ export type DispersionPole =
 export interface Port {
   number: number;
   /** "lumped" (openEMS LumpedPort) or "waveguide" (RectWGPort, one TE mode) */
-  type: "lumped" | "waveguide";
+  type: "lumped" | "waveguide" | "coaxial";
   /** lumped: port resistance; waveguide: TE wave impedance at the band centre (ohm) */
   R: number;
   direction: "x" | "y" | "z";
@@ -86,6 +86,14 @@ export interface Port {
   reference_impedance?: { real: number; imag: number };
   /** waveguide ports: mode name (e.g. "TE10"), broad/narrow wall (drawing units), cutoff (Hz) */
   mode?: string;
+  r_i?: number;
+  r_o?: number;
+  r_os?: number;
+  conductor?: string;
+  dielectric?: string | null;
+  feed_shift?: number;
+  measurement_shift?: number;
+  termination?: "open" | "short";
   a?: number;
   b?: number;
   f_cutoff?: number;

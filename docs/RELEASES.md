@@ -169,6 +169,13 @@ editing them, or the prefill stops working.
 One entry per release, newest first. The installers are on the
 [release page](https://github.com/ismailakdag/fairbeam-releases/releases) of each version.
 
+### 0.7.3, 2026-10-11
+
+- **Experimental coaxial TEM ports (CPU):** editable native openEMS ports, material references, generated geometry, saved projects and Python export. Mesh/probe/PML guards reject invalid setups. The editor and Checks warn that curved-conductor meshing can shift phase and impedance and require refinement checks. Same-model parity was verified on a synthetic air line; general accuracy and GPU support are not claimed. See [COAXIAL-PORTS.md](COAXIAL-PORTS.md).
+- **Simulation quality:** feed/mesh and convergence checks improved; the unconverged Blade gallery example was removed. Existing results still require independent verification.
+- **Results and projects:** fixes for stale result selection, physical port mapping, reference sweeps, Smith/Touchstone references and local viewer file identity. Compare and array controls fit narrow result panes more reliably.
+- **Documentation and delivery:** privacy documentation aligned with optional install counts; validation limits retained; redundant hosted CI and automatic website deployments reduced.
+
 ### 0.7.2, 2026-10-07
 
 - **Install counts (optional):** on first start Fairbeam asks whether it may count installs. If you allow it, it sends at most once a week a random install ID (created on your computer, not derived from it), the app version, the operating system and the CPU architecture; nothing about your designs, files or results. You can turn it off or reset the ID in Settings at any time. The server keeps only weekly totals. See the [privacy page](https://fairbeam.org/privacy.html) and [TELEMETRY.md](TELEMETRY.md).

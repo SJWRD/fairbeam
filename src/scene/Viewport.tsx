@@ -603,7 +603,7 @@ export default function Viewport() {
             setHighlight: (on, hl) => { own.setHighlight(on, hl); for (const m of members) m.userData.setHighlight(on, hl); },
           };
         }
-        const text = wg ? t("viewport.portWaveguide", { n: p.number, mode: p.mode ?? "TE10" }) : `P${p.number} · ${fmt.num(p.R, 6)} Ω`;
+        const text = p.type === "coaxial" ? t("viewport.portCoaxial", { n: p.number }) : wg ? t("viewport.portWaveguide", { n: p.number, mode: p.mode ?? "TE10" }) : `P${p.number} · ${fmt.num(p.R, 6)} Ω`;
         const l = label(text, "vp-label vp-label-port");
         portLabels.set(p.number, { el: l.element, base: text });
         l.position.copy(g.userData.labelAnchor);

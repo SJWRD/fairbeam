@@ -1,0 +1,17 @@
+{
+  "hypothesis": "A grid-aligned cell-center PEC discretization may restore discrete TEM phase but must also converge to circular-coax impedance. It is a diagnostic representation change, not an accepted production correction.",
+  "cases": [
+    "air through .25 retained baseline",
+    "air through .125",
+    "air through .0625"
+  ],
+  "acceptance": {
+    "complex_error": 0.05,
+    "magnitude_error": 0.01,
+    "power_excess": 0.01,
+    "final_mesh_change": 0.025,
+    "additional_impedance_relative_error": 0.02
+  },
+  "followup": "Only if both phase and impedance converge, test reflection, filled line and complete power matrix; do not ship bare voxel diagnostic.",
+  "resources": "one CPU solve at a time, 2 threads for .125, at most 6 for .0625 plus thread control if necessary; no overclock or runtime modifications"
+}

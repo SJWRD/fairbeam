@@ -274,6 +274,7 @@ function MaterialInspector(props: { i: number }) {
     edit((d) => {
       d.materials[props.i].name = v;
       for (const p of d.parts) if (p.material === old) p.material = v; // follow the rename
+      for (const p of d.ports) { if (p.conductor === old) p.conductor = v; if (p.dielectric === old) p.dielectric = v; }
     }, `materials[${props.i}].name`);
   };
   const nameError = () => (!m().name.trim() ? t("props.error.noName") : draft.materials.some((q, j) => j !== props.i && q.name === m().name) ? t("props.error.usedTwice") : undefined);
@@ -963,17 +964,26 @@ function PortInspector(props: { i: number }) {
   const set = (fn: (q: (typeof draft.ports)[number]) => void, key: string) => edit((d) => fn(d.ports[props.i]), `${base()}.${key}`);
   const numError = () => draft.ports.some((q, j) => j !== props.i && q.number === p().number) ? t("props.port.numberUnique") : undefined;
   const numberId = () => fieldId(`${base()}.number`);
+  const coax = () => p().type === "coaxial";
+  const lumped = () => p().type !== "waveguide" && !coax();
   const wg = () => p().type === "waveguide";
   return (
     <div class="dz-form">
-      <h3 class="dz-h">{t(wg() ? "props.port.titleWaveguide" : "props.port.titleLumped", { n: p().number })}</h3>
+      <h3 class="dz-h">{t(coax() ? "props.port.titleCoaxial" : wg() ? "props.port.titleWaveguide" : "props.port.titleLumped", { n: p().number })}</h3>
       <VecField label={t(wg() ? "props.port.startWaveguide" : "props.start")} value={p().start} path={`${base()}.start`} onChange={(k, v) => set((q) => { q.start[k] = v; }, `start${k}`)} onPicked={(v) => set((q) => { q.start = v; }, "start")} />
       <VecField label={t(wg() ? "props.port.stopWaveguide" : "props.stop")} value={p().stop} path={`${base()}.stop`} onChange={(k, v) => set((q) => { q.stop[k] = v; }, `stop${k}`)} onPicked={(v) => set((q) => { q.stop = v; }, "stop")} />
       <Show when={wg()}><WaveguideFields i={props.i} /></Show>
-      <div class="seg seg-sm" role="radiogroup" aria-label={t("props.port.type")} onKeyDown={radioGroupKeys}>
-        <button class="seg-btn" role="radio" aria-checked={!wg()} tabindex={wg() ? -1 : 0} onClick={() => setPortType(props.i, "lumped")}>{t("props.port.lumped")}</button>
+      <div class="seg seg-sm" style={{ "flex-wrap": "wrap" }} role="radiogroup" aria-label={t("props.port.type")} onKeyDown={radioGroupKeys}>
+        <button class="seg-btn" role="radio" aria-checked={lumped()} tabindex={lumped() ? 0 : -1} onClick={() => setPortType(props.i, "lumped")}>{t("props.port.lumped")}</button>
         <button class="seg-btn" role="radio" aria-checked={wg()} disabled={!!p().group} title={p().group ? t("props.port.group.removeBeforeWaveguide") : undefined} tabindex={wg() ? 0 : -1} onClick={() => setPortType(props.i, "waveguide")}>{t("props.port.waveguide")}</button>
+        <button class="seg-btn" role="radio" aria-checked={coax()} disabled={!!p().group} title={p().group ? t("props.port.group.removeBeforeCoaxial") : undefined} tabindex={coax() ? 0 : -1} onClick={() => setPortType(props.i, "coaxial")}>{t("props.port.coaxial")}</button>
       </div>
+      <Show when={coax()}>
+        <For each={["r_i", "r_o", "r_os", "feed_shift", "measurement_shift"] as const}>{(key) => <ExprField label={t(({ r_i: "props.port.innerRadius", r_o: "props.port.outerRadius", r_os: "props.port.shellRadius", feed_shift: "props.port.feedShift", measurement_shift: "props.port.measurementShift" })[key])} unit="mm" value={p()[key]} path={`${base()}.${key}`} onChange={(v) => set((q) => { q[key] = v; }, key)} />}</For>
+        <SelectField label={t("props.port.conductor")} id={fieldId(`${base()}.conductor`)} value={p().conductor ?? ""} options={[{ value: "", label: t("props.port.chooseConductor") }, ...draft.materials.filter((m) => m.kind === "metal" && m.conductivity == null).map((m) => ({ value: m.name, label: m.name }))]} onChange={(v) => set((q) => { q.conductor = v; }, "conductor")} />
+        <SelectField label={t("props.port.dielectric")} id={fieldId(`${base()}.dielectric`)} value={p().dielectric ?? ""} options={[{ value: "", label: t("props.port.air") }, ...draft.materials.filter((m) => m.kind === "dielectric").map((m) => ({ value: m.name, label: m.name }))]} onChange={(v) => set((q) => { q.dielectric = v || null; }, "dielectric")} />
+        <SelectField label={t("props.port.termination")} id={fieldId(`${base()}.termination`)} value={p().termination ?? "open"} options={[{ value: "open", label: t("props.port.open") }, { value: "short", label: t("props.port.short") }]} onChange={(v) => set((q) => { q.termination = v; }, "termination")} />
+      </Show>
       <div class="dz-pair">
         <label class="dz-field">
           <span class="dz-label">{t("props.port.number")}</span>
@@ -982,14 +992,14 @@ function PortInspector(props: { i: number }) {
             onInput={(e) => { const n = Math.max(1, Math.round(Number(e.currentTarget.value) || 1)); set((q) => { q.number = n; }, "number"); }} />
           <Show when={numError()}><span id={`${numberId()}-error`} class="dz-value dz-bad">{numError()}</span></Show>
         </label>
-        <Show when={!wg()}>
+        <Show when={lumped()}>
           <ExprField label={t("props.port.impedance")} unit="Ω" value={p().R} path={`${base()}.R`} onChange={(v) => set((q) => { q.R = v; }, "R")} />
         </Show>
       </div>
-      <Show when={!wg()}><label class="dz-check"><input type="checkbox" checked={!!p().reference_impedance} onChange={(e) => { const enabled = e.currentTarget.checked; set((q) => { if (enabled) q.reference_impedance = { real: 20, imag: -150 }; else delete q.reference_impedance; }, "reference_impedance"); }} />{t("feed.complexReference")}</label><Show when={p().reference_impedance}><ExprField label="Re Zref" unit="Ω" value={p().reference_impedance!.real} path={`${base()}.reference_impedance.real`} onChange={(v) => set((q) => { q.reference_impedance!.real = v; }, "reference_impedance.real")} /><ExprField label="Im Zref" unit="Ω" value={p().reference_impedance!.imag} path={`${base()}.reference_impedance.imag`} onChange={(v) => set((q) => { q.reference_impedance!.imag = v; }, "reference_impedance.imag")} /><p class="note">{t("feed.referenceNote")}</p></Show></Show>
+      <Show when={lumped()}><label class="dz-check"><input type="checkbox" checked={!!p().reference_impedance} onChange={(e) => { const enabled = e.currentTarget.checked; set((q) => { if (enabled) q.reference_impedance = { real: 20, imag: -150 }; else delete q.reference_impedance; }, "reference_impedance"); }} />{t("feed.complexReference")}</label><Show when={p().reference_impedance}><ExprField label="Re Zref" unit="Ω" value={p().reference_impedance!.real} path={`${base()}.reference_impedance.real`} onChange={(v) => set((q) => { q.reference_impedance!.real = v; }, "reference_impedance.real")} /><ExprField label="Im Zref" unit="Ω" value={p().reference_impedance!.imag} path={`${base()}.reference_impedance.imag`} onChange={(v) => set((q) => { q.reference_impedance!.imag = v; }, "reference_impedance.imag")} /><p class="note">{t("feed.referenceNote")}</p></Show></Show>
       <label class="dz-check"><input id={fieldId(`${base()}.excite`)} type="checkbox" checked={p().excite !== false} onChange={(e) => { const c = e.currentTarget.checked; set((q) => { q.excite = c; }, "excite"); }} /> {t("props.port.excited")}</label>
-      <SelectField label={t(wg() ? "props.port.propagation" : "props.port.current")} value={p().direction} options={AXES} onChange={(v) => set((q) => { q.direction = v; }, "direction")} />
-      <Show when={!wg()}>
+      <SelectField label={t(!lumped() ? "props.port.propagation" : "props.port.current")} value={p().direction} options={AXES} onChange={(v) => set((q) => { q.direction = v; }, "direction")} />
+      <Show when={lumped()}>
         <Show when={p().group}>
           <label class="dz-field"><span class="dz-label">{t("props.port.group.connection")}</span>
             <select class="rp-select dz-input" value={p().group!.connection} onChange={(e) => { const v = e.currentTarget.value as "parallel" | "series"; set((q) => { q.group!.connection = v; }, "group.connection"); }}>
@@ -1014,7 +1024,7 @@ function PortInspector(props: { i: number }) {
           q.group.members.push({ start: [...q.start], stop: [...q.stop], direction: q.direction, polarity: 1 });
         }, "group.add")}>{t("props.port.group.add")}</button>
       </Show>
-      <p class="note">{t(wg() ? "props.port.noteWaveguide" : "props.port.noteLumped")}</p>
+      <p class="note">{t(coax() ? "props.port.noteCoaxial" : wg() ? "props.port.noteWaveguide" : "props.port.noteLumped")}</p>
     </div>
   );
 }

@@ -142,7 +142,7 @@ export function quickPreview() {
   if (quickFrame) return;
   quickFrame = requestAnimationFrame(() => {
     quickFrame = 0;
-    if (appMode() !== "design" || openCount() !== quickOpened || !loaded() || !draft.parts.length) return;
+    if (appMode() !== "design" || openCount() !== quickOpened || !loaded() || (!draft.parts.length && !draft.ports.some((p) => p.type === "coaxial"))) return;
     const b = quickBundle(unwrap(draft), names().names, draftPreview());
     if (b) showQuickPreview(b);
   });
@@ -178,7 +178,7 @@ export function schedulePreview(delay = 250) {
     if (!asyncState.isPreviewCurrent(ticket) || appMode() !== "design" || !previewIsCurrent(previewTicket) || !loaded()) return;
     // nothing drawn yet: an empty work area (not the previous project); the browser-side checks
     // say what is missing, no server build needed
-    if (!draft.parts.length) {
+    if ((!draft.parts.length && !draft.ports.some((p) => p.type === "coaxial"))) {
       showEmptyDesign(draft.model.name);
       batch(() => { setServerErrors({}); setServerChecks([]); });
       return;
@@ -872,7 +872,7 @@ export function frameBounds(s: Selection): import("../types").Part["bbox"] | nul
   return [exact[0].map((v, k) => Math.min(v, ctx[0][k])), exact[1].map((v, k) => Math.max(v, ctx[1][k]))] as Bounds;
 }
 
-export const [feedCreation, setFeedCreation] = createSignal<"lumped" | "waveguide" | "element" | null>(null);
+export const [feedCreation, setFeedCreation] = createSignal<"lumped" | "waveguide" | "coaxial" | "element" | null>(null);
 export function addPort() { setFeedCreation("lumped"); }
 export function createFeed(value: import("./types").DesignPort | import("./types").DesignResistor) {
   const isPort = "number" in value;
@@ -886,9 +886,9 @@ export function addWaveguidePort() { setFeedCreation("waveguide"); }
 
 /** Switch a port between lumped and waveguide, keeping its place (a waveguide takes a × b from the
  * port box across its direction where it has one). */
-export function setPortType(i: number, type: "lumped" | "waveguide") {
-  if (type === "waveguide" && draft.ports[i]?.group) {
-    setMessage({ tone: "warn", text: t("props.port.group.removeBeforeWaveguide") });
+export function setPortType(i: number, type: "lumped" | "waveguide" | "coaxial") {
+  if (type !== "lumped" && draft.ports[i]?.group) {
+    setMessage({ tone: "warn", text: t(type === "coaxial" ? "props.port.group.removeBeforeCoaxial" : "props.port.group.removeBeforeWaveguide") });
     return;
   }
   const n = names().names;
@@ -896,6 +896,15 @@ export function setPortType(i: number, type: "lumped" | "waveguide") {
     const p = d.ports[i];
     if (p.type === type) return;
     p.type = type;
+    delete p.r_i; delete p.r_o; delete p.r_os; delete p.conductor; delete p.dielectric;
+    delete p.feed_shift; delete p.measurement_shift; delete p.termination;
+    if (type === "coaxial") {
+      delete p.R; delete p.reference_impedance; delete p.a; delete p.b;
+      p.mode = "TEM"; p.r_i = 0.5; p.r_o = 1.5; p.r_os = 2;
+      p.conductor = d.materials.find((m) => m.kind === "metal" && m.conductivity == null)?.name ?? "";
+      p.dielectric = null; p.feed_shift = 0; p.measurement_shift = 0.5; p.termination = "open";
+      return;
+    }
     if (type === "waveguide") {
       const k = "xyz".indexOf(p.direction), [u, v] = [(k + 1) % 3, (k + 2) % 3];
       const span = (ax: number) => Math.abs((tryEvaluate(p.stop[ax], n).value ?? 0) - (tryEvaluate(p.start[ax], n).value ?? 0));
@@ -1067,7 +1076,7 @@ export function duplicateParam(i: number) {
 /** Remove the selected item (a material only when no part uses it, a parameter only when no field does). */
 export function removeSelected() {
   const s = selection();
-  if (s.type === "material" && draft.parts.some((p) => p.material === draft.materials[s.i]?.name)) {
+  if (s.type === "material" && (draft.parts.some((p) => p.material === draft.materials[s.i]?.name) || draft.ports.some((p) => p.conductor === draft.materials[s.i]?.name || p.dielectric === draft.materials[s.i]?.name))) {
     setMessage({ tone: "warn", text: t("store.materialInUse", { material: draft.materials[s.i].name }) });
     return;
   }

@@ -25,7 +25,7 @@ export function activeExportSurface():ExportSurface|null {
   return centerView()==="drawing" ? "drawing" : "viewport";
 }
 export function geometryAvailable():boolean {
-  return appMode()==="design" ? !!file() && !!draft.parts?.some(p=>p.primitives.length) : !!bundle()?.parts.some(p=>p.primitives.length);
+  return appMode()==="design" ? !!file() && (!!draft.parts?.some(p=>p.primitives.length) || !!draft.ports?.some(p=>p.type==="coaxial")) : !!bundle()?.parts.some(p=>p.primitives.length);
 }
 export function screenshotAvailable():boolean {
   const surface=activeExportSurface();

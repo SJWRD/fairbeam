@@ -1090,7 +1090,7 @@ export function cstMacro(b: Bundle, opt: CstOptions = DEFAULT_CST_OPTIONS, extra
   if (opt.includePorts) {
     const used = new Set<number>();
     for (const p of b.ports) {
-      if (used.has(p.number)) continue;
+      if (used.has(p.number) || p.type === "coaxial") continue;
       if (p.type === "waveguide") {
         const k = "xyz".indexOf(p.direction), u = (k + 1) % 3, v = (k + 2) % 3;
         if (k < 0 || !finite(...p.start, ...p.stop) || Math.abs(p.stop[u] - p.start[u]) <= EPS || Math.abs(p.stop[v] - p.start[v]) <= EPS) continue;
@@ -1224,6 +1224,10 @@ export function cstMacro(b: Bundle, opt: CstOptions = DEFAULT_CST_OPTIONS, extra
     m.comment("ports (openEMS lumped port -> CST discrete S-parameter port; P1/P2 lie on the port axis)");
     const portNos = new Set<number>();
     for (const p of b.ports) {
+      if (p.type === "coaxial") {
+        m.warnings.push(`port ${p.number}: native coaxial TEM port export is unsupported; port skipped`);
+        continue;
+      }
       if (p.type === "waveguide") {
         if (finite(...p.start, ...p.stop, p.a ?? NaN, p.b ?? NaN)) {
           data(m, { port: p.number, type: "waveguide", mode: p.mode ?? "TE10", a: p.a, b: p.b, start: p.start, stop: p.stop, direction: p.direction, ...(p.excite === false ? { excite: false } : {}) });

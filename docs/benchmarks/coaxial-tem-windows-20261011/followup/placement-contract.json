@@ -1,0 +1,17 @@
+{
+  "hypothesis": "The residual TEM phase error may depend on the physical circle's placement relative to Cartesian Yee sampling. Translate only the transverse mesh, without changing conductor radii or fitting response.",
+  "cases": [
+    "air through step .25, offsets 0.25 and 0.5 cell",
+    "refine promising placement at .125 and .0625 only if phase improves"
+  ],
+  "fixed": "same source, band, reference planes, PEC circle and native runtime as a47ccb2 baseline",
+  "gates": {
+    "complex_error": 0.05,
+    "magnitude_error": 0.01,
+    "power_excess": 0.01,
+    "final_refinement_change": 0.025,
+    "placement_nuisance": 0.005
+  },
+  "resource_limit": "one CPU solve at a time, two threads, at most 1.5M cells initially",
+  "release_condition": "No merge/release claim until all applicable original controls qualify; no fitted correction or altered physical geometry"
+}

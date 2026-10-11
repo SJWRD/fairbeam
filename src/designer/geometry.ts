@@ -729,6 +729,25 @@ export function quickBundle(d: Design, names: Record<string, number>, previous: 
       const a = p.start.map((e) => evaluate(e, names)) as V3, c = p.stop.map((e) => evaluate(e, names)) as V3;
       grow([a.map((x, k) => Math.min(x, c[k])) as V3, a.map((x, k) => Math.max(x, c[k])) as V3]);
       const common = { number: p.number, direction: p.direction, start: a, stop: c, excite: p.excite !== false };
+      if (p.type === "coaxial") {
+        const ri = evaluate(p.r_i ?? "", names), ro = evaluate(p.r_o ?? "", names), ros = evaluate(p.r_os ?? "", names);
+        const dielectric = d.materials.find((m) => m.name === p.dielectric);
+        const eps = evaluate(dielectric?.eps_r ?? 1, names), mu = evaluate(dielectric?.mu_r ?? 1, names);
+        const k = "xyz".indexOf(p.direction);
+        grow([a.map((x, j) => Math.min(x, c[j]) - (j === k ? 0 : ros)) as V3, a.map((x, j) => Math.max(x, c[j]) + (j === k ? 0 : ros)) as V3]);
+        const bounds = (radius: number): [V3, V3] => [a.map((x, j) => Math.min(x, c[j]) - (j === k ? 0 : radius)) as V3, a.map((x, j) => Math.max(x, c[j]) + (j === k ? 0 : radius)) as V3];
+        const innerBounds = bounds(ri), shieldBounds = bounds(ros), fillBounds = bounds(ro);
+        parts.push({ name: `Coaxial port ${p.number} conductor`, type: "Metal", color: mats.get(p.conductor ?? "")?.color,
+          primitives: [{ kind: "cylinder", start: a, stop: c, radius: ri, priority: 5, bbox: innerBounds },
+            { kind: "cylindricalshell", start: a, stop: c, radius: (ro + ros) / 2, shell_width: ros - ro, priority: 5, bbox: shieldBounds }], bbox: shieldBounds } as Part);
+        if (p.dielectric != null) parts.push({ name: `Coaxial port ${p.number} dielectric`, type: "Material", color: dielectric?.color,
+          material: { eps_r: eps, mu_r: mu, tan_d: evaluate(dielectric?.tan_d ?? 0, names) },
+          primitives: [{ kind: "cylindricalshell", start: a, stop: c, radius: (ri + ro) / 2, shell_width: ro - ri, priority: 4, bbox: fillBounds }], bbox: fillBounds } as Part);
+        return { ...common, type: "coaxial", mode: "TEM", r_i: ri, r_o: ro, r_os: ros,
+          conductor: p.conductor, dielectric: p.dielectric ?? null, feed_shift: evaluate(p.feed_shift ?? 0, names),
+          measurement_shift: evaluate(p.measurement_shift ?? "", names), termination: p.termination,
+          R: 376.730313668 / (2 * Math.PI) * Math.sqrt(mu / eps) * Math.log(ro / ri) } as Port;
+      }
       if (p.type === "waveguide") {
         // Simulation.waveguide_port: the cut-off and the TE wave impedance at the band centre
         const mode = wgMode(p.mode ?? "TE10");

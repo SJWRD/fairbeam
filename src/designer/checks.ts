@@ -28,7 +28,7 @@ export interface Check {
  * `port-at-null` stays server-only on both sides: the patch/substrate/ground test needs resolved
  * geometry, so the browser keeps the server warning and its conditional explanation intact. */
 export const CHEAP = new Set([
-  "expr", "param-range", "part-name-duplicate", "part-empty", "brick-flat", "brick-inverted", "radius",
+  "coax-port", "coax-mesh", "expr", "param-range", "part-name-duplicate", "part-empty", "brick-flat", "brick-inverted", "radius",
   "inner-radius", "cylinder-length", "polygon-points", "polygon-area", "polygon-self-intersect",
   "linpoly-length", "polyhedron", "polyhedron-flat", "copies", "mu-r", "eps-r", "tan-d", "tan-d-freq", "f-min", "f-order", "f-ratio", "ff-band", "nf2ff-pec",
   "cells-per-wavelength", "end-criterion", "port-length", "port-volume", "port-r", "port-reference", "port-overlap", "no-port",
@@ -39,6 +39,8 @@ export const CHEAP = new Set([
 
 /** Keep CHEAP wording in sync with Python EXPLANATIONS (checked by check-designer). */
 export const EXPLANATIONS: Readonly<Record<string, string>> = {
+  "coax-mesh": "Native openEMS parity was verified on a synthetic air-line control, not every design. Energy decay alone does not prove accuracy. Compare S-parameters and impedance across at least two transverse refinements and check the snapped measurement plane. CUDA/Metal are not qualified.",
+  "coax-port": "An axial coaxial TEM port needs concentric PEC conductors, a nondispersive dielectric, ordered radii and feed/probe planes inside its length. Check its radii, material references and offsets before running.",
   "port-reference": "A complex power-wave reference is supported only on lumped ports and must contain exactly real and imag expressions. It is separate from the physical source resistance.",
   "mesh-lines": "Manual mesh lines need at least two finite, strictly increasing coordinates on each axis. Correct the line list or switch to automatic mesh.",
   "boolean-transform-angle": "A live Boolean needs axis-aligned operands so its result stays exact. Use quarter-turn rotations for its operands, or materialise the Boolean before applying an arbitrary angle.",
@@ -526,7 +528,7 @@ export function designChecks(d: Design): Check[] {
     }
   });
   const metals = new Set((d.materials ?? []).filter((m) => m.kind === "metal").map((m) => m.name));
-  if (!(d.parts ?? []).some((p) => metals.has(p.material))) error("parts", "no-metal", "the design has no metal solid: nothing to excite or radiate");
+  if (!(d.parts ?? []).some((p) => metals.has(p.material)) && !(d.ports ?? []).some((p) => p.type === "coaxial" && metals.has(p.conductor ?? ""))) error("parts", "no-metal", "the design has no metal solid: nothing to excite or radiate");
 
   // ---- simulation, mesh, far field
   const s = d.simulation ?? ({} as Design["simulation"]);
@@ -681,6 +683,33 @@ export function designChecks(d: Design): Check[] {
   const boxes: [number, number[][], number][] = [];
   ports.flatMap((port, i) => portFeedEntries(port, `ports[${i}]`).map(([w, po]) => ({ i, w, po }))).forEach(({ i, w, po }) => {
     const wg = po.type === "waveguide";
+    if (po.type === "coaxial") {
+      warn(w, "coax-mesh", "experimental coaxial CPU port: curved-conductor mesh can shift phase and impedance; refine the mesh and compare results before relying on them");
+      const a = vec(`${w}.start`, po.start), c = vec(`${w}.stop`, po.stop);
+      const ri = ev(`${w}.r_i`, po.r_i), ro = ev(`${w}.r_o`, po.r_o), ros = ev(`${w}.r_os`, po.r_os);
+      const feed = ev(`${w}.feed_shift`, po.feed_shift ?? 0), measurement = ev(`${w}.measurement_shift`, po.measurement_shift);
+      if (!a || !c || [ri, ro, ros, feed, measurement].some((v) => v === null)) return;
+      const k = AXES.indexOf(po.direction), length = Math.abs(c[k] - a[k]);
+      let problem: string | undefined;
+      if (k < 0) problem = "coaxial direction must be x, y or z";
+      else if (length === 0 || [0, 1, 2].some((j) => j !== k && Math.abs(c[j] - a[j]) > EPS)) problem = "coaxial endpoints must share a centerline along the selected axis";
+      else if (!(0 < ri! && ri! < ro! && ro! < ros!)) problem = "coaxial radii must satisfy 0 < inner radius < shield inner radius < shield outer radius";
+      else if (Math.SQRT2 * (ri! + .1 * (ro! - ri!)) >= ro!) problem = "coaxial annulus is too narrow for the native square current probe; increase shield inner radius";
+      else if (!(0 <= feed! && feed! < length && 0 < measurement! && measurement! < length)) problem = "coaxial feed offset must be inside the line and measurement offset strictly inside its length";
+      else if (po.excite !== false && measurement! <= feed!) problem = "coaxial measurement plane must be beyond the excitation plane";
+      else if (!["open", "short"].includes(po.termination ?? "open") || "Feed_R" in po || "feed_R" in po || "R" in po) problem = "coaxial termination supports open or short only; finite feed resistance is unsupported";
+      else if ((po.mode ?? "TEM") !== "TEM" || "group" in po || "reference_impedance" in po) problem = "coaxial ports support TEM only, without grouped feeds or custom reference impedance";
+      if (problem) { error(w, "coax-port", problem); return; }
+      const metal = d.materials.find((m) => m.name === po.conductor);
+      if (!metal || metal.kind !== "metal" || metal.conductivity != null) { error(w, "coax-port", "coaxial conductor must reference a PEC metal material"); return; }
+      const fill = d.materials.find((m) => m.name === po.dielectric);
+      if (po.dielectric != null && (!fill || fill.kind !== "dielectric" || "dispersion" in fill && fill.dispersion != null)) { error(w, "coax-port", "coaxial dielectric must reference a nondispersive dielectric material or air"); return; }
+      if (fill) {
+        const eps = ev(`${w}.eps_r`, fill.eps_r ?? 1), mu = ev(`${w}.mu_r`, fill.mu_r ?? 1), loss = ev(`${w}.tan_d`, fill.tan_d ?? 0);
+        if (eps !== null && mu !== null && loss !== null && (eps <= 0 || mu <= 0 || loss < 0)) error(w, "coax-port", "coaxial dielectric requires positive permittivity/permeability and nonnegative loss tangent");
+      }
+      return;
+    }
     let size: [number, number] | null = null;
     if (wg) {
       const mode = wgMode(po.mode ?? "TE10");

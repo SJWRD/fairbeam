@@ -399,6 +399,13 @@ export function buildPorts(ports: readonly PortInput[], solids: readonly Solid[]
       drawn[port.number] = "flange";
       continue;
     }
+    if (port.type === "coaxial") {
+      const marker = portMarker(port, bead, o.mk);
+      marker.name = `coaxial-port-${port.number}`;
+      group.add(marker);
+      drawn[port.number] = "marker";
+      continue;
+    }
     const placement = o.mode === "connector" ? placeSma(port, solids, o.unitMm) : null;
     if (placement) {
       group.add(smaConnector(placement, o.unitMm, o.mk));

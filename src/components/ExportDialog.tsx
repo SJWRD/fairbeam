@@ -57,6 +57,8 @@ export default function ExportDialog() {
   });
   const previewText = () => result()?.text ?? "";
   const warningText = (warning: string) => {
+    const coax = /^port (\d+): native coaxial TEM port export is unsupported; port skipped$/.exec(warning);
+    if (coax) return t("export.coaxialPortWarning", { port: coax[1] });
     const port = source()?.ports.find((p) => warning === finitePortWarning(p.number));
     return port ? t("export.finitePortWarning", { port: port.number }) : warning;
   };

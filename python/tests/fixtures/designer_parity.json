@@ -322,6 +322,7 @@
      "set": {"ports[0].group": {"connection":"series","members":[{"start":["feed+2",0,0],"stop":["feed+2",0,"h"],"direction":"z","polarity":-1}]}}}
   ],
   "cases": [
+    {"name": "coaxial radii must be ordered", "set": {"ports": [{"type":"coaxial","number":1,"direction":"z","start":[0,0,0],"stop":[0,0,10],"r_i":2,"r_o":1,"r_os":3,"conductor":"PEC","dielectric":null,"feed_shift":0,"measurement_shift":5,"termination":"open","excite":true}]}, "expect": ["error|coax-port|ports[0]", "warning|coax-mesh|ports[0]"]},
     {"name": "feature refinement requires a boolean", "set": {"mesh.refine_features": "true"}, "expect": ["error|expr|mesh.refine_features"]},
     {"name":"group members are checked like physical ports","set":{"ports[0].group":{"connection":"parallel","members":[{"start":["feed+2",0,0],"stop":["feed+2",0,"h"],"direction":"z"}]}},"expect":[]},
     {"name":"null port type cannot contain a group","set":{"ports[0].type":null,"ports[0].group":{"connection":"parallel","members":[{"start":[0,0,0],"stop":[0,0,1],"direction":"z"}]}},"expect":["error|expr|ports[0].group"]},
@@ -591,6 +592,7 @@
     {"name": "reference shape extra key", "set": {"ports[0].reference_impedance": {"real": 20, "imag": -150, "extra": 1}}, "expect": ["error|port-reference|ports[0].reference_impedance"]},
     {"name": "reference shape null", "set": {"ports[0].reference_impedance": null}, "expect": ["error|port-reference|ports[0].reference_impedance"]},
     {"name": "reference shape array", "set": {"ports[0].reference_impedance": [20, -150]}, "expect": ["error|port-reference|ports[0].reference_impedance"]},
-    {"name": "waveguide complex reference unsupported", "set": {"ports[0].type": "waveguide", "ports[0].reference_impedance": {"real": 20, "imag": -150}}, "expect": ["error|port-reference|ports[0].reference_impedance"]}
+    {"name": "waveguide complex reference unsupported", "set": {"ports[0].type": "waveguide", "ports[0].reference_impedance": {"real": 20, "imag": -150}}, "expect": ["error|port-reference|ports[0].reference_impedance"]},
+    {"name": "coax native square current loop crosses shield", "set": {"ports": [{"number": 1, "type": "coaxial", "mode": "TEM", "direction": "z", "start": [0,0,-20], "stop": [0,0,20], "r_i": 2.5, "r_o": 3, "r_os": 3.5, "conductor": "copper", "measurement_shift": 20, "feed_shift": 10}]}, "expect": ["error|coax-port|ports[0]", "warning|coax-mesh|ports[0]"]}
   ]
 }

@@ -117,6 +117,7 @@ class Simulation:
         self.dispersions: dict = {}
         self.ports: list[dict] = []
         self._port_objs = []
+        self._pending_coax = []
         self.lumped_elements: list[dict] = []
         #: thin metal built as sheets (fairbeam.design.thin_sheets); the bundle shows the drawn bricks
         self.thin_sheets: list[dict] = []
@@ -355,6 +356,74 @@ class Simulation:
         self._port_objs.append(port)
         return port
 
+    def coaxial_port(self, number, start, stop, direction, r_i, r_o, r_os, *,
+                     conductor="PEC", dielectric=None, eps_r=1.0, mu_r=1.0, tan_d=0.0, tan_d_freq=None,
+                     feed_shift=0.0, measurement_shift=None, termination="open", excite=True):
+        """Cartesian native TEM port. Radii/offsets use drawing units, not meters.
+
+        Geometry is created immediately for meshing; native probes are constructed only after
+        the final mesh exists. Open/short describe physical feed termination, not normalization.
+        Output waves use the positive real lossless TEM reference R, independently of Feed_R.
+        The native differential-TL complex impedance is retained separately as diagnostic data.
+        """
+        from .coax import validate_coax
+        if not callable(getattr(self.fdtd, "AddCoaxialPort", None)):
+            raise ValueError("This openEMS runtime has no AddCoaxialPort; install a runtime with native coaxial-port support")
+        if self.mesh.GetMeshType() != 0:
+            raise ValueError("native coaxial ports currently require a Cartesian mesh")
+        if isinstance(number, bool) or not isinstance(number, int) or number < 1 or any(p["number"] == number for p in self.ports):
+            raise ValueError("coaxial port number must be a unique positive integer")
+        if _EXCITE_ONLY is not None:
+            excite = number == _EXCITE_ONLY
+        record = dict(number=number, type="coaxial", mode="TEM", start=list(start), stop=list(stop),
+                      direction=direction, r_i=r_i, r_o=r_o, r_os=r_os, conductor=conductor,
+                      dielectric=dielectric, eps_r=eps_r, mu_r=mu_r, tan_d=tan_d, feed_shift=feed_shift,
+                      measurement_shift=measurement_shift, termination=termination, excite=bool(excite))
+        record["tan_d_freq"] = tan_d_freq
+        validate_coax(record)
+        if not np.isfinite([eps_r, mu_r, tan_d]).all() or min(eps_r, mu_r) <= 0 or tan_d < 0:
+            raise ValueError("coaxial dielectric requires positive permittivity/permeability and nonnegative loss tangent")
+        if tan_d_freq is not None and (not np.isfinite(tan_d_freq) or tan_d_freq <= 0):
+            raise ValueError("coaxial dielectric loss reference frequency must be finite and positive")
+        if dielectric is None and (eps_r != 1 or mu_r != 1 or tan_d != 0):
+            raise ValueError("coaxial air filling requires eps_r=mu_r=1 and zero loss; name a dielectric for material filling")
+        record["R"] = float(376.730313668 / (2 * np.pi) * np.sqrt(mu_r / eps_r) * np.log(r_o / r_i))
+        record["normalization"] = "real lossless TEM reference; independent of feed termination"
+        names = (f"Coaxial port {number} conductor", f"Coaxial port {number} dielectric")
+        if any(self.csx.GetPropertiesByName(name) for name in names):
+            raise ValueError("coaxial generated property name already exists")
+        pec = self.metal(names[0])
+        pec.AddCylinder(start, stop, r_i, priority=5)
+        pec.AddCylindricalShell(start, stop, (r_o + r_os) / 2, r_os - r_o, priority=5)
+        props = [pec]
+        if dielectric is not None:
+            mat = self.dielectric(names[1], eps_r, tan_d=tan_d, tan_d_freq=tan_d_freq, mu_r=mu_r)
+            mat.AddCylindricalShell(start, stop, (r_i + r_o) / 2, r_o - r_i, priority=4)
+            props.append(mat)
+        self._pending_coax.append((len(self.ports), record, names, props))
+        self.ports.append(record)
+        self._port_objs.append(None)
+        return record
+
+    def finalize_coaxial_ports(self):
+        """Attach native TL probes after all mesh generation; fail before running unsupported input."""
+        from .coax import validate_mesh
+        pending = getattr(self, "_pending_coax", [])
+        planes = [validate_mesh(self, {k: v for k, v in record.items() if k != "R"}) for _, record, _, _ in pending]
+        for (index, record, names, props), plane in zip(pending, planes):
+            for prop in props:
+                self.csx.DeleteProperty(prop)
+            pec = self.metal(names[0])
+            mat = self.dielectric(names[1], record["eps_r"], tan_d=record["tan_d"], tan_d_freq=record["tan_d_freq"], mu_r=record["mu_r"]) if record["dielectric"] is not None else None
+            port = self.fdtd.AddCoaxialPort(record["number"], pec, mat, record["start"], record["stop"],
+                         record["direction"], record["r_i"], record["r_o"], record["r_os"],
+                         1.0 if record["excite"] else 0.0, priority=5, FeedShift=record["feed_shift"],
+                         MeasPlaneShift=record["measurement_shift"], Feed_R=0 if record["termination"] == "short" else np.inf)
+            record["reference_plane"] = plane
+            record["actual_measurement_shift"] = float(port.measplane_shift)
+            self._port_objs[index] = port
+        pending.clear()
+
     def lumped_resistor(self, name: str, R: float, start, stop, direction: str, label: str | None = None,
                         priority: int = 5):
         """A lumped resistor (openEMS LumpedElement, R only) across ``start``-``stop`` along
@@ -521,6 +590,9 @@ class Simulation:
         """
         if engine not in ("cpu", "gpu"):
             raise ValueError("engine must be 'cpu' or 'gpu'")
+        if engine != "cpu" and any(p.get("type") == "coaxial" for p in self.ports):
+            raise ValueError("experimental native coaxial ports currently support CPU runs only; CUDA/Metal excitation and probe parity is not qualified")
+        self.finalize_coaxial_ports()
         # refuse meshes that would exhaust memory (about 90 bytes per cell in the CPU engine)
         cells = int(np.prod([max(len(self.mesh.GetLines(a)) - 1, 1) for a in "xyz"]))
         limit = int(float(os.environ.get("FAIRBEAM_MAX_CELLS", 40e6)))
@@ -607,6 +679,10 @@ class Simulation:
         port = None
         for p_meta, p in zip(self.ports, self._port_objs):
             p.CalcPort(self.sim_path, f)
+            native_coax_z = None
+            if p_meta.get("type") == "coaxial":
+                native_coax_z = np.asarray(p.Z_ref, dtype=complex).copy()
+                p.CalcPort(self.sim_path, f, ref_impedance=p_meta["R"])
             factor = self._calibrate_waveguide_port(p_meta, p)
             s11 = p.uf_ref / p.uf_inc
             zin = p.uf_tot / p.if_tot
@@ -616,6 +692,9 @@ class Simulation:
                 "zin_re": _rf_values(zin.real), "zin_im": _rf_values(zin.imag), "z_ref": _zref_scalar(p.Z_ref, f),
                 **({"z_ref_f": _rf_values(np.real(p.Z_ref))} if np.ndim(p.Z_ref) else {}),
                 **({"probe_power_factor": round(factor, 4)} if factor is not None else {}),
+                **({"native_tem_z_re": _rf_values(native_coax_z.real), "native_tem_z_im": _rf_values(native_coax_z.imag),
+                    "reference_plane": p_meta["reference_plane"], "normalization": p_meta["normalization"]}
+                   if native_coax_z is not None else {}),
             }
             if "reference_impedance" in p_meta:
                 ref = p_meta["reference_impedance"]
@@ -872,6 +951,7 @@ class Simulation:
     # ------------------------------------------------------------------ export
 
     def to_bundle(self, model: dict, params: list[dict], name: str | None = None) -> dict:
+        self.finalize_coaxial_ports()
         from ._meta import BUNDLE_SCHEMA, __version__
         from .geometry import read_structure
         import CSXCAD

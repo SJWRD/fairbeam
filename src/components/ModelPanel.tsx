@@ -120,7 +120,7 @@ export default function ModelPanel() {
                       <span class="part-text">
                         <span class="part-name">{t("model.port", { n: port.number })}</span>
                         {(() => {
-                          const text = port.type === "waveguide"
+                          const text = port.type === "coaxial" ? t("model.coaxialPort", { dir: port.direction }) : port.type === "waveguide"
                             ? t("model.waveguidePort", { mode: port.mode ?? "TE10", z: fmt.num(port.R, 1), dir: port.direction })
                             : t("model.lumpedPort", { r: fmt.num(port.R, 6), dir: port.direction });
                           return <span class="part-sub" title={text}>{text}</span>;

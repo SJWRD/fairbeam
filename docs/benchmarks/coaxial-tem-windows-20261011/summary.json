@@ -1,0 +1,621 @@
+{
+  "runs": {
+    "through-coarse-real-reference": {
+      "case": "through",
+      "transverse_mm": 0.25,
+      "cells": 78400,
+      "complex_error": 0.11469029816164064,
+      "phase_error_deg": 6.574381613525533,
+      "magnitude_error_pct": 0.02367317572908867,
+      "max_reflection": 0.020302341420493267,
+      "power_excess": 0.0007098879763502985,
+      "converged": true,
+      "integrity": true,
+      "sha256": "585002c8daba05f6d4a479ae64a4b7307815d09ebb8b8b891be1a735177534c7",
+      "generator_sha256": "5d595591c340a69b012d95bb484e0680a23d665b3d86ef3e90735cb3b1165c08",
+      "parameters": null,
+      "native_z_real_range": [
+        68.41418648693438,
+        68.4214667236825
+      ],
+      "complex_csv": "through-coarse-real-reference.csv",
+      "source_csv_sha256": "dee4b214cf039748353e1d6a81aca2ee94a2df95659fff795af3d168b6ca08da"
+    },
+    "through-fine-real-reference": {
+      "case": "through",
+      "transverse_mm": 0.125,
+      "cells": 313600,
+      "complex_error": 0.062112936220216006,
+      "phase_error_deg": 3.559363224665707,
+      "magnitude_error_pct": 0.019930053934258396,
+      "max_reflection": 0.013380668298361058,
+      "power_excess": 0.00026969521167874433,
+      "converged": true,
+      "integrity": true,
+      "sha256": "bba73cfaae1d778a723f70c304a457fbc9476485c8c8b03311e46d1f3beb2ce3",
+      "generator_sha256": "5d595591c340a69b012d95bb484e0680a23d665b3d86ef3e90735cb3b1165c08",
+      "parameters": null,
+      "native_z_real_range": [
+        67.48721204215437,
+        67.49045464358022
+      ],
+      "complex_csv": "through-fine-real-reference.csv",
+      "source_csv_sha256": "f748203bad983e8b8e2c0afe1d22a62ae6d83cba7719f0434dfca9948c10b5a4"
+    },
+    "open-coarse-real-reference": {
+      "case": "open",
+      "transverse_mm": 0.25,
+      "cells": 78400,
+      "complex_error": 0.28595279061999124,
+      "phase_error_deg": 16.45304048504793,
+      "magnitude_error_pct": 0.2002018484032031,
+      "max_reflection": 1.0005760309251777,
+      "power_excess": 0.001152393661982165,
+      "converged": true,
+      "integrity": true,
+      "sha256": "e68750a6558036a7ad6e1998e9446437970c92b8976900f619ea6dc474acb83c",
+      "generator_sha256": "5d595591c340a69b012d95bb484e0680a23d665b3d86ef3e90735cb3b1165c08",
+      "parameters": null,
+      "native_z_real_range": [
+        66.82426822618267,
+        69.57153717311652
+      ],
+      "complex_csv": "open-coarse-real-reference.csv",
+      "source_csv_sha256": "01d59935e37f1b920af95c25d94656f1f8611b6e67f306dd980bac89e0a28dd4"
+    },
+    "open-fine-v2": {
+      "case": "open",
+      "transverse_mm": 0.125,
+      "cells": 313600,
+      "complex_error": 0.1418126287588356,
+      "phase_error_deg": 8.133514876720215,
+      "magnitude_error_pct": 0.14722132639959362,
+      "max_reflection": 1.000441388064834,
+      "power_excess": 0.0008829709530917551,
+      "converged": true,
+      "integrity": true,
+      "sha256": "2d916ea24b032254ad60dfba88bb2825596c89f97acce10bbf10729270adaf7f",
+      "generator_sha256": "9a4790e5e884a691f2cab0a7eccf9a07c0854d7f19a93ef540586000684c004d",
+      "parameters": {
+        "case": "open",
+        "step": 0.125,
+        "axial_step": 1.0,
+        "eps": 1.0,
+        "axis": "z",
+        "reverse": false,
+        "measurement": 25.0,
+        "pml": 8,
+        "end_db": -50.0,
+        "max_steps": 90000
+      },
+      "native_z_real_range": [
+        66.3499539260167,
+        70.36761428015915
+      ],
+      "complex_csv": "open-fine-v2.csv",
+      "source_csv_sha256": "b469dbfdb7b5fe3e4f5c21402aed36f5b6ee6b5f74ecfc6bb123b8868be0b18c"
+    },
+    "through-axial-v2": {
+      "case": "through",
+      "transverse_mm": 0.125,
+      "cells": 627200,
+      "complex_error": 0.061994823136140166,
+      "phase_error_deg": 3.552812345306458,
+      "magnitude_error_pct": 0.024606943336835663,
+      "max_reflection": 0.01341897113183115,
+      "power_excess": 0.0006064569845489753,
+      "converged": true,
+      "integrity": true,
+      "sha256": "c7af47a5db2c47b147b04f1a125d5e12b521787cc4d8ff2852f0e1760c18cc3c",
+      "generator_sha256": "9a4790e5e884a691f2cab0a7eccf9a07c0854d7f19a93ef540586000684c004d",
+      "parameters": {
+        "case": "through",
+        "step": 0.125,
+        "axial_step": 0.5,
+        "eps": 1.0,
+        "axis": "z",
+        "reverse": false,
+        "measurement": 25.0,
+        "pml": 8,
+        "end_db": -50.0,
+        "max_steps": 90000
+      },
+      "native_z_real_range": [
+        67.47808928720015,
+        67.49420309715074
+      ],
+      "complex_csv": "through-axial-v2.csv",
+      "source_csv_sha256": "018ccab5835187d1a15e6fc3ce74acb0c71e5494e5cf9949b48cc592f6c4c57d"
+    },
+    "through-cellconstant-v2": {
+      "case": "through",
+      "transverse_mm": 0.25,
+      "cells": 78400,
+      "complex_error": 0.11469029816164064,
+      "phase_error_deg": 6.574381613525533,
+      "magnitude_error_pct": 0.02367317572908867,
+      "max_reflection": 0.020302341420493267,
+      "power_excess": 0.0007098879763502985,
+      "converged": true,
+      "integrity": true,
+      "sha256": "585002c8daba05f6d4a479ae64a4b7307815d09ebb8b8b891be1a735177534c7",
+      "generator_sha256": "5a8006815aec8eeefd7cc5646c005f1fa6c5cb39ee2b5117cf9c65b74b6d4900",
+      "parameters": {
+        "case": "through",
+        "step": 0.25,
+        "axial_step": 1.0,
+        "eps": 1.0,
+        "axis": "z",
+        "reverse": false,
+        "measurement": 25.0,
+        "pml": 8,
+        "end_db": -50.0,
+        "max_steps": 90000,
+        "cell_constant": true
+      },
+      "native_z_real_range": [
+        68.41418648693438,
+        68.4214667236825
+      ],
+      "complex_csv": "through-cellconstant-v2.csv",
+      "source_csv_sha256": "dee4b214cf039748353e1d6a81aca2ee94a2df95659fff795af3d168b6ca08da"
+    },
+    "through-refined-v2": {
+      "case": "through",
+      "transverse_mm": 0.0625,
+      "cells": 1254400,
+      "complex_error": 0.033886390582788084,
+      "phase_error_deg": 1.9417552700721192,
+      "magnitude_error_pct": 0.02726391934633199,
+      "max_reflection": 0.007447903364411154,
+      "power_excess": 0.0005709824170929689,
+      "converged": true,
+      "integrity": true,
+      "sha256": "923890af2fa6985e770283f8ddc65c1ff28766a3806a3b03f0f131bae3bc2979",
+      "generator_sha256": "5a8006815aec8eeefd7cc5646c005f1fa6c5cb39ee2b5117cf9c65b74b6d4900",
+      "parameters": {
+        "case": "through",
+        "step": 0.0625,
+        "axial_step": 1.0,
+        "eps": 1.0,
+        "axis": "z",
+        "reverse": false,
+        "measurement": 25.0,
+        "pml": 8,
+        "end_db": -50.0,
+        "max_steps": 90000,
+        "cell_constant": false
+      },
+      "native_z_real_range": [
+        66.6934495983637,
+        66.7010597538746
+      ],
+      "complex_csv": "through-refined-v2.csv",
+      "source_csv_sha256": "b4c33c6bcdb28a7e55fd904ea2b2b714bfc5282f5a0d45e4b38dc9960bca431c"
+    },
+    "through-native-v3": {
+      "case": "through",
+      "transverse_mm": 0.25,
+      "cells": 78400,
+      "complex_error": 0.11469029816164064,
+      "phase_error_deg": 6.574381613525533,
+      "magnitude_error_pct": 0.02367317572908867,
+      "max_reflection": 0.020302341420493267,
+      "power_excess": 0.0007098879763502985,
+      "converged": true,
+      "integrity": true,
+      "sha256": "71635a8a3d3641aa922b72a41cff33d5dcd5f93d0ffeb65fe798312a4dbe8c88",
+      "generator_sha256": "bb1ed5d68db83d01a330db0d82b9839c9eaa1ea6f2ad22efeaa67fbbcf73d409",
+      "parameters": {
+        "case": "through",
+        "step": 0.25,
+        "axial_step": 1.0,
+        "eps": 1.0,
+        "axis": "z",
+        "reverse": false,
+        "measurement": 25.0,
+        "pml": 8,
+        "end_db": -50.0,
+        "max_steps": 90000,
+        "cell_constant": false,
+        "native": true,
+        "drive": 1,
+        "staircase_control": false
+      },
+      "native_z_real_range": [
+        68.41418648693438,
+        68.4214667236825
+      ],
+      "complex_csv": "through-native-v3.csv",
+      "source_csv_sha256": "1bb39c0b9914e31b02ff7bbf0e7d319ea7d4961af85d5710476139e6d97ec588"
+    },
+    "through-staircase-v3": {
+      "case": "through",
+      "transverse_mm": 0.25,
+      "cells": 78400,
+      "complex_error": 0.004387574484715752,
+      "phase_error_deg": 0.2494900703889951,
+      "magnitude_error_pct": 0.3776332610084032,
+      "max_reflection": 0.04877482248085615,
+      "power_excess": 0.0039031243338500943,
+      "converged": true,
+      "integrity": true,
+      "sha256": "0b8a5d39f1ac5bc538149b5c5f271e11386e7a60bd78718de33c487e22a4bddb",
+      "generator_sha256": "bb1ed5d68db83d01a330db0d82b9839c9eaa1ea6f2ad22efeaa67fbbcf73d409",
+      "parameters": {
+        "case": "through",
+        "step": 0.25,
+        "axial_step": 1.0,
+        "eps": 1.0,
+        "axis": "z",
+        "reverse": false,
+        "measurement": 25.0,
+        "pml": 8,
+        "end_db": -50.0,
+        "max_steps": 90000,
+        "cell_constant": false,
+        "native": false,
+        "drive": 1,
+        "staircase_control": true
+      },
+      "native_z_real_range": [
+        59.88322537160443,
+        59.90431451659547
+      ],
+      "complex_csv": "through-staircase-v3.csv",
+      "source_csv_sha256": "03311ac9c8d6d75e485da3c04faeac21d6bb0be17cfebbb21dfbaddde8d7bccc"
+    },
+    "short-fine-v3": {
+      "case": "short",
+      "transverse_mm": 0.125,
+      "cells": 313600,
+      "complex_error": 0.18928999169233526,
+      "phase_error_deg": 10.859428578550856,
+      "magnitude_error_pct": 0.14197663415688178,
+      "max_reflection": 1.0004299367293406,
+      "power_excess": 0.000860058304272382,
+      "converged": true,
+      "integrity": true,
+      "sha256": "3ddccb701fe3aa6eedb03a77d16eb8d54aec0bba91450f241c58475085515e0e",
+      "generator_sha256": "bb1ed5d68db83d01a330db0d82b9839c9eaa1ea6f2ad22efeaa67fbbcf73d409",
+      "parameters": {
+        "case": "short",
+        "step": 0.125,
+        "axial_step": 1.0,
+        "eps": 1.0,
+        "axis": "z",
+        "reverse": false,
+        "measurement": 25.0,
+        "pml": 8,
+        "end_db": -50.0,
+        "max_steps": 90000,
+        "cell_constant": false,
+        "native": false,
+        "drive": 1,
+        "staircase_control": false
+      },
+      "native_z_real_range": [
+        66.70320512945672,
+        80.79731644648238
+      ],
+      "complex_csv": "short-fine-v3.csv",
+      "source_csv_sha256": "1af32cfcb69c78cad9d8ec15e36bb4b123cd59888be370f6c7f2fe598dbc51f7"
+    },
+    "filled-fine-v3": {
+      "case": "through",
+      "transverse_mm": 0.125,
+      "cells": 313600,
+      "complex_error": 0.08285471711919577,
+      "phase_error_deg": 4.748357882990992,
+      "magnitude_error_pct": 0.1511245212963419,
+      "max_reflection": 0.015068816709417973,
+      "power_excess": 0.0009574635466569337,
+      "converged": true,
+      "integrity": true,
+      "sha256": "fe133e9814356ee9db6bc8b446bcf9f0e7dc518461431b917307a5e89d53c0ed",
+      "generator_sha256": "bb1ed5d68db83d01a330db0d82b9839c9eaa1ea6f2ad22efeaa67fbbcf73d409",
+      "parameters": {
+        "case": "through",
+        "step": 0.125,
+        "axial_step": 1.0,
+        "eps": 2.1,
+        "axis": "z",
+        "reverse": false,
+        "measurement": 25.0,
+        "pml": 8,
+        "end_db": -50.0,
+        "max_steps": 90000,
+        "cell_constant": false,
+        "native": false,
+        "drive": 1,
+        "staircase_control": false
+      },
+      "native_z_real_range": [
+        46.64478545456066,
+        46.65903969588975
+      ],
+      "complex_csv": "filled-fine-v3.csv",
+      "source_csv_sha256": "e8478035f284237638ead2cc2607481fcab96aa29ea677b8afbfa409a492abb2"
+    },
+    "through-plane-v3": {
+      "case": "through",
+      "transverse_mm": 0.125,
+      "cells": 313600,
+      "complex_error": 0.04981665529164966,
+      "phase_error_deg": 2.8546816751325537,
+      "magnitude_error_pct": 0.013642537217173345,
+      "max_reflection": 0.013050141668238951,
+      "power_excess": 0.00036173014267881776,
+      "converged": true,
+      "integrity": true,
+      "sha256": "5b661610a69cf409f53e7b4a6948d9b7671a0435c9254fb890e1bacb10994c42",
+      "generator_sha256": "5e86e617e1e2efbc1d71a02f4dcf1b942814b500853f4a4f1b85a7ae9a74795b",
+      "parameters": {
+        "case": "through",
+        "step": 0.125,
+        "axial_step": 1.0,
+        "eps": 1.0,
+        "axis": "z",
+        "reverse": false,
+        "measurement": 30.0,
+        "pml": 8,
+        "end_db": -50.0,
+        "max_steps": 90000,
+        "cell_constant": false,
+        "native": false,
+        "drive": 1,
+        "staircase_control": false
+      },
+      "native_z_real_range": [
+        67.4828529859553,
+        67.48978334929699
+      ],
+      "complex_csv": "through-plane-v3.csv",
+      "source_csv_sha256": "8f5b2d57d3511343ae3ea400cb6a734faff123dbe7974a91aaef539930714bae"
+    },
+    "through-pml-v3": {
+      "case": "through",
+      "transverse_mm": 0.125,
+      "cells": 313600,
+      "complex_error": 0.06209674465195716,
+      "phase_error_deg": 3.558412931270396,
+      "magnitude_error_pct": 0.01890590441205875,
+      "max_reflection": 0.012377055155772532,
+      "power_excess": 0.00026152081717567555,
+      "converged": true,
+      "integrity": true,
+      "sha256": "ecdafe8f34fe906ee579e77f5fb3a74c60815b564bb54f09e457c46f5a0ffb26",
+      "generator_sha256": "5e86e617e1e2efbc1d71a02f4dcf1b942814b500853f4a4f1b85a7ae9a74795b",
+      "parameters": {
+        "case": "through",
+        "step": 0.125,
+        "axial_step": 1.0,
+        "eps": 1.0,
+        "axis": "z",
+        "reverse": false,
+        "measurement": 25.0,
+        "pml": 10,
+        "end_db": -50.0,
+        "max_steps": 90000,
+        "cell_constant": false,
+        "native": false,
+        "drive": 1,
+        "staircase_control": false
+      },
+      "native_z_real_range": [
+        67.48690321216209,
+        67.48995306615842
+      ],
+      "complex_csv": "through-pml-v3.csv",
+      "source_csv_sha256": "1f25b0441f250e8805883b5d0a396c5c5a3e48e231f10f28feb8282ebdd1301d"
+    },
+    "through-x-reverse-v3": {
+      "case": "through",
+      "transverse_mm": 0.125,
+      "cells": 313600,
+      "complex_error": 0.06211297787387368,
+      "phase_error_deg": 3.5593666063328584,
+      "magnitude_error_pct": 0.019944531819249267,
+      "max_reflection": 0.013381156003616721,
+      "power_excess": 0.00026988444970732495,
+      "converged": true,
+      "integrity": true,
+      "sha256": "59269459e27d0a8b7c51cd1f66748e5f9c4dfd376bf1e34bb97e49b4f9052dd7",
+      "generator_sha256": "65723fd630aea1a7ba10f216ff6db56e2616fb84e9fe8f002d84aa0990039b55",
+      "parameters": {
+        "case": "through",
+        "step": 0.125,
+        "axial_step": 1.0,
+        "eps": 1.0,
+        "axis": "x",
+        "reverse": true,
+        "measurement": 25.0,
+        "pml": 8,
+        "end_db": -50.0,
+        "max_steps": 90000,
+        "cell_constant": false,
+        "native": false,
+        "drive": 1,
+        "staircase_control": false
+      },
+      "native_z_real_range": [
+        67.48702038673188,
+        67.48950977191585
+      ],
+      "complex_csv": "through-x-reverse-v3.csv",
+      "source_csv_sha256": "da0c22a695424e29388793f22b7220cf3ebdcc8aa9dbdf359c2d5a175cd8ee0c"
+    },
+    "through-forward-v3": {
+      "case": "through",
+      "transverse_mm": 0.125,
+      "cells": 313600,
+      "complex_error": 0.062112936220216006,
+      "phase_error_deg": 3.559363224665707,
+      "magnitude_error_pct": 0.019930053934258396,
+      "max_reflection": 0.013380668298361058,
+      "power_excess": 0.00026969521167874433,
+      "converged": true,
+      "integrity": true,
+      "sha256": "388afc1cddf0d7cac5e4e626ea4d427e9d730677c20dc34a5a802aa8af2ac6c1",
+      "generator_sha256": "65723fd630aea1a7ba10f216ff6db56e2616fb84e9fe8f002d84aa0990039b55",
+      "parameters": {
+        "case": "through",
+        "step": 0.125,
+        "axial_step": 1.0,
+        "eps": 1.0,
+        "axis": "z",
+        "reverse": false,
+        "measurement": 25.0,
+        "pml": 8,
+        "end_db": -50.0,
+        "max_steps": 90000,
+        "cell_constant": false,
+        "native": false,
+        "drive": 1,
+        "staircase_control": false
+      },
+      "native_z_real_range": [
+        67.48721204215437,
+        67.49045464358022
+      ],
+      "complex_csv": "through-forward-v3.csv",
+      "source_csv_sha256": "14467f8c6251317a8597dcaabe359c02eab91e8043474fd28421247344fff4fa"
+    },
+    "through-drive2-v3": {
+      "case": "through",
+      "transverse_mm": 0.125,
+      "cells": 313600,
+      "complex_error": 0.06211297787387368,
+      "phase_error_deg": 3.5593666063328584,
+      "magnitude_error_pct": 0.019944531819249267,
+      "max_reflection": 0.013381156003616721,
+      "power_excess": 0.00026988444970732495,
+      "converged": true,
+      "integrity": true,
+      "sha256": "59269459e27d0a8b7c51cd1f66748e5f9c4dfd376bf1e34bb97e49b4f9052dd7",
+      "generator_sha256": "65723fd630aea1a7ba10f216ff6db56e2616fb84e9fe8f002d84aa0990039b55",
+      "parameters": {
+        "case": "through",
+        "step": 0.125,
+        "axial_step": 1.0,
+        "eps": 1.0,
+        "axis": "z",
+        "reverse": false,
+        "measurement": 25.0,
+        "pml": 8,
+        "end_db": -50.0,
+        "max_steps": 90000,
+        "cell_constant": false,
+        "native": false,
+        "drive": 2,
+        "staircase_control": false
+      },
+      "native_z_real_range": [
+        67.48702038673188,
+        67.48950977191585
+      ],
+      "complex_csv": "through-drive2-v3.csv",
+      "source_csv_sha256": "da0c22a695424e29388793f22b7220cf3ebdcc8aa9dbdf359c2d5a175cd8ee0c"
+    }
+  },
+  "comparisons": {
+    "through-coarse-real-reference vs through-native-v3": {
+      "max_complex_delta": 0.0
+    },
+    "through-fine-real-reference vs through-axial-v2": {
+      "max_complex_delta": 0.00018934012156287996
+    },
+    "through-coarse-real-reference vs through-fine-real-reference": {
+      "max_complex_delta": 0.05262029317820976
+    },
+    "through-fine-real-reference vs through-refined-v2": {
+      "max_complex_delta": 0.028230264564107717
+    },
+    "through-fine-real-reference vs through-pml-v3": {
+      "max_complex_delta": 2.714058732692099e-05
+    },
+    "through-fine-real-reference vs through-x-reverse-v3": {
+      "max_complex_delta": 1.3595707630419262e-06
+    },
+    "measurement plane transport using analytical beta": {
+      "max_complex_delta": 0.012298831482255019
+    },
+    "measurement plane transport using measured numerical beta": {
+      "max_complex_delta": 0.0001295450283118824,
+      "scope": "Numerical self-consistency only; not analytical accuracy"
+    }
+  },
+  "full_matrix": {
+    "max_power_eigenvalue": 1.0001101115973263,
+    "reciprocity_error": 1.333204083947666e-06,
+    "transmission_complex_error": 0.06194597342848819,
+    "max_reflection": 0.024371346824900008,
+    "max_incident_condition": 1.0159502397137923
+  },
+  "merge_recommendation": "keep draft: reflected and filled-line controls fail the predeclared analytical gate; last transverse refinement also exceeds the convergence limit",
+  "scope": "Synthetic lossless uniform PEC coax on Windows CPU. Not measured hardware or macOS/GPU qualification.",
+  "thresholds": {
+    "complex_error": 0.05,
+    "magnitude_error_pct": 1,
+    "power_excess": 0.01,
+    "mesh_delta": 0.025,
+    "nuisance_delta": 0.005
+  },
+  "schema": "fairbeam.coaxial-controls/1",
+  "date": "2026-10-11",
+  "runtime": "openEMS Python 0.37.0rc3",
+  "ports_module_sha256": "0daec44373d6a06395f1c47b252b004df4e99ee2fca5525b486e934451dcc1c1",
+  "hardware": "AMD Ryzen 9 7900X, Windows, CPU engine, two threads",
+  "timing_scope": "Not a performance benchmark; other local regression checks ran concurrently.",
+  "artifact_sha256": {
+    "convergence.png": "3b3c32fe4d19aecc9be34094dc21224d8377957b610b37e7218b62e4c12110ad",
+    "filled-fine-v3.csv": "fe133e9814356ee9db6bc8b446bcf9f0e7dc518461431b917307a5e89d53c0ed",
+    "full-s.csv": "cc609f8c3b3f242c2162d89bd5487a12ae19043e106cb481de9c2a58823ddd1d",
+    "open-coarse-real-reference.csv": "e68750a6558036a7ad6e1998e9446437970c92b8976900f619ea6dc474acb83c",
+    "open-fine-v2.csv": "2d916ea24b032254ad60dfba88bb2825596c89f97acce10bbf10729270adaf7f",
+    "short-fine-v3.csv": "3ddccb701fe3aa6eedb03a77d16eb8d54aec0bba91450f241c58475085515e0e",
+    "through-axial-v2.csv": "c7af47a5db2c47b147b04f1a125d5e12b521787cc4d8ff2852f0e1760c18cc3c",
+    "through-cellconstant-v2.csv": "585002c8daba05f6d4a479ae64a4b7307815d09ebb8b8b891be1a735177534c7",
+    "through-coarse-real-reference.csv": "585002c8daba05f6d4a479ae64a4b7307815d09ebb8b8b891be1a735177534c7",
+    "through-drive2-v3-waves.npz": "3068e66553508ae30b2f271bc9f89ccd3af5caf534898823b358d9132166a074",
+    "through-drive2-v3.csv": "59269459e27d0a8b7c51cd1f66748e5f9c4dfd376bf1e34bb97e49b4f9052dd7",
+    "through-fine-real-reference.csv": "bba73cfaae1d778a723f70c304a457fbc9476485c8c8b03311e46d1f3beb2ce3",
+    "through-forward-v3-waves.npz": "1e0f9810ac97ed58b524945c7edd5e848ebb9304cfd525ca438d0efd037c845d",
+    "through-forward-v3.csv": "388afc1cddf0d7cac5e4e626ea4d427e9d730677c20dc34a5a802aa8af2ac6c1",
+    "through-native-v3.csv": "71635a8a3d3641aa922b72a41cff33d5dcd5f93d0ffeb65fe798312a4dbe8c88",
+    "through-plane-v3.csv": "5b661610a69cf409f53e7b4a6948d9b7671a0435c9254fb890e1bacb10994c42",
+    "through-pml-v3.csv": "ecdafe8f34fe906ee579e77f5fb3a74c60815b564bb54f09e457c46f5a0ffb26",
+    "through-refined-v2.csv": "923890af2fa6985e770283f8ddc65c1ff28766a3806a3b03f0f131bae3bc2979",
+    "through-staircase-v3.csv": "0b8a5d39f1ac5bc538149b5c5f271e11386e7a60bd78718de33c487e22a4bddb",
+    "through-x-reverse-v3.csv": "59269459e27d0a8b7c51cd1f66748e5f9c4dfd376bf1e34bb97e49b4f9052dd7"
+  },
+  "software_checks": {
+    "python": {
+      "run": 1945,
+      "skipped": 9,
+      "failed": 0
+    },
+    "general_browser": {
+      "steps": 232,
+      "failed": 0
+    },
+    "coax_browser": {
+      "steps": 8,
+      "failed": 0
+    },
+    "targeted_coax_backend": {
+      "tests": 13,
+      "failed": 0
+    },
+    "static": [
+      "typecheck",
+      "designer",
+      "exports",
+      "legal",
+      "i18n",
+      "check-text",
+      "coaxial TS contract"
+    ]
+  },
+  "text_encoding": "UTF-8, LF in repository; source_csv_sha256 retains original Windows export byte hash; numeric samples unchanged."
+}

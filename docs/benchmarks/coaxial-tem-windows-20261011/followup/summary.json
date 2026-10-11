@@ -1,0 +1,91 @@
+{
+  "status": "not_qualified",
+  "records": {
+    "through-offset-half-v4": {
+      "step_mm": 0.25,
+      "threads": 2,
+      "cells": 90000,
+      "complex_error": 0.10725165789565458,
+      "phase_error_deg": 6.1475863304807,
+      "magnitude_error": 0.00023544153069254836,
+      "impedance_relative_error": 0.04640774521033836,
+      "impedance_real_range": [
+        68.92255775877656,
+        68.92806632148721
+      ],
+      "nominal_z0_ohm": 65.87113571782275,
+      "energy_converged": true,
+      "geometry_diagnostic": false,
+      "generator_sha256": "329f0efe5fea64f407a93d8b7259be1859d47280e44ec29d844aff52d7c4d63d",
+      "source_csv_sha256": "dfec4630875a137662e8cbe88fb7e832ec38690d8bb343c32d13b6cf29a230f7",
+      "model_xml_sha256": "26d46d77a6662738dbb50e1b2fa4ad2180cc25b6fb734db08c12651e0ca6ff44",
+      "published_csv_sha256": "6f51c2de0c09f2bb662fa46a2fe904c3d4fa490a7e9ab22e0ddf864b027946a7"
+    },
+    "through-offset-quarter-v4": {
+      "step_mm": 0.25,
+      "threads": 2,
+      "cells": 90000,
+      "complex_error": 0.14432639311527196,
+      "phase_error_deg": 8.275714968481376,
+      "magnitude_error": 0.000249118438294893,
+      "impedance_relative_error": 0.02823925886078539,
+      "impedance_real_range": [
+        67.71647863224517,
+        67.73128678738904
+      ],
+      "nominal_z0_ohm": 65.87113571782275,
+      "energy_converged": true,
+      "geometry_diagnostic": false,
+      "generator_sha256": "329f0efe5fea64f407a93d8b7259be1859d47280e44ec29d844aff52d7c4d63d",
+      "source_csv_sha256": "0123e9d885cae8219722fcb47975f088792b84587c7c35f94a1bc15f43cdba3a",
+      "model_xml_sha256": "2692a7b7bb5c65fae0f234923149d79cc23c921437e6b290c2a3bfe5c86a44a0",
+      "published_csv_sha256": "ec8a129178539296ec2df5911fc812c407a5430f978218c3a07ff2cb01ba22b6"
+    },
+    "through-staircase-fine-v4": {
+      "step_mm": 0.125,
+      "threads": 2,
+      "cells": 313600,
+      "complex_error": 0.004572813458177729,
+      "phase_error_deg": 0.25871612418589657,
+      "magnitude_error": 0.003841907010350143,
+      "impedance_relative_error": 0.05363844188643867,
+      "impedance_real_range": [
+        62.3379132484333,
+        62.38333237590119
+      ],
+      "nominal_z0_ohm": 65.87113571782275,
+      "energy_converged": true,
+      "geometry_diagnostic": true,
+      "generator_sha256": "28b44b97f04b5e65e064caa40672b8c72665d16405b605184594688ce5cc3b26",
+      "source_csv_sha256": "1eb6856658e8419e33ffbf8c4d72329c998c6876b9f7881e75703454d1194140",
+      "model_xml_sha256": "5db6271a3ecdc84d7160cbe15b31714acd2b7fed8e05f6b7b36bc1f874d331ad",
+      "published_csv_sha256": "5293fb30894418a5d2a0abae255d8ea0b7daa60df29fbf7101821f0096214a11"
+    },
+    "through-staircase-refined-v4": {
+      "step_mm": 0.0625,
+      "threads": 6,
+      "cells": 1254400,
+      "complex_error": 0.004705016785696292,
+      "phase_error_deg": 0.2630394789843098,
+      "magnitude_error": 0.0037414196939017375,
+      "impedance_relative_error": 0.024156748528880546,
+      "impedance_real_range": [
+        64.27992875051766,
+        64.30591902961251
+      ],
+      "nominal_z0_ohm": 65.87113571782275,
+      "energy_converged": true,
+      "geometry_diagnostic": true,
+      "generator_sha256": "28b44b97f04b5e65e064caa40672b8c72665d16405b605184594688ce5cc3b26",
+      "source_csv_sha256": "20cdd12f1cfe569e983437a9958aeed3c899e126c3a26bb97e69d7d65781c5be",
+      "model_xml_sha256": "a986c7a8d59acb45519a4d06e4146b5a17001196bd13b554cd17eb39f61c8139",
+      "published_csv_sha256": "4a630ee1c3580a19207feb59a25814d4fa2a8bc02b0948e26b1d03e6d83fadfb"
+    }
+  },
+  "native_dll_sha256": {
+    "openEMS.dll": "848f1f0bbb09706d8d25bac6c1c623d3c04f56eceac63c5114a3b58ed258bb77",
+    "CSXCAD.dll": "acc1bc60a06b8848fa3d12a0e8a72a1898f50f8bae6a38becc3297b2b1e65358"
+  },
+  "runtime_observation": "Actual Windows process modules in the refined diagnostic matched retained original-distribution binaries. See private runtime-observation-v4.json.",
+  "caveat": "Staircase controls replace the curved cross-section by a mesh-dependent polygon and are not production geometry. Thread count differs on the finest case, so timings are not a benchmark. Failed original gates remain unresolved."
+}

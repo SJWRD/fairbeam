@@ -223,7 +223,7 @@ DISC_MAX_SEGMENTS = 512
 TRANSFORMS = ("move", "translate", "mirror", "rotate", "scale")
 AXES = ("x", "y", "z")
 CUT_SHAPES = ("rect", "circle", "polygon")
-PORT_TYPES = ("lumped", "waveguide")
+PORT_TYPES = ("lumped", "waveguide", "coaxial")
 WG_MODE = re.compile(r"TE(\d)(\d)")
 # upper bounds on what transforms may expand to (a typo like 1000 copies must not hang the preview)
 MAX_COPIES = 1000
@@ -566,7 +566,10 @@ def check_design(d: dict) -> None:
         w = f"ports[{i}]"
         check_port_group(po, w)
         if po.get("type", "lumped") not in PORT_TYPES:
-            raise DesignError("a port is 'lumped' or 'waveguide'", f"{w}.type")
+            raise DesignError("a port is 'lumped', 'waveguide' or 'coaxial'", f"{w}.type")
+        if po.get("type") == "coaxial":
+            for key in ("r_i", "r_o", "r_os", "measurement_shift", "conductor"):
+                _need(po, key, w)
         if "reference_impedance" in po:
             ref = po["reference_impedance"]
             if not isinstance(ref, dict) or set(ref) != {"real", "imag"}:
@@ -2811,9 +2814,24 @@ def build(d: dict, values: dict):
     for i, po in enumerate(d.get("ports", [])):
         w = f"ports[{i}]"
         a, c = vec(po.get("start"), f"{w}.start"), vec(po.get("stop"), f"{w}.stop")
-        if po.get("type") != "waveguide":
+        if po.get("type") not in ("waveguide", "coaxial"):
             a, c = snap_to_sheets(a, c, AXES.index(po["direction"]), sheets)
-        if po.get("type") == "waveguide":
+        if po.get("type") == "coaxial":
+            from .coax import resolved_coax
+            try:
+                cp = resolved_coax(po, d.get("materials", []), num)
+                sim.coaxial_port(cp["number"], a, c, cp["direction"], cp["r_i"], cp["r_o"], cp["r_os"],
+                                 **{key: cp[key] for key in ("conductor", "dielectric", "eps_r", "mu_r", "tan_d", "tan_d_freq", "feed_shift", "measurement_shift", "termination", "excite") if key in cp})
+            except ValueError as error:
+                raise DesignError(str(error), w) from error
+            axis = AXES.index(cp["direction"])
+            lower, upper = [min(x, y) for x, y in zip(a, c)], [max(x, y) for x, y in zip(a, c)]
+            for k in range(3):
+                if k != axis:
+                    lower[k] -= cp["r_os"]
+                    upper[k] += cp["r_os"]
+            grow(lower, upper)
+        elif po.get("type") == "waveguide":
             m, n = wg_mode(po.get("mode", "TE10"), f"{w}.mode")
             wa, wb = num(po.get("a"), f"{w}.a"), num(po.get("b"), f"{w}.b")
             if wa <= 0 or wb <= 0:
@@ -2877,7 +2895,7 @@ def build(d: dict, values: dict):
         for i, po in enumerate(d.get("ports", [])):
             for w, member in port_feeds(po, f"ports[{i}]"):
                 a, c = vec(member.get("start"), f"{w}.start"), vec(member.get("stop"), f"{w}.stop")
-                if po.get("type") != "waveguide":
+                if po.get("type") not in ("waveguide", "coaxial"):
                     a, c = snap_to_sheets(a, c, AXES.index(member["direction"]), sheets)
                 for label, point in (("start", a), ("stop", c)):
                     for ax, name in enumerate(AXES):
@@ -2986,6 +3004,8 @@ def build(d: dict, values: dict):
             report["settings"]["mode"] = "design"
             report["notes"] = notes
     sim.set_focus(lo.tolist(), hi.tolist())
+    if any(p.get("type") == "coaxial" for p in d.get("ports", [])):
+        sim.finalize_coaxial_ports()
     if s.get("max_timesteps") in (None, "auto"):
         # no limit was chosen: cover the excitation pulse and its decay (it was a fixed 60000, which a
         # mesh with tiny cells spent on the pulse alone)
@@ -3263,6 +3283,15 @@ def to_python(d: dict) -> str:
     """The design as an equivalent Python model file (one-way: for moving on to code). Thin metal
     is written as the sheets the build makes of it (``thin_sheets``, at the default values)."""
     check_design(d)
+    if any(p.get("type") == "coaxial" for p in d.get("ports", [])):
+        from .coax import resolved_coax
+        coax_num, _ = _evaluator(resolve_names(d, {}))
+        for i, port in enumerate(d.get("ports", [])):
+            if port.get("type") == "coaxial":
+                try:
+                    resolved_coax(port, d.get("materials", []), coax_num)
+                except ValueError as error:
+                    raise DesignError(str(error), f"ports[{i}]") from error
     require_safe_sheet_transforms(d, resolve_names(d, {}))
     guard_materials = [mt for mt in d.get("materials", []) if mt.get("kind") == "metal"]
     guard_names = {mt["name"] for mt in guard_materials}
@@ -3537,6 +3566,14 @@ def to_python(d: dict) -> str:
                     emit_primitive(f"{var}.AddLinPoly(np.array({pts}).T, {normal!r}, {elev}, {length}, priority={prio})")
     for po in d.get("ports", []):
         exc = "" if po.get("excite", True) else ", excite=False"
+        if po.get("type") == "coaxial":
+            mt = next((m for m in d.get("materials", []) if m.get("name") == po.get("dielectric")), {})
+            out.append(f"    sim.coaxial_port({po['number']}, {vec(po['start'])}, {vec(po['stop'])}, {po['direction']!r}, "
+                       f"{e(po['r_i'])}, {e(po['r_o'])}, {e(po['r_os'])}, conductor={po['conductor']!r}, "
+                       f"dielectric={po.get('dielectric')!r}, eps_r={e(mt.get('eps_r', 1))}, mu_r={e(mt.get('mu_r', 1))}, "
+                       f"tan_d={e(mt.get('tan_d', 0))}, tan_d_freq={('(' + e(mt['tan_d_freq']) + ') * 1e9') if mt.get('tan_d_freq') is not None else 'None'}, feed_shift={e(po.get('feed_shift', 0))}, "
+                       f"measurement_shift={e(po['measurement_shift'])}, termination={po.get('termination', 'open')!r}{exc})")
+            continue
         if po.get("type") == "waveguide":
             out.append(f"    sim.waveguide_port({po['number']}, {vec(po['start'])}, {vec(po['stop'])}, {po['direction']!r}, "
                        f"{e(po['a'])}, {e(po['b'])}, {po.get('mode', 'TE10')!r}{exc})")

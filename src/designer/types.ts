@@ -106,7 +106,7 @@ export type DesignCut = RectCut | CircleCut | PolygonCut;
  * waveguide port (one TE mode, broad wall a along (direction+1)%3, b along (direction+2)%3; start /
  * stop span the cross-section, the excitation at start, the mode probes at stop). */
 export interface DesignPort {
-  type: "lumped" | "waveguide";
+  type: "lumped" | "waveguide" | "coaxial";
   number: number;
   /** lumped only */
   R?: Expr;
@@ -114,6 +114,15 @@ export interface DesignPort {
   reference_impedance?: { real: Expr; imag: Expr };
   /** waveguide only: "TE10" (default), "TE20", "TE11", … */
   mode?: string;
+  /** Native axial TEM coaxial port; radii and shifts are in mm. */
+  r_i?: Expr;
+  r_o?: Expr;
+  r_os?: Expr;
+  conductor?: string;
+  dielectric?: string | null;
+  feed_shift?: Expr;
+  measurement_shift?: Expr;
+  termination?: "open" | "short";
   a?: Expr;
   b?: Expr;
   start: Vec3;

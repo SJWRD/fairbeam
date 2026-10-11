@@ -14,7 +14,7 @@ export default function FeedCreationDialog() {
   onCleanup(() => setFeedCreation(null));
   return <Show when={feedCreation()} keyed>{(kind) => <FeedForm kind={kind} />}</Show>;
 }
-function FeedForm(props: { kind: "lumped" | "waveguide" | "element" }) {
+function FeedForm(props: { kind: "lumped" | "waveguide" | "coaxial" | "element" }) {
   let box: HTMLFormElement | undefined;
   const close = () => setFeedCreation(null);
   useModal(() => box, close, () => box?.querySelector("select"));
@@ -25,6 +25,11 @@ function FeedForm(props: { kind: "lumped" | "waveguide" | "element" }) {
   const [R, setR] = createSignal("50"), [L, setL] = createSignal(""), [C, setC] = createSignal("");
   const [topology, setTopology] = createSignal<"series" | "parallel">("parallel");
   const [mode, setMode] = createSignal("TE10"), [a, setA] = createSignal("22.86"), [b, setB] = createSignal("10.16");
+  const [ri, setRi] = createSignal("0.5"), [ro, setRo] = createSignal("1.5"), [ros, setRos] = createSignal("2");
+  const [conductor, setConductor] = createSignal(draft.materials.find((m) => m.kind === "metal" && m.conductivity == null)?.name ?? "");
+  const [dielectric, setDielectric] = createSignal("");
+  const [feedShift, setFeedShift] = createSignal("0"), [measurementShift, setMeasurementShift] = createSignal("0.5");
+  const [termination, setTermination] = createSignal<"open" | "short">("open");
   const [reference, setReference] = createSignal(false);
   const [referenceReal, setReferenceReal] = createSignal("20"), [referenceImag, setReferenceImag] = createSignal("-150");
   const [excite, setExcite] = createSignal(true);
@@ -49,8 +54,8 @@ function FeedForm(props: { kind: "lumped" | "waveguide" | "element" }) {
     while (taken.has(`LE${number}`)) number++;
     if (type() === "element") return { ...spatial, name: `LE${number}`, topology: topology(),
       ...(R().trim() ? { R: R() } : {}), ...(L().trim() ? { L: L() } : {}), ...(C().trim() ? { C: C() } : {}) };
-    return { ...spatial, type: type() as "lumped" | "waveguide", number: Math.max(0, ...draft.ports.map((p) => p.number)) + 1,
-      excite: excite(), ...(type() === "waveguide" ? { mode: mode(), a: a(), b: b() } : { R: R(), ...(reference() ? { reference_impedance: { real: referenceReal(), imag: referenceImag() } } : {}) }) };
+    return { ...spatial, type: type() as "lumped" | "waveguide" | "coaxial", number: Math.max(0, ...draft.ports.map((p) => p.number)) + 1,
+      excite: excite(), ...(type() === "coaxial" ? { mode: "TEM", r_i: ri(), r_o: ro(), r_os: ros(), conductor: conductor(), dielectric: dielectric() || null, feed_shift: feedShift(), measurement_shift: measurementShift(), termination: termination() } : type() === "waveguide" ? { mode: mode(), a: a(), b: b() } : { R: R(), ...(reference() ? { reference_impedance: { real: referenceReal(), imag: referenceImag() } } : {}) }) };
   });
   const errors = createMemo(() => {
     const d = structuredClone(unwrap(draft));
@@ -63,11 +68,11 @@ function FeedForm(props: { kind: "lumped" | "waveguide" | "element" }) {
   return <div class="scrim"><form autocomplete="off" class="dialog dz-feed-dialog" role="dialog" aria-modal="true" aria-labelledby="feed-title" ref={box} tabindex={-1} onSubmit={(e) => { e.preventDefault(); if (!errors().length) createFeed(value()); }}>
     <div class="dialog-head"><h2 id="feed-title">{t("feed.create")}</h2><button type="button" class="icon-btn" aria-label={t("common.close")} onClick={close}><X size={18} /></button></div>
     <div class="dialog-body dz-form">
-      <label class="dz-field"><span class="dz-label">{t("props.port.type")}</span><select class="rp-input" value={type()} onChange={(e) => setType(e.currentTarget.value as typeof props.kind)}><option value="lumped">{t("props.port.lumped")}</option><option value="waveguide">{t("props.port.waveguide")}</option><option value="element">{t("feed.element")}</option></select></label>
+      <label class="dz-field"><span class="dz-label">{t("props.port.type")}</span><select class="rp-input" value={type()} onChange={(e) => setType(e.currentTarget.value as typeof props.kind)}><option value="lumped">{t("props.port.lumped")}</option><option value="waveguide">{t("props.port.waveguide")}</option><option value="coaxial">{t("props.port.coaxial")}</option><option value="element">{t("feed.element")}</option></select></label>
       <p class="note">{t("feed.coordinates")}</p>
       {vector(t("props.start"), start, setStart, "start")}{vector(t("props.stop"), stop, setStop, "stop")}
       <label class="dz-field"><span class="dz-label">{t("props.direction")}</span><select class="rp-input" value={direction()} onChange={(e) => setDirection(e.currentTarget.value as Axis)}><For each={["x", "y", "z"]}>{(axis) => <option>{axis}</option>}</For></select></label>
-      <Show when={type() !== "waveguide"}>{field(t("props.resistor.resistance"), R, setR, "Ω")}</Show>
+      <Show when={type() === "lumped" || type() === "element"}>{field(t("props.resistor.resistance"), R, setR, "Ω")}</Show>
       <Show when={type() === "lumped"}><label class="dz-check"><input autocomplete="off" type="checkbox" checked={reference()} onChange={(e) => setReference(e.currentTarget.checked)} />{t("feed.complexReference")}</label><Show when={reference()}>{field("Re Zref", referenceReal, setReferenceReal, "Ω")}{field("Im Zref", referenceImag, setReferenceImag, "Ω")}<p class="note">{t("feed.referenceNote")}</p></Show></Show>
       <Show when={type() === "element"}>{field(t("feed.inductance"), L, setL, "H")}{field(t("feed.capacitance"), C, setC, "F")}
         <label class="dz-field"><span class="dz-label">{t("feed.topology")}</span><select class="rp-input" value={topology()} onChange={(e) => setTopology(e.currentTarget.value as "series" | "parallel")}><option value="parallel">{t("feed.parallel")}</option><option value="series">{t("feed.series")}</option></select></label><p class="note">{t("feed.rlcNote")}</p><Show when={topology() === "series" && (!!L().trim() || !!C().trim())}><p class="note" role="note">{t("feed.seriesLimitation")}</p></Show></Show>
@@ -91,6 +96,13 @@ function FeedForm(props: { kind: "lumped" | "waveguide" | "element" }) {
         </details>
       </Show>
       <Show when={type() === "waveguide"}>{field(t("feed.mode"), mode, setMode)}{field("a", a, setA, "mm")}{field("b", b, setB, "mm")}<p class="note">{t("props.port.noteWaveguide")}</p><p class="note">{t("feed.floquetNote")}</p></Show>
+      <Show when={type() === "coaxial"}>
+        {field(t("props.port.innerRadius"), ri, setRi, "mm")}{field(t("props.port.outerRadius"), ro, setRo, "mm")}{field(t("props.port.shellRadius"), ros, setRos, "mm")}
+        <label class="dz-field"><span class="dz-label">{t("props.port.conductor")}</span><select class="rp-input" value={conductor()} onChange={(e) => setConductor(e.currentTarget.value)}><option value="">{t("props.port.chooseConductor")}</option><For each={draft.materials.filter((m) => m.kind === "metal" && m.conductivity == null)}>{(m) => <option value={m.name}>{m.name}</option>}</For></select></label>
+        <label class="dz-field"><span class="dz-label">{t("props.port.dielectric")}</span><select class="rp-input" value={dielectric()} onChange={(e) => setDielectric(e.currentTarget.value)}><option value="">{t("props.port.air")}</option><For each={draft.materials.filter((m) => m.kind === "dielectric")}>{(m) => <option value={m.name}>{m.name}</option>}</For></select></label>
+        {field(t("props.port.feedShift"), feedShift, setFeedShift, "mm")}{field(t("props.port.measurementShift"), measurementShift, setMeasurementShift, "mm")}
+        <label class="dz-field"><span class="dz-label">{t("props.port.termination")}</span><select class="rp-input" value={termination()} onChange={(e) => setTermination(e.currentTarget.value as "open" | "short")}><option value="open">{t("props.port.open")}</option><option value="short">{t("props.port.short")}</option></select></label><p class="note">{t("props.port.noteCoaxial")}</p>
+      </Show>
       <Show when={type() !== "element"}><label class="dz-check"><input autocomplete="off" type="checkbox" checked={excite()} onChange={(e) => setExcite(e.currentTarget.checked)} />{t("props.port.excited")}</label></Show>
       <Show when={errors().length}><div class="dz-bad" role="alert"><p>{t("feed.invalid")}</p><For each={errors()}>{(error) => <p>{checkMessage(error)}</p>}</For></div></Show>
     </div><div class="dialog-foot"><button class="btn" type="button" onClick={close}>{t("common.cancel")}</button><button class="btn btn-primary" type="submit" disabled={!!errors().length}>{t("feed.create")}</button></div>

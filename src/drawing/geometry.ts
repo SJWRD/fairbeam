@@ -578,7 +578,7 @@ export function viewPorts(b: Bundle, v: ViewDef): PortView[] {
     const [s, e] = portLine(p);
     const a = toUV(s, v);
     const c = toUV(e, v);
-    const label = p.type === "waveguide" ? `P${p.number} ${p.mode ?? "TE"}` : `P${p.number} ${fmtOhm(p.R)} Ω${p.group ? " (group)" : ""}`;
+    const label = p.type === "coaxial" ? `P${p.number} TEM` : p.type === "waveguide" ? `P${p.number} ${p.mode ?? "TE"}` : `P${p.number} ${fmtOhm(p.R)} Ω${p.group ? " (group)" : ""}`;
     return { number: p.number, label, a, b: c, point: Math.hypot(c[0] - a[0], c[1] - a[1]) < 1e-9 };
   });
 }
