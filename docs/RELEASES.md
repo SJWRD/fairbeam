@@ -169,6 +169,13 @@ editing them, or the prefill stops working.
 One entry per release, newest first. The installers are on the
 [release page](https://github.com/ismailakdag/fairbeam-releases/releases) of each version.
 
+### 0.7.5, 2026-10-11
+
+- **Optional experimental Elmer workflows:** bounded cavity and single-port patch runs from Design Run. Driven results use the ordinary Results tree, S11, impedance, Smith and directivity views. Elmer must be installed separately; openEMS remains the default and its simulation path is unchanged.
+- **Known limitation:** Elmer patch S11 does not yet agree with the openEMS comparison, mesh convergence has not been established, and FEM runs can be slow. This is a research/development option, not a validated general antenna solver. Directivity is not gain or efficiency. See [RESEARCH-SOLVERS.md](RESEARCH-SOLVERS.md).
+- **Design materials:** select built-in and user-library materials directly while creating a shape; the selected material is added to the design.
+- **FEM setup and results:** explicit finite-feed/PEC approximation preserves the original design, stale-server guidance, adjustable substrate layers, consistent complex-phase convention and persistent results.
+
 ### 0.7.4, 2026-10-11
 
 - Include the standalone Elmer adapter in desktop resources and managed runtime updates, fixing capability checks in installed apps. A staged-package regression verifies imports without the source checkout.
