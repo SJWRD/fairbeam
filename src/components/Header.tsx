@@ -131,7 +131,10 @@ export default function Header() {
   onCleanup(() => listenMore(false));
   // The Screen radio group is one Tab stop (arrows move within it): the current screen, or Start
   // when Design is current but disabled (no design open).
-  const userResults = () => appMode() === "results" && !!bundle()?.results && !isExample({ file: source() ?? "" });
+  // A compiled user project is still a viewer file when it has geometry but no results.
+  // Reselecting this screen must never turn an open file into a gallery selection.
+  const userProject = () => appMode() === "results" && !!bundle() && !isExample({ file: source() ?? "" });
+  const viewerScreen = () => userProject() ? (bundle()?.results ? "results" : "geometry") : "examples";
   const tabStop = () => (appMode() === "design" && !designFile() ? "home" : appMode());
 
   return (
@@ -150,8 +153,8 @@ export default function Header() {
           <button class="seg-btn" aria-current={appMode() === "home" ? "page" : undefined} tabindex={tabStop() === "home" ? 0 : -1} onClick={() => setAppMode("home")}>{t("header.screen.start")}</button>
           <button class="seg-btn" aria-current={appMode() === "design" ? "page" : undefined} tabindex={tabStop() === "design" ? 0 : -1} disabled={!designFile()} title={designFile() ? t("header.screen.designTitle") : t("header.screen.designDisabled")}
             onClick={() => setAppMode("design")}>{t("header.screen.design")}</button>
-          <button class="seg-btn" aria-current={appMode() === "results" ? "page" : undefined} tabindex={tabStop() === "results" ? 0 : -1} onClick={() => { if (!userResults()) void openExamples(); }}
-            title={t(userResults() ? "header.screen.resultsTitle" : "header.screen.examplesTitle")}>{t(userResults() ? "header.screen.results" : "header.screen.examples")}</button>
+          <button class="seg-btn" aria-current={appMode() === "results" ? "page" : undefined} tabindex={tabStop() === "results" ? 0 : -1} onClick={() => { if (!userProject()) void openExamples(); }}
+            title={t(`header.screen.${viewerScreen()}Title`)}>{t(`header.screen.${viewerScreen()}`)}</button>
         </nav>
       </Show>
 

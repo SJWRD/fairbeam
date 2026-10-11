@@ -4443,6 +4443,8 @@
   "results.compare.openResultHint": "Opens saved results; your design draft stays open.",
   "results.compare.openResultFailed": "Could not open the result. Retry the selected run.",
   "header.screen.results": "Results",
+  "header.screen.geometry": "Geometry",
+  "header.screen.geometryTitle": "Viewing an opened project without simulation results",
   "header.screen.resultsTitle": "Viewing a saved result file",
   "ribbon.home.noChanges": "No changes to save",
   "ribbon.home.nothingToUndo": "Nothing to undo",

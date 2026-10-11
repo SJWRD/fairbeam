@@ -4362,6 +4362,8 @@
   "results.compare.openResultHint": "Kaydedilmiş sonuçları açar; tasarım taslağınız açık kalır.",
   "results.compare.openResultFailed": "Sonuç açılamadı. Seçilen çalıştırmayı yeniden deneyin.",
   "header.screen.results": "Sonuçlar",
+  "header.screen.geometry": "Geometri",
+  "header.screen.geometryTitle": "Simülasyon sonucu olmayan bir proje görüntüleniyor",
   "header.screen.resultsTitle": "Kaydedilmiş bir sonuç dosyası görüntüleniyor",
   "ribbon.home.noChanges": "Kaydedilecek değişiklik yok",
   "ribbon.home.nothingToUndo": "Geri alınacak işlem yok",

@@ -233,7 +233,7 @@ export function clearDesignResult() {
   });
 }
 
-/** Examples mode: keep an open example (or a bundle opened from a file); replace a geometry preview
+/** Explicit gallery navigation: keep an open example; replace a user file, geometry preview
  * or a run of one of your designs with the last example opened, else the newest one. */
 export async function openExamples() {
   setAppMode("results");
