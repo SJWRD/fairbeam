@@ -1471,6 +1471,7 @@
   "load.indexPreserved": "The last loaded list is still shown.",
   "load.indexRetry": "Retry to check for available results.",
   "load.runResultChanged": "Result changed while loading. Try again.",
+  "load.runResultTimedOut": "The result did not finish loading within 30 seconds. Try again.",
   "load.runResultFailed": "The run finished, but its result file ({file}) could not be read. Open the Log tab, or run again. Details: {error}",
   "mainTabs.close": "Close {tab}",
   "mainTabs.efficiency": "Efficiency",

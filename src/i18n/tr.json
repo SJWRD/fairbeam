@@ -1448,6 +1448,7 @@
   "load.indexPreserved": "Son yüklenen liste gösterilmeye devam ediyor.",
   "load.indexRetry": "Mevcut sonuçları görmek için yeniden deneyin.",
   "load.runResultChanged": "Sonuç yüklenirken değişti. Yeniden deneyin.",
+  "load.runResultTimedOut": "Sonuç 30 saniye içinde yüklenemedi. Yeniden deneyin.",
   "load.runResultFailed": "Çalıştırma bitti, ancak sonuç dosyası ({file}) okunamadı. Günlük sekmesine bakın veya yeniden çalıştırın. Ayrıntı: {error}",
   "mainTabs.close": "Kapat: {tab}",
   "mainTabs.efficiency": "Verimlilik",

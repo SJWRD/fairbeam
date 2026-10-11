@@ -147,29 +147,49 @@ export function attachDesignOptimize(job: Job) {
 }
 
 let resultSeq = 0;
+let resultController: AbortController | null = null;
 let resultRequest: { file: string; key: string | undefined; jobId?: string; refreshing?: boolean } | null = null;
 const follower = new ResultFollow();
 export async function loadDesignResult(file: string, jobId?: string, refreshIndex = false): Promise<boolean> {
   const expectedModel = designFile()?.design.model.id;
   if (!expectedModel) return false;
   const mine = ++resultSeq;
+  resultController?.abort();
+  const controller = new AbortController();
+  resultController = controller;
+  let timedOut = false;
+  let rejectAbort!: (reason: Error) => void;
+  const aborted = new Promise<never>((_, reject) => { rejectAbort = reject; });
+  const onAbort = () => rejectAbort(new Error(t(timedOut ? "load.runResultTimedOut" : "load.runResultChanged")));
+  controller.signal.addEventListener("abort", onAbort, { once: true });
+  const deadline = setTimeout(() => { timedOut = true; controller.abort(); }, 30_000);
+  const bounded = <T,>(promise: Promise<T>): Promise<T> => Promise.race([promise, aborted]);
   resultRequest = { file, key: resultStamp(index().find(entry => entry.file === file)), jobId, refreshing: refreshIndex };
   setDesignResultLoading(file);
   setDesignResultError(null);
   setFailedResultLoad(null);
   try {
-    if (refreshIndex) { await loadIndex(); if (mine !== resultSeq) return false; }
+    if (refreshIndex) { await bounded(loadIndex()); if (mine !== resultSeq) return false; }
     const stamp = resultStamp(index().find(entry => entry.file === file));
     resultRequest = { file, key: stamp, jobId };
     // one retry after 500 ms: right after a run the dev server can still answer the just-written
     // file with index.html (not JSON); the built app serves it directly
     const read = async () => {
-      const r = await fetch(projectUrl(file), { cache: "no-store" });
+      const r = await fetch(projectUrl(file), { cache: "no-store", signal: controller.signal });
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
       return r.json() as Promise<unknown>;
     };
     let raw: unknown;
-    try { raw = await read(); } catch { await new Promise((ok) => setTimeout(ok, 500)); if (mine !== resultSeq) return false; raw = await read(); }
+    // One deadline covers headers, body and the transient retry. Racing abort also releases
+    // this selection if a transport ignores its signal; late completion cannot regain ownership.
+    try { raw = await bounded(read()); } catch (error) {
+      if (controller.signal.aborted) throw error;
+      let retryTimer: ReturnType<typeof setTimeout> | undefined;
+      try { await bounded(new Promise<void>(ok => { retryTimer = setTimeout(ok, 500); })); }
+      finally { clearTimeout(retryTimer); }
+      if (mine !== resultSeq) return false;
+      raw = await bounded(read());
+    }
     const v = validateBundle(raw);
     if (!v.bundle) throw new Error(summarize(v.errors));
     if (mine !== resultSeq) return false;
@@ -187,9 +207,12 @@ export async function loadDesignResult(file: string, jobId?: string, refreshInde
     if (mine !== resultSeq) return false;
     setFailedResultLoad({ file, jobId });
     if (storedDesignResult()?.file === file) setDesignResult(null);
-    setDesignResultError(t("load.runResultFailed", { file, error: (e as Error).message }));
+    setDesignResultError(t("load.runResultFailed", { file, error: timedOut ? t("load.runResultTimedOut") : (e as Error).message }));
     return false;
   } finally {
+    clearTimeout(deadline);
+    controller.signal.removeEventListener("abort", onAbort);
+    if (resultController === controller) resultController = null;
     if (mine === resultSeq) { resultRequest = null; setDesignResultLoading(null); }
   }
 }
@@ -197,6 +220,8 @@ export async function loadDesignResult(file: string, jobId?: string, refreshInde
 export function clearDesignResult() {
   batch(() => {
   resultSeq++;
+  resultController?.abort();
+  resultController = null;
   resultRequest = null;
   follower.dismiss();
   setDesignResultLoading(null);
