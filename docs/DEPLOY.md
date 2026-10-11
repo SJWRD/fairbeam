@@ -44,8 +44,9 @@ framing stays allowed, so a site page can embed the demo. The cache rules are:
 
 `/app` redirects to `/app/` and `/docs` to `/docs/`. `/guide.html`, the address the app's Help ›
 Getting Started Guide opens, redirects to `/docs/getting-started.html` (and `landing/guide.html` does
-the same with a meta refresh where the redirect rules do not apply, as in a local preview). Pushes to
-branches other than `main` do not deploy (`git.deploymentEnabled` in `vercel.json`).
+the same with a meta refresh where the redirect rules do not apply, as in a local preview).
+Git-triggered deployments are disabled (`git.deploymentEnabled: false` in `vercel.json`).
+Publish reviewed batches using the staged production workflow in [CI.md](CI.md).
 
 The site also has one serverless function, `api/ping.js`, which receives the desktop app's opt-in
 install counts (see [TELEMETRY.md](TELEMETRY.md)). Vercel deploys every file in `api/` whose name does
@@ -79,14 +80,15 @@ project or another domain.
    - The landing page loads, and "Open the demo" opens `/app/` with the 14 projects.
    - "Load the demo in this page" shows the viewer inside the iframe (this checks `SAMEORIGIN`).
    - The response headers are present: `curl -I https://<preview>/app/`.
-4. **Promote to production.** Promote the preview in the dashboard, or run `vercel --prod`.
+4. **Publish production.** Build a staged production deployment with `vercel --prod --skip-domain`,
+   check its pages, then run `vercel promote <deployment-url>`. See [CI.md](CI.md).
 5. **Add the domain.** In the project, go to *Settings → Domains → Add* and enter `fairbeam.org` (see [Domains](#domains)).
 6. **Add the DNS record.** Vercel shows the record to create at the DNS provider for the domain (an `A` record
    for the apex, or a `CNAME` for a subdomain, pointing at `cname.vercel-dns.com.`). Use whatever value the dashboard shows. If the zone
    already uses Vercel nameservers, Vercel adds the record itself.
    The TLS certificate is issued automatically once DNS resolves.
-7. **Automatic deploys.** Pushes to `main` then redeploy automatically. To publish only by hand, turn
-   off automatic deploys under *Settings → Git*.
+7. **Batch deploys.** Keep Git-triggered deployments disabled. Publish once after a reviewed batch
+   rather than after every commit or application-only merge.
 
 ## Usage counts (Redis)
 

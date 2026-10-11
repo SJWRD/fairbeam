@@ -60,5 +60,6 @@ translated. To check a locally served site in Chrome, run `npm run check:docs-la
 | [Usage statistics](TELEMETRY.md) | Opt-in weekly install counts, download totals and the privacy notice. Asked once on first start in release builds |
 | [Optional sign-in](ACCOUNTS.md) | GitHub and Google sign-in for the desktop app: the build switches, the flow, what is stored. Built but switched off |
 | [Deploy](DEPLOY.md) | The public site (landing page and demo) on Vercel |
+| [CI and website publishing](CI.md) | Required checks, safe reuse after merge and one website deployment per reviewed batch |
 | [Benchmarks](BENCHMARKS.md) | The historical benchmark set of 14 examples on reference machines (Windows and macOS): results and solver times |
 | [Designer state and viewport checks](DESIGNER-STATE-LIFECYCLE.md) | The designer async-state tests and the viewport lifecycle checks, and how to run them |
