@@ -1,6 +1,7 @@
 // Examples mode contains only these shipped bundles. User runs and copies stay in their own workflows.
 import type { ModelEntry } from "./api";
 import type { Bundle, ProjectIndexEntry } from "../types";
+import type { SourceOrigin } from "../state";
 import { t } from "../i18n/index.ts";
 
 export const BUNDLED_EXAMPLE_FILES = [
@@ -15,6 +16,7 @@ export const BUNDLED_EXAMPLE_FILES = [
 ] as const;
 const bundledExamples = new Set<string>(BUNDLED_EXAMPLE_FILES);
 export const isExample = (entry: Pick<ProjectIndexEntry, "file">) => bundledExamples.has(entry.file);
+export const isExampleSource = (file: string, origin: SourceOrigin) => origin === "project" && isExample({ file });
 
 export const exampleEntries = (entries: readonly ProjectIndexEntry[]) => entries.filter(isExample);
 

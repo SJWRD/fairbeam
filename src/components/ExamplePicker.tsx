@@ -8,9 +8,9 @@
 import { createEffect, createMemo, createSignal, For, onCleanup, Show } from "solid-js";
 import { Portal } from "solid-js/web";
 import { Check, ChevronsUpDown, CopyPlus, FolderOpen, Search } from "lucide-solid";
-import { bundle, index, source } from "../state";
+import { bundle, index, source, sourceOrigin } from "../state";
 import { exampleGroups, filterGroups, flatItems, initialActive, pickerKeyTarget, type PickerGroup } from "../lib/examplePicker";
-import { exampleConversionBlocker, exampleEntries, exampleSourceFor, isExample } from "../runner/examples";
+import { exampleConversionBlocker, exampleEntries, exampleSourceFor, isExampleSource } from "../runner/examples";
 import { models, openExampleCopy, serverState } from "../runner/store";
 import { openUserProject } from "../runner/openProject";
 import { appMode } from "../workspace";
@@ -28,13 +28,14 @@ export default function ExamplePicker() {
   let list: HTMLDivElement | undefined;
 
   const examples = createMemo(() => exampleEntries(index()));
+  const currentIsExample = () => isExampleSource(source(), sourceOrigin());
   const groups = createMemo<PickerGroup[]>(() => {
     // grouped by category (867 MHz UAV, patch and printed, ...), as on the Start screen; groups
     // without examples are left out
     const out = exampleGroups(examples(), (c) => t(`examples.group.${c}`));
     // a project opened from a file (or a run) is not an example: it is listed so the picker shows it
     const s = source();
-    if (s && !examples().some((p) => p.file === s)) {
+    if (s && (!currentIsExample() || !examples().some((p) => p.file === s))) {
       out.unshift({ label: t("examples.openedProject"), opened: true, items: [{ file: s, label: s, detail: bundle()?.name ?? "", results: !!bundle()?.results }] });
     }
     return out;
@@ -59,7 +60,7 @@ export default function ExamplePicker() {
   const optionId = (i: number) => `${id}-opt-${i}`;
   const currentFile = () => pending() ?? source();
   const labelFor = (f: string) => (f ? flatItems(groups()).find((i) => i.file === f)?.label ?? f : "");
-  const currentLabel = () => labelFor(currentFile());
+  const currentLabel = () => pending() ? flatItems(groups().filter(g => !g.opened)).find(i => i.file === pending())?.label ?? pending()! : labelFor(source());
 
   // Examples show their full name in the window title (the header may have to ellipsize it); the
   // title names what is open, not a pick that is still loading
@@ -116,9 +117,9 @@ export default function ExamplePicker() {
   }
   onCleanup(() => listen(false));
 
-  const choose = (file: string) => {
+  const choose = (file: string, opened = false) => {
     close();
-    if (file === source()) return;
+    if (opened || (file === source() && currentIsExample())) return;
     setPending(file);
     // after a failed (or superseded) load the button falls back to what is actually open
     void openUserProject(file).finally(() => { if (pending() === file) setPending(null); });
@@ -130,7 +131,7 @@ export default function ExamplePicker() {
     if (e.key === "Enter") {
       e.preventDefault();
       const it = items()[active()];
-      if (it) choose(it.file);
+      if (it) choose(it.file, shown().some(g => g.opened && g.items.includes(it)));
       return;
     }
     const next = pickerKeyTarget(e.key, active(), items().length);
@@ -152,7 +153,7 @@ export default function ExamplePicker() {
   const copyState = () => {
     const b = bundle();
     if (!b) return null;
-    if (!isExample({ file: source() })) return { sourceModel: undefined, reason: t("examples.copy.onlyBundled") };
+    if (!currentIsExample()) return { sourceModel: undefined, reason: t("examples.copy.onlyBundled") };
     const blocker = exampleConversionBlocker(b);
     const sourceModel = exampleSourceFor(models(), b.model.id);
     const reason = blocker ? t("examples.copy.cantOpen", { reason: blocker })
@@ -165,7 +166,7 @@ export default function ExamplePicker() {
   return (
     <div class="project-picker" ref={root} style={{ display: appMode() === "results" ? undefined : "none" }}>
       <button ref={trigger} type="button" class="example-picker-trigger" aria-haspopup="listbox" aria-expanded={open()}
-        aria-controls={open() ? `${id}-list` : undefined} aria-label={currentLabel() ? t("examples.projectLabel", { name: currentLabel() }) : t("examples.projectNone")}
+        aria-controls={open() ? `${id}-list` : undefined} aria-label={currentLabel() ? t(pending() || currentIsExample() ? "examples.projectLabel" : "examples.openedProjectLabel", { name: currentLabel() }) : t("examples.projectNone")}
         title={currentLabel() || t("examples.select")} onClick={() => (open() ? close() : show())} onKeyDown={onTriggerKey}>
         <FolderOpen size={14} aria-hidden="true" />
         <span class="example-picker-trigger-label" classList={{ placeholder: !currentLabel() }}>{currentLabel() || t("examples.select")}</span>
@@ -201,10 +202,10 @@ export default function ExamplePicker() {
                           aria-selected={active() === i()} title={it.file}
                           onPointerMove={() => active() !== i() && setActive(i())}
                           onPointerDown={(e) => e.preventDefault() /* keep focus in the search field */}
-                          onClick={() => choose(it.file)}>
+                          onClick={() => choose(it.file, group.opened)}>
                           <span class="example-picker-name">
                             {it.label}
-                            <Show when={it.file === currentFile()}><Check size={14} aria-hidden="true" class="example-picker-check" /><span class="visually-hidden"> {t("examples.openMark")}</span></Show>
+                            <Show when={it.file === currentFile() && !!group.opened === (!pending() && !currentIsExample())}><Check size={14} aria-hidden="true" class="example-picker-check" /><span class="visually-hidden"> {t("examples.openMark")}</span></Show>
                           </span>
                           <span class="example-picker-detail">
                             <span>{it.detail}</span>

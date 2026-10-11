@@ -26,35 +26,55 @@ try {
     // Match the full scenario suite's cold Vite startup budget; action assertions keep their defaults.
     await s.wait('.home', undefined, { timeout: 45000 });
     console.log(`${lang}: initial interface ready in ${Date.now() - started} ms`);
-    for (const ports of [0, 1]) {
+    for (const [ports, localName] of [[0, 'custom.json'], [1, 'user-port.json'], [0, 'dipole.json']]) {
       const fixture = structuredClone(original);
-      fixture.model.id = `user-geometry-${ports}`;
+      fixture.model.id = localName === 'dipole.json' ? original.model.id : `user-geometry-${ports}`;
       fixture.name = fixture.model.name = `User geometry ${ports}`;
       fixture.results = null;
       fixture.run = null;
       fixture.ports = fixture.ports.slice(0, ports);
-      const file = join(out, `${fixture.model.id}.json`);
+      const file = join(out, localName);
       await writeFile(file, JSON.stringify(fixture));
       await (await page.$('.app-header input[type=file]')).uploadFile(file);
       await s.waitFor(async id => (await import('/src/state.ts')).bundle()?.model.id === id, fixture.model.id);
       const nav = '.mode-switch button[aria-current=page]';
       assert.equal(await page.$eval(nav, e => e.textContent), await s.T('header.screen.geometry'));
       assert.equal(await page.$eval(nav, e => e.title), await s.T('header.screen.geometryTitle'));
-      const before = await page.evaluate(async () => { const m = await import('/src/state.ts'); return { source: m.source(), bundle: m.bundle(), count: m.openCount() }; });
+      const before = await page.evaluate(async () => { const m = await import('/src/state.ts'); return { source: m.source(), origin: m.sourceOrigin(), bundle: m.bundle(), count: m.openCount() }; });
+      assert.equal(before.origin, 'local-file');
+      assert.equal(await page.$eval('.example-picker-trigger-label', e => e.textContent), localName);
+      assert.equal(await page.$eval('.example-copy-btn', e => e.getAttribute('aria-disabled')), 'true');
       await page.click(nav);
       await page.focus(nav);
       await page.keyboard.press('Enter');
       await page.keyboard.press('End');
       // A gallery request in the broken implementation is asynchronous.
       await new Promise(r => setTimeout(r, 500));
-      const after = await page.evaluate(async () => { const m = await import('/src/state.ts'); return { source: m.source(), bundle: m.bundle(), count: m.openCount() }; });
+      const after = await page.evaluate(async () => { const m = await import('/src/state.ts'); return { source: m.source(), origin: m.sourceOrigin(), bundle: m.bundle(), count: m.openCount() }; });
       assert.deepEqual(after, before, `${lang}: active geometry screen retains ${ports}-port file`);
       assert.deepEqual(await page.evaluate(auditInPage, '.mode-switch'), []);
-      await page.screenshot({ path: join(out, `${lang}-geometry-${ports}.png`) });
+      await page.screenshot({ path: join(out, `${lang}-geometry-${ports}-${localName}.png`) });
     }
+    await page.evaluate(async () => (await import('/src/runner/store.ts')).showEmptyDesign('Temporary preview'));
+    assert.equal(await page.evaluate(async () => (await import('/src/state.ts')).sourceOrigin()), 'generated');
+    await page.evaluate(async () => (await import('/src/runner/store.ts')).restoreProject());
+    assert.equal(await page.evaluate(async () => (await import('/src/state.ts')).sourceOrigin()), 'local-file');
+    assert.equal(await page.$eval('.mode-switch button[aria-current=page]', e => e.textContent), await s.T('header.screen.geometry'));
+    // An explicit gallery choice must still work when a local file has the same basename/model ID.
+    await page.click('.example-picker-trigger');
+    await s.wait('.example-picker-pop');
+    const dipoleChoices = await page.$$('.example-picker-option[title="dipole.json"]');
+    assert.equal(dipoleChoices.length, 2, 'local opened project and actual gallery dipole are distinct choices');
+    await dipoleChoices[0].click();
+    assert.equal(await page.evaluate(async () => (await import('/src/state.ts')).sourceOrigin()), 'local-file');
+    await page.click('.example-picker-trigger');
+    await s.wait('.example-picker-pop');
+    await (await page.$$('.example-picker-option[title="dipole.json"]'))[1].click();
+    await s.waitFor(async () => { const m = await import('/src/state.ts'); return m.sourceOrigin() === 'project' && m.source() === 'dipole.json'; });
+    assert.equal(await page.$eval('.mode-switch button[aria-current=page]', e => e.textContent), await s.T('header.screen.examples'));
     const result = structuredClone(original);
     result.model.id = 'user-saved-result';
-    const resultFile = join(out, 'user-saved-result.json');
+    const resultFile = join(out, 'patch-antenna.json');
     await writeFile(resultFile, JSON.stringify(result));
     await (await page.$('.app-header input[type=file]')).uploadFile(resultFile);
     await s.waitFor(async () => (await import('/src/state.ts')).bundle()?.model.id === 'user-saved-result');
@@ -63,10 +83,11 @@ try {
     // Gallery navigation remains an explicit choice from Start.
     await s.click('header.screen.start');
     await s.click('header.screen.examples');
-    await s.waitFor(async () => (await import('/src/runner/examples.ts')).isExample({ file: (await import('/src/state.ts')).source() }));
+    await s.waitFor(async () => { const m = await import('/src/state.ts'); return m.sourceOrigin() === 'project' && (await import('/src/runner/examples.ts')).isExample({ file: m.source() }); });
     const exampleSource = await page.evaluate(async () => (await import('/src/state.ts')).source());
     await s.click('header.screen.examples');
     assert.equal(await page.evaluate(async () => (await import('/src/state.ts')).source()), exampleSource);
+    assert.equal(await page.evaluate(async () => (await import('/src/state.ts')).sourceOrigin()), 'project');
     const design = JSON.parse(await readFile('examples/designs/wideband_dipole_867.design.json', 'utf8'));
     design.model.id = `user_editable_${lang}`;
     design.model.name = `User editable ${lang}`;

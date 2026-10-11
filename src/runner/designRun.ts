@@ -12,7 +12,7 @@ import { runQuality } from "../lib/runQuality";
 import { appMode, appModeRevision, setAppMode } from "../workspace";
 import { isTerminal, type Job } from "./api";
 import { checks, conflict, dirty, file as designFile, quickPreview, save, schedulePreview } from "../designer/store";
-import { bundle, clearProject, index, lastProject, loadIndex, loadProject, openCount, source } from "../state";
+import { bundle, clearProject, index, lastProject, loadIndex, loadProject, openCount, source, sourceOrigin } from "../state";
 import { newestResults } from "./resultsIndex";
 import { requireDesignResult, ResultFollow } from "./resultFollow";
 import { exampleEntries } from "./examples";
@@ -243,7 +243,7 @@ export async function openExamples() {
   const b = bundle();
   const entries = exampleEntries(await loadIndex());
   if (!current()) return;
-  if (b && !b.preview && entries.some((p) => p.file === source())) return;
+  if (b && !b.preview && sourceOrigin() === "project" && entries.some((p) => p.file === source())) return;
   invalidatePreview();
   clearProject();
   opened = openCount();

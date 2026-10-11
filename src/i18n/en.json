@@ -1154,6 +1154,7 @@
   "examples.noMatch": "No example matches “{query}”",
   "examples.openMark": "(open)",
   "examples.openedProject": "Opened file",
+  "examples.openedProjectLabel": "Opened file: {name}",
   "examples.projectLabel": "Example: {name}",
   "examples.projectNone": "Example: select one",
   "examples.select": "Select an example",

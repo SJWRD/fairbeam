@@ -1,5 +1,5 @@
-import { source } from "../state";
-import { isExample } from "../runner/examples";
+import { source, sourceOrigin } from "../state";
+import { isExampleSource } from "../runner/examples";
 import { createSignal, onCleanup, onMount, Show } from "solid-js";
 import { Camera, CircleCheck, Ellipsis, Info, MessageSquare, Monitor, Moon, Package, SaveAll, Settings, Sun, TriangleAlert, Upload, UserRound } from "lucide-solid";
 import { applyTheme, bundle, setPackageOpen, theme, type Theme } from "../state";
@@ -133,7 +133,7 @@ export default function Header() {
   // when Design is current but disabled (no design open).
   // A compiled user project is still a viewer file when it has geometry but no results.
   // Reselecting this screen must never turn an open file into a gallery selection.
-  const userProject = () => appMode() === "results" && !!bundle() && !isExample({ file: source() ?? "" });
+  const userProject = () => appMode() === "results" && !!bundle() && !isExampleSource(source(), sourceOrigin());
   const viewerScreen = () => userProject() ? (bundle()?.results ? "results" : "geometry") : "examples";
   const tabStop = () => (appMode() === "design" && !designFile() ? "home" : appMode());
 

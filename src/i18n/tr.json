@@ -1133,6 +1133,7 @@
   "examples.noMatch": "“{query}” ile eşleşen örnek yok",
   "examples.openMark": "(açık)",
   "examples.openedProject": "Açılan dosya",
+  "examples.openedProjectLabel": "Açılan dosya: {name}",
   "examples.projectLabel": "Örnek: {name}",
   "examples.projectNone": "Örnek: bir tane seçin",
   "examples.select": "Bir örnek seçin",
