@@ -127,6 +127,28 @@ class ResearchFixtures:
 
 
 class SharedResearchQueue(ResearchFixtures, unittest.TestCase):
+    def test_driven_bundle_is_published_only_with_matching_hash_and_input(self):
+        for corrupt in (False, True):
+            manager=self.manager(autostart=False)
+            def command(job):
+                value=dict(schema='fairbeam.elmer-driven-result/1', backend='elmer',
+                    research_schema='fairbeam-research-result-1',status='results_exported',
+                    precision_converged=False, frequency_hz=[2e9,3e9],s11_real=[0,0],s11_imag=[0,0],
+                    farfield=dict(directivity=[[1]*72 for _ in range(37)],gain_qualified=False),
+                    input_sha256=job.research['snapshot_sha256'])
+                bundle=json.dumps(dict(model={'id':'patch'},experimental={'input_sha256':value['input_sha256']})).encode()
+                value['bundle_sha256']='wrong' if corrupt else hashlib.sha256(bundle).hexdigest()
+                script=WRITER+"\n(out/'bundle.json').write_bytes(bytes.fromhex(sys.argv[3]))\n"
+                return [sys.executable,'-c',script,str(job.dir/'research'),json.dumps(value),bundle.hex()]
+            manager.command_factory=command
+            job=manager.submit(model='patch',model_id='patch',model_path='',kind='research',research_input=self.spec())
+            manager.worker.start()
+            self.assertTrue(wait_for(lambda:job.terminal))
+            self.assertEqual(job.status,'failed' if corrupt else 'done',job.error)
+            if corrupt:self.assertIsNone(job.bundle)
+            else:self.assertTrue((manager.projects_dir/job.bundle).is_file())
+            manager.shutdown(timeout=5)
+
     def test_research_and_antenna_jobs_use_one_serial_queue(self):
         m=self.manager();first=m.submit(model='dipole',model_path='not-real',params={'hang':True})
         self.assertTrue(wait_for(lambda:first.status=='running'))

@@ -60,11 +60,13 @@ export const retryResultLoad = () => { const f = failedResultLoad(); if (f) void
 
 /** The live job when it is the designer's run. */
 export const designJob = (): Job | null => (live.job && live.job.id === designJobId() ? live.job : null);
+const belongsToDesign = (job: Job) => job.model === designFile()?.id ||
+  (job.research?.backend === "elmer" && job.research.settings.analysis === "driven" && job.model_id === designFile()?.design.model.id);
 
 /** Show a server run in the designer's dock (its Run tab follows it), whoever started it: a run
  * picked in the dock's Queue tab, or a run of the open design another client started (#7, #8). */
 export function followInDesigner(job: Job, reveal = true) {
-  if (job.kind === "research") { openResearch(job.id); return; }
+  if (job.kind === "research" && job.research?.settings.analysis !== "driven") { openResearch(job.id); return; }
   if (live.job?.id !== job.id) attach(job);
   setDesignJobId(job.id);
   setDesignResultError(null);
@@ -283,7 +285,7 @@ createRoot(() => {
   createEffect(on([jobs, () => designFile()?.id], () => {
     const file = designFile();
     if (!file) return;
-    const latest = jobs().filter((j) => j.status === "done" && j.bundle && j.model === file.id && j.kind !== "optimize")
+    const latest = jobs().filter((j) => j.status === "done" && j.bundle && belongsToDesign(j) && j.kind !== "optimize")
       .sort((a, b) => (b.finished ?? 0) - (a.finished ?? 0))[0];
     const key = latest ? `${latest.id}:${latest.finished}:${latest.bundle}` : "";
     if (!latest) {
@@ -305,12 +307,12 @@ createRoot(() => {
     const file = designFile();
     const shown = live.job;
     if (!file || (shown && (!isTerminal(shown.status) || (runOpen() && shown.id !== designJobId())))) return;
-    const mine = jobs().filter((j) => j.model === file.id && !isTerminal(j.status) && !j.sweep && j.kind !== "optimize");
+    const mine = jobs().filter((j) => belongsToDesign(j) && !isTerminal(j.status) && !j.sweep && j.kind !== "optimize");
     // the list is newest first: the running run, else the next one to start
     const pick = mine.find((j) => j.status === "running") ?? mine[mine.length - 1];
     if (pick) followInDesigner(pick, false);
   }));
   createEffect(on(notice, (n) => {
-    if (n?.kind === "run" && n.job.model === designFile()?.id && appMode() === "design") setNotice(null);
+    if (n?.kind === "run" && belongsToDesign(n.job) && appMode() === "design") setNotice(null);
   }));
 });

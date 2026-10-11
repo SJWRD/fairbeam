@@ -80,6 +80,13 @@ export function RunQualityBanner(props: { file?: string; b: Bundle }) {
   const severe = () => own()?.verdict === "not-converged" || others().some((o) => o.q.verdict === "not-converged");
   return (
     <>
+    <Show when={props.b.experimental?.solver === "Elmer"}>
+      <div class="rq-banner" role="status"><div class="rq-body">
+        <strong>{t("elmerAntenna.option")}</strong>
+        <p>{t("elmerAntenna.resultsNote")}</p>
+        <Show when={props.b.experimental?.settings.approximate_metals}><p>{t("elmerAntenna.pec")}</p></Show>
+      </div></div>
+    </Show>
     <Show when={hint()}>{(h) => (
       <div class="rq-banner rq-hint" role="status" data-verdict="hint">
         <div class="rq-body">

@@ -17,6 +17,7 @@ export interface Preflight { level: "ok" | "warn" | "refuse" | "unknown"; messag
 const withThreads = <T extends { threads: number }>(b: T) => ({ ...b, threads: b.threads === 0 ? "auto" : b.threads });
 
 export interface Health {
+  elmer_driven?: number;
   research?: boolean;
   ok: boolean;
   api: number;
@@ -370,6 +371,8 @@ export interface OptDone {
 
 /** Experimental results are never ordinary antenna bundles. */
 export interface ResearchResult {
+  farfield?: { frequency_hz: number; theta_deg: number[]; phi_deg: number[]; directivity: number[][]; peak_directivity_dbi: number; gain_qualified: false };
+  schema?: string;
   backend?: string;
   status: string;
   frequency_hz: number[];

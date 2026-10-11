@@ -16,9 +16,10 @@ import { discSegments, quickBundle } from "../geometry";
 import { setPreviewGeometry } from "../transforms";
 import { checkedShapeProblems, defaultShapeMaterial, rememberShapeMaterial } from "./shapes";
 import { latestPickedPoint } from "../pointTools";
-import { hasKey, t, decimalComma } from "../../i18n";
+import { t, decimalComma } from "../../i18n";
 import { validateLocalFrame, wcsAxisName, worldToLocalPoint } from "../localFrame";
 import "../../styles/designer-ux.css";
+import MaterialPicker from "../MaterialPicker";
 
 const AXES: Axis[] = ["x", "y", "z"];
 /** title keys by kind (an extruded polygon gets its own title from the dialog) */
@@ -179,7 +180,6 @@ function ShapeDialog(props: { req: ShapeRequest; onClose: () => void }) {
   const target = () => (into() >= 0 ? draft.parts[into()] : null);
   const hasMetal = () => draft.materials.some((m) => m.kind === "metal");
   const title = () => t(isPoly && result().kind === "linpoly" ? "shape.title.linpoly" : TITLES[kind]);
-  const kindLabel = (k: string) => (hasKey(`shape.materialKind.${k}`) ? t(`shape.materialKind.${k}`) : k);
 
   return (
     <div class="scrim sd-scrim" onPointerDown={(e) => e.target === e.currentTarget && props.onClose()}>
@@ -209,10 +209,9 @@ function ShapeDialog(props: { req: ShapeRequest; onClose: () => void }) {
             <label class="dz-field">
               <span class="dz-label">{t("shape.material")}</span>
               <Show when={into() < 0} fallback={<select class="rp-select dz-input" disabled><option>{target()?.material}</option></select>}>
-                <select class="rp-select dz-input" value={material()} onChange={(e) => setMaterial(e.currentTarget.value)}>
+                <MaterialPicker value={material()} onChange={setMaterial}>
                   <Show when={!hasMetal()}><option value={NEW_METAL}>{t("shape.newMetal")}</option></Show>
-                  <For each={draft.materials}>{(m) => <option value={m.name}>{m.name} ({kindLabel(m.kind)})</option>}</For>
-                </select>
+                </MaterialPicker>
               </Show>
             </label>
           </div>

@@ -4,7 +4,7 @@ import { createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-j
 import { unwrap } from "solid-js/store";
 import { CircleAlert, CircleCheck, FlaskConical, Play, RefreshCw, Square, X } from "lucide-solid";
 import { api, isTerminal, type ElmerRuntime, type Job, type ResearchResult } from "../runner/api";
-import { researchPath, rememberResearchPath, researchSelectedId, setResearchOpen, setResearchSelectedId } from "../runner/researchState";
+import { researchResultsOnly, researchInitialBackend, researchPath, rememberResearchPath, researchSelectedId, setResearchOpen, setResearchSelectedId } from "../runner/researchState";
 import { StatusBadge } from "../runner/status";
 import { draft, file } from "./store";
 import { useModal } from "../lib/dialog";
@@ -12,10 +12,12 @@ import { parseNumber } from "../lib/numberField";
 import { fmt, t } from "../i18n";
 import NumberField from "../components/NumberField";
 import LineChart, { type Series } from "../charts/LineChart";
+import ElmerAntennaResults from "./ElmerAntennaResults";
 import "../styles/research.css";
 
 type Backend = "periodic" | "elmer";
 const name = (backend: Backend) => t(`research.backend.${backend}`);
+const jobName = (job: Job) => job.research?.settings.analysis === "driven" ? (job.name || t("elmerAntenna.option")) : job.research?.settings.closed_pec ? (job.name || t("elmerDesign.option")) : name(job.research?.backend ?? "periodic");
 const db = (re: number, im: number) => 20 * Math.log10(Math.max(1e-15, Math.hypot(re, im)));
 const PHASE_LABELS: Record<string, string> = { building: "research.phase.building", simulating: "research.phase.simulating", results_exported: "research.phase.exported", validating: "research.phase.validating" };
 
@@ -42,19 +44,23 @@ function PeriodicResults(props: { result: ResearchResult }) {
 
 function ResearchResults(props: { job: Job }) {
   return <Show when={props.job.result}>{r => <div class="stack-lg">
-    <Show when={r().status !== "results_validated"}><p class="status-block status-warn"><CircleAlert size={14} />{t("research.qaUnvalidated")}</p></Show>
+    <Show when={r().status !== "results_validated"}><p class="status-block status-warn"><CircleAlert size={14} />{t(r().schema === "fairbeam.elmer-driven-result/1" ? "elmerAntenna.qa" : "research.qaUnvalidated")}</p></Show>
+    <Show when={r().schema !== "fairbeam.elmer-driven-result/1"} fallback={<ElmerAntennaResults result={r()} />}>
     <Show when={props.job.research?.backend === "periodic"} fallback={<>
-      <p class="note">{t("research.elmer.resultNote")}</p>
+      <p class="note">{t(r().schema === "fairbeam.elmer-design-result/1" ? "elmerDesign.resultHint" : "research.elmer.resultNote")}</p>
+      <Show when={r().schema !== "fairbeam.elmer-design-result/1"}>
       <dl class="kv">
         <dt>{t("research.elmer.mode")}</dt><dd>{r().mode1?.family ?? "—"}</dd>
         <dt>{t("research.elmer.analytic")}</dt><dd>{fmt.fixed((r().mode1?.analytic_frequency_hz ?? NaN) / 1e9, 6)} GHz</dd>
         <dt>{t("research.elmer.error")}</dt><dd>{fmt.fixed((r().mode1?.relative_frequency_error ?? NaN) * 100, 3)} %</dd>
         <dt>{t("research.elmer.correlation")}</dt><dd>{fmt.fixed(r().mode1?.complex_field_shape_correlation ?? NaN, 4)}</dd>
       </dl>
+      </Show>
       <table class="table"><caption>{t("research.elmer.frequencies")}</caption><thead><tr><th>{t("research.elmer.modeIndex")}</th><th class="num">{t("research.frequency")}</th></tr></thead><tbody>
         <For each={r().frequency_hz}>{(f, i) => <tr><td>{fmt.int(i() + 1)}</td><td class="num">{fmt.fixed(f / 1e9, 6)}</td></tr>}</For>
       </tbody></table>
     </>}><PeriodicResults result={r()} /></Show>
+    </Show>
     <details><summary>{t("research.provenance")}</summary><pre class="code research-json">{JSON.stringify({ research: props.job.research, result: r() }, null, 2)}</pre></details>
   </div>}</Show>;
 }
@@ -64,8 +70,8 @@ export default function ResearchDialog() {
   let first: HTMLSelectElement | undefined;
   const close = () => setResearchOpen(false);
   useModal(() => box, close, () => first);
-  const [backend, setBackend] = createSignal<Backend>("periodic");
-  const [path, setPath] = createSignal(researchPath("periodic"));
+  const [backend, setBackend] = createSignal<Backend>(researchInitialBackend());
+  const [path, setPath] = createSignal(researchPath(researchInitialBackend()));
   const [capability, setCapability] = createSignal<{ available: boolean; reason?: string } | null>(null);
   const [operation, setOperation] = createSignal<"probe" | "submit" | "cancel" | null>(null);
   const [error, setError] = createSignal("");
@@ -158,7 +164,7 @@ export default function ResearchDialog() {
     }
     finally { refreshing = false; if (alive) setLoading(false); }
   };
-  onMount(() => { void refresh(); const timer = setInterval(() => void refresh(), 2500); onCleanup(() => clearInterval(timer)); });
+  onMount(() => { void refresh(); if (backend() === "elmer") void loadRuntime(); const timer = setInterval(() => void refresh(), 2500); onCleanup(() => clearInterval(timer)); });
   onCleanup(() => { alive = false; probeVersion++; detailVersion++; controller.abort(); });
   const probe = async () => {
     const ticket = ++probeVersion;
@@ -191,8 +197,9 @@ export default function ResearchDialog() {
 
   return <div class="scrim" onPointerDown={e => e.target === e.currentTarget && close()}>
     <div class="dialog research-dialog" role="dialog" aria-modal="true" aria-labelledby="research-title" aria-describedby="research-description" tabindex="-1" ref={box}>
-      <div class="dialog-head"><div><h2 id="research-title">{t("research.title")}</h2><p id="research-description" class="muted">{t("research.description")}</p></div><button class="icon-btn" aria-label={t("common.close")} onClick={close}><X /></button></div>
-      <div class="dialog-body research-body">
+      <div class="dialog-head"><div><h2 id="research-title">{t(researchResultsOnly() ? "research.history" : "research.title")}</h2><p id="research-description" class="muted">{t(researchResultsOnly() ? (selected()?.research?.settings.analysis === "driven" ? "elmerAntenna.resultHint" : "elmerDesign.resultHint") : "research.description")}</p></div><button class="icon-btn" aria-label={t("common.close")} onClick={close}><X /></button></div>
+      <div class="dialog-body research-body" style={researchResultsOnly() ? { "grid-template-columns": "minmax(0, 1fr)" } : undefined}>
+        <Show when={!researchResultsOnly()}>
         <form id="research-form" class="research-options stack-lg" onSubmit={submit}>
           <label class="dz-field"><span class="dz-label">{t("research.backend")}</span><select ref={first} class="rp-select dz-input" value={backend()} disabled={!!operation()} onChange={e => changeBackend(e.currentTarget.value as Backend)}><option value="periodic">{name("periodic")}</option><option value="elmer">{name("elmer")}</option></select></label>
           <p class="note">{t(backend() === "periodic" ? "research.periodic.scope" : "research.elmer.scope")}</p>
@@ -233,14 +240,15 @@ export default function ResearchDialog() {
           </Show>
           <Show when={error()}><div class="status-block status-critical" role="alert"><CircleAlert size={14} /><span>{error()}</span></div></Show>
         </form>
+        </Show>
         <section class="research-results stack-lg" aria-label={t("research.history")} tabindex="0">
           <div class="cluster"><h3>{t("research.history")}</h3><button class="btn btn-ghost btn-sm push" onClick={() => void refresh()}><RefreshCw size={14} />{t("research.refresh")}</button></div>
           <Show when={historyError()}><p class="status-block status-critical" role="alert"><CircleAlert size={14} />{historyError()}</p></Show>
           <Show when={runs().length} fallback={<p class="muted" role="status">{t(loading() ? "research.loading" : "research.empty")}</p>}>
-            <label class="dz-field"><span class="dz-label">{t("research.selectRun")}</span><select class="rp-select dz-input" value={researchSelectedId() ?? ""} onChange={e => void choose(e.currentTarget.value)}><For each={runs()}>{job => <option value={job.id}>{name(job.research?.backend ?? "periodic")} · {job.created_iso ?? job.id} · {t(`progress.status.${job.status}`)}</option>}</For></select></label>
+            <label class="dz-field"><span class="dz-label">{t("research.selectRun")}</span><select class="rp-select dz-input" value={researchSelectedId() ?? ""} onChange={e => void choose(e.currentTarget.value)}><For each={runs()}>{job => <option value={job.id}>{jobName(job)} · {job.created_iso ?? job.id} · {t(`progress.status.${job.status}`)}</option>}</For></select></label>
           </Show>
           <Show when={selected()}>{job => <>
-            <div class="cluster" aria-live="polite"><StatusBadge status={job().status} /><span>{name(job().research?.backend ?? "periodic")}</span><Show when={!isTerminal(job().status)}><button class="btn btn-ghost btn-sm push" disabled={!!operation()} onClick={cancel}><Square size={14} />{t(operation() === "cancel" ? "research.cancelling" : "research.cancel")}</button></Show></div>
+            <div class="cluster" aria-live="polite"><StatusBadge status={job().status} /><span>{jobName(job())}</span><Show when={!isTerminal(job().status)}><button class="btn btn-ghost btn-sm push" disabled={!!operation()} onClick={cancel}><Square size={14} />{t(operation() === "cancel" ? "research.cancelling" : "research.cancel")}</button></Show></div>
             <Show when={!isTerminal(job().status)}><p class="note" aria-live="polite"><Show when={PHASE_LABELS[job().phase]}><strong>{t(PHASE_LABELS[job().phase])}. </strong></Show>{t(job().status === "queued" ? "research.queued" : "research.running")}</p></Show>
             <Show when={job().error}><p class="status-block status-critical" role="alert"><CircleAlert size={14} /><span>{job().error}</span></p></Show>
             <ResearchResults job={job()} />
@@ -248,7 +256,7 @@ export default function ResearchDialog() {
           </>}</Show>
         </section>
       </div>
-      <div class="dialog-foot"><p class="note">{t("research.closeHint")}</p><div class="dialog-actions"><button class="btn btn-ghost" onClick={close}>{t("common.close")}</button><button class="btn btn-primary" type="submit" form="research-form" disabled={!!operation() || !capability()?.available || invalid()}><Show when={operation() === "submit"} fallback={<Play size={14} />}><FlaskConical size={14} /></Show>{t(operation() === "submit" ? "research.submitting" : "research.start")}</button></div></div>
+      <div class="dialog-foot"><p class="note">{t("research.closeHint")}</p><div class="dialog-actions"><button class="btn btn-ghost" onClick={close}>{t("common.close")}</button><Show when={!researchResultsOnly()}><button class="btn btn-primary" type="submit" form="research-form" disabled={!!operation() || !capability()?.available || invalid()}><Show when={operation() === "submit"} fallback={<Play size={14} />}><FlaskConical size={14} /></Show>{t(operation() === "submit" ? "research.submitting" : "research.start")}</button></Show></div></div>
     </div>
   </div>;
 }

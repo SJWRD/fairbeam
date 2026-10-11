@@ -9,7 +9,7 @@ import { cancelJob, clearQueue, jobs, live, serverActivity, stopping } from "./s
 import { ago, paramSummary, StatusBadge } from "./status";
 import { t } from "../i18n";
 
-export const jobName = (j: Job) => j.kind === "research" ? `${t("research.title")} · ${t(`research.backend.${j.research?.backend ?? "periodic"}`)}` : j.label ?? j.model_id ?? j.model;
+export const jobName = (j: Job) => j.kind === "research" ? (j.research?.settings.analysis === "driven" ? `${j.model_id ?? j.model} · Elmer FEM` : `${t("research.title")} · ${t(`research.backend.${j.research?.backend ?? "periodic"}`)}`) : j.label ?? j.model_id ?? j.model;
 
 /** A run's engine and threads as its row says it: "GPU" for a GPU run (its solver does not use a
  * thread count, the job's 1 is a placeholder), else "CPU · 2 threads" ("CPU · Auto" before the run

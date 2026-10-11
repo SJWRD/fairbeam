@@ -21,6 +21,8 @@ import { checkPlace, kindLabel } from "./DesignPane";
 import { humanizePaths } from "./pathText";
 import "../styles/run-quality.css";
 import NumberField from "../components/NumberField";
+import ElmerDesignRun from "./ElmerDesignRun";
+import ElmerAntennaRun from "./ElmerAntennaRun";
 
 /** i18n keys of the engine names */
 const ENGINE_LABEL: Record<string, string> = { cpu: "run.engine.cpu", gpu: "run.engine.gpu" };
@@ -44,6 +46,7 @@ export default function RunDialog() {
   const [name, setName] = createSignal("");
   const [err, setErr] = createSignal<string | null>(null);
   const [busy, setBusy] = createSignal(false);
+  const [solver, setSolver] = createSignal("openems");
 
   onMount(() => {
     if (serverState() !== "online") probeServer();
@@ -109,11 +112,17 @@ export default function RunDialog() {
             <p class="muted">
               <b>{draft.model?.name}</b>
               <Show when={dirty()}> · {t("run.unsavedFirst")}</Show>
-              . {t("run.dockNote")}
+              . {solver() === "openems" ? t("run.dockNote") : t(solver() === "elmer-driven" ? "elmerAntenna.resultHint" : "elmerDesign.resultHint")}
             </p>
           </div>
           <button class="icon-btn" onClick={close} aria-label={t("common.close")}><X size={16} /></button>
         </div>
+        <div class="rd-solver"><label class="dz-field"><span class="dz-label">{t("elmerDesign.solver")}</span>
+          <select class="rp-select dz-input" aria-label={t("elmerDesign.solver")} value={solver()} disabled={busy()} onChange={e => setSolver(e.currentTarget.value)}>
+            <option value="openems">openEMS</option><option value="elmer">{t("elmerDesign.option")}</option>
+            <option value="elmer-driven">{t("elmerAntenna.option")}</option>
+          </select></label></div>
+        <Show when={solver() === "openems"} fallback={<Show when={solver() === "elmer-driven"} fallback={<ElmerDesignRun close={close} useOpenEMS={() => setSolver("openems")} />}><ElmerAntennaRun close={close} /></Show>}>
         <form class="rd-body" id="rd-form" onSubmit={run}>
           <Show when={errors().length}>
             <div class="status-block status-critical" role="alert">
@@ -203,6 +212,7 @@ export default function RunDialog() {
             </button>
           </div>
         </div>
+        </Show>
       </div>
     </div>
   );

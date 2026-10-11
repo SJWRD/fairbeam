@@ -204,7 +204,7 @@ export interface FarField {
   /** lossless models (sim.lossless): the measured prad_w / pacc_w, while rad_efficiency is 1 (docs/BUNDLE.md) */
   rad_efficiency_raw?: number | null;
   prad_w: number;
-  pacc_w: number;
+  pacc_w: number | null;
   /** exporter QA notes, e.g. a radiation efficiency above 100 % (see lib/run.efficiencyWarning) */
   qa_warnings?: string[];
   mirror_planes?: number;
@@ -318,6 +318,7 @@ export interface Bundle {
   schema: string;
   /** set on geometry-only bundles returned by the run server's live preview */
   preview?: boolean;
+  experimental?: { solver: string; precision_converged: boolean; limitations: string[]; settings: Record<string, unknown>; input_sha256?: string };
   generator: { name: string; version: string; openems: string | null; csxcad: string | null; python: string };
   created: string;
   name: string;

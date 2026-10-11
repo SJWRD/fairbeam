@@ -89,17 +89,25 @@ def prepare(body):
         raise ValueError("research input snapshot exceeds 1 MiB")
     if backend == "elmer":
         import fairbeam_elmer
-        if set(settings) - {"mesh_size"} or body.get("design") is not None:
-            raise ValueError("Elmer supports only the fixed PEC cavity and mesh_size")
-        mesh = settings.get("mesh_size", .025)
-        if isinstance(mesh, bool) or not isinstance(mesh, (int, float)):
-            raise ValueError("mesh_size must be a number")
-        fairbeam_elmer.validate_case(mesh)
+        if body.get("design") is not None:
+            if settings.get("analysis") == "driven":
+                from .elmer_driven import settings_mesh
+                settings_mesh(body["design"], settings)
+            else:
+                from . import elmer_design
+                elmer_design.prepare(body["design"], settings)
+        else:
+            if set(settings) - {"mesh_size"}:
+                raise ValueError("Elmer supports only the fixed PEC cavity and mesh_size without a design")
+            mesh = settings.get("mesh_size", .025)
+            if isinstance(mesh, bool) or not isinstance(mesh, (int, float)):
+                raise ValueError("mesh_size must be a number")
+            fairbeam_elmer.validate_case(mesh)
+            settings = {"mesh_size": mesh}
         home, solver, grid = fairbeam_elmer.discover(elmer_root(path))
-        settings = {"mesh_size": mesh}
         path = str(home)
         module_dir = home / "share/elmersolver/lib"
-        extra = [module_dir / (name + ext) for name in ("EMWaveSolver", "ResultOutputSolve", "SaveData")
+        extra = [module_dir / (name + ext) for name in ("EMWaveSolver", "VectorHelmholtz", "ResultOutputSolve", "SaveData")
                  for ext in (".dll", ".so", ".dylib")]
         pins = binary_pins((solver, grid), extra)
         normalized = settings
@@ -157,8 +165,15 @@ def validate_result(value, backend):
         raise ValueError("research result has no bounded frequency axis")
     if any(isinstance(f, bool) or not isinstance(f, (int, float)) or not math.isfinite(f) or f <= 0 for f in frequencies):
         raise ValueError("research result frequency values invalid")
-    if any(b <= a for a, b in zip(frequencies, frequencies[1:])):
+    design_modes = backend == "elmer" and value.get("schema") == "fairbeam.elmer-design-result/1"
+    if any(b < a if design_modes else b <= a for a, b in zip(frequencies, frequencies[1:])):
         raise ValueError("research result frequencies are not ordered")
+    if design_modes:
+        from .elmer_design import validate_result as validate_design_result
+        return validate_design_result(value)
+    if backend == "elmer" and value.get("schema") == "fairbeam.elmer-driven-result/1":
+        from .elmer_driven import validate_result as validate_driven_result
+        return validate_driven_result(value)
     if backend == "periodic":
         if value.get("schema") != "fairbeam.periodic-result/1":
             raise ValueError("unsupported periodic research result schema")
@@ -222,19 +237,38 @@ def execute(snapshot, outdir, checksum):
     print('fairbeam-research: {"type":"phase","phase":"simulating"}', flush=True)
     if backend == "elmer":
         import fairbeam_elmer
-        result = fairbeam_elmer.run_cavity(outdir, root=spec["path"], mesh_size=spec["normalized"]["mesh_size"], experimental=True)
+        if spec.get("design") is not None:
+            if spec["settings"].get("analysis") == "driven":
+                from .elmer_driven import run
+            else:
+                from .elmer_design import run
+            result = run(spec["design"], spec["settings"], outdir, spec["path"])
+        else:
+            result = fairbeam_elmer.run_cavity(outdir, root=spec["path"], mesh_size=spec["normalized"]["mesh_size"], experimental=True)
     else:
         from . import periodic_cell
         result = periodic_cell.run(spec["normalized"], outdir, executable=spec["path"])
     value = validate_result({**result, "backend": backend, "research_schema": "fairbeam-research-result-1"}, backend)
     value["input_sha256"] = hashlib.sha256(raw).hexdigest()
+    if value.get('schema') == 'fairbeam.elmer-driven-result/1':
+        from .elmer_bundle import result_bundle
+        bundle_bytes = encode(result_bundle(spec['design'], value))
+        (outdir / 'bundle.json').write_bytes(bundle_bytes)
+        value['bundle_sha256'] = hashlib.sha256(bundle_bytes).hexdigest()
     target = outdir / "result.json"
     tmp = target.with_suffix(".json.tmp")
     tmp.write_bytes(encode(value))
     os.replace(tmp, target)
     print('fairbeam-research: {"type":"phase","phase":"results_exported"}', flush=True)
-    if value["status"] != "results_validated":
+    if not completed_result(value):
         raise ValueError("research result did not pass its backend validation gates")
+
+
+def completed_result(value):
+    # Exported Design eigenmodes carry only completion checks, never a validation claim.
+    return value.get("status") == "results_validated" or (
+        value.get("backend") == "elmer" and value.get("schema") in ("fairbeam.elmer-design-result/1", "fairbeam.elmer-driven-result/1")
+        and value.get("status") == "results_exported")
 
 
 def main(argv=None):
