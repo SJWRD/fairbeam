@@ -242,6 +242,43 @@ s.setFile({id:'known-recovery',design:{model:{id:fixture.model.id}}});await tick
 requests.at(-1).resolve({ok:false,status:503});await tick();assert.equal(r.designRunBundleLoadState('same.json'),'error');
 start=requests.length;d.setDesignResult({file:'same.json',bundle:old});r.ensureDesignRunBundles();assert.equal(r.designRunBundleLoadState('same.json'),'error');assert.equal(r.designRunBundle('same.json'),undefined);
 d.setDesignResult({file:'same.json',bundle:fresh});r.ensureDesignRunBundles();assert.equal(requests.length,start,'known current selection is reused without refetch');assert.equal(r.designRunBundle('same.json').name,'fresh');assert.equal(r.designRunBundleLoadState('same.json'),undefined);checks++;
+// The selected-result loader has its own full-operation deadline, independent of metadata slots.
+// Fake timers prove headers/body stalls, retry and cancellation without a wall-clock wait.
+const selectedSetTimeout=globalThis.setTimeout,selectedClearTimeout=globalThis.clearTimeout,selectedFetch=globalThis.fetch;
+const selectedTimers=new Map();
+try {
+ globalThis.setTimeout=(fn,delay,...args)=>{const timer={fn,delay,args};selectedTimers.set(timer,timer);return timer;};
+ globalThis.clearTimeout=timer=>{selectedTimers.delete(timer);};
+ const fire=delay=>{const timer=[...selectedTimers.values()].find(t=>t.delay===delay);assert.ok(timer,`timer ${delay} is scheduled`);selectedTimers.delete(timer);timer.fn(...timer.args);};
+ w.setAppMode('home');s.setFile({id:'selected-deadline',design:{model:{id:fixture.model.id}}});await tick();s.setIndex([entry(fresh)]);d.clearDesignResult();
+ for(const phase of ['headers','body']) {
+  const held=deferred();let calls=0,signal;
+  globalThis.fetch=(_url,options)=>{calls++;signal=options.signal;return phase==='headers'?held.promise:Promise.resolve({ok:true,json:()=>held.promise});};
+  const task=d.loadDesignResult('same.json');await tick();assert.equal(d.designResultLoading(),'same.json');
+  fire(30000);assert.equal(await task,false);assert.ok(signal.aborted);assert.equal(d.designResultLoading(),null);assert.equal(d.failedResultLoad().file,'same.json');assert.ok(d.designResultError());assert.equal(calls,1,'timeout never takes transient retry');assert.equal(selectedTimers.size,0);
+  globalThis.fetch=async()=>({ok:true,json:async()=>fresh});d.retryResultLoad();await tick();assert.equal(d.designResult().bundle.name,'fresh');assert.equal(d.failedResultLoad(),null);assert.equal(d.designResultLoading(),null);assert.equal(selectedTimers.size,0);
+  const late=b('Expired selected response',fresh.created);held.resolve(phase==='headers'?{ok:true,json:async()=>late}:late);await tick();assert.equal(d.designResult().bundle.name,'fresh');assert.equal(d.designResultLoading(),null);checks++;
+ }
+ // Replacing or clearing an active selection rejects promptly even if fetch ignores abort.
+ for(const action of ['replace','clear']) {
+  const held=deferred();let signal;
+  globalThis.fetch=(_url,options)=>{signal=options.signal;return held.promise;};
+  const task=d.loadDesignResult('same.json');await tick();
+  if(action==='replace'){globalThis.fetch=async()=>({ok:true,json:async()=>fresh});assert.equal(await d.loadDesignResult('same.json'),true);}else d.clearDesignResult();
+  assert.equal(await task,false);assert.ok(signal.aborted);assert.equal(selectedTimers.size,0);held.resolve({ok:true,json:async()=>old});await tick();assert.equal(d.designResult()?.bundle.name,action==='replace'?'fresh':undefined);assert.equal(d.designResultLoading(),null);assert.equal(d.failedResultLoad(),null);checks++;
+ }
+ // Ordinary HTTP/JSON failures retain exactly one delayed retry; cancellation clears its timer.
+ for(const reason of ['http','json','cancel']) {
+  let calls=0;
+  globalThis.fetch=async()=>{calls++;return calls>1?{ok:true,json:async()=>fresh}:reason==='json'?{ok:true,json:async()=>{throw Error('invalid JSON');}}:{ok:false,status:503};};
+  const task=d.loadDesignResult('same.json');await tick();assert.equal(calls,1);assert.ok([...selectedTimers.values()].some(t=>t.delay===500));
+  if(reason==='cancel'){d.clearDesignResult();assert.equal(await task,false);assert.equal(calls,1);}else{fire(500);assert.equal(await task,true);assert.equal(calls,2);}
+  assert.equal(selectedTimers.size,0);checks++;
+ }
+ // The same deadline includes the optional index refresh, and late index completion starts no read.
+ const delayedIndex=deferred();s.ctl.indices.push(delayedIndex);let calls=0;globalThis.fetch=async()=>{calls++;return{ok:true,json:async()=>fresh};};
+ const pendingIndex=d.loadDesignResult('same.json','job',true);fire(30000);assert.equal(await pendingIndex,false);assert.equal(d.failedResultLoad().jobId,'job');assert.equal(calls,0);assert.equal(await d.loadDesignResult('same.json','newer-job'),true);delayedIndex.resolve([]);await tick();assert.equal(calls,1);assert.equal(d.designResult().jobId,'newer-job');assert.equal(d.designResultError(),null);assert.equal(d.designResultLoading(),null);assert.equal(selectedTimers.size,0);d.clearDesignResult();checks++;
+}finally{globalThis.setTimeout=selectedSetTimeout;globalThis.clearTimeout=selectedClearTimeout;globalThis.fetch=selectedFetch;}
 console.log(`Result lifecycle: ${checks} deferred navigation, replacement-cache, legacy identity and stale-response checks passed`);
 } finally {
  for (const [key, descriptor] of originalGlobals) {

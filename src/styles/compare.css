@@ -6,7 +6,7 @@
   font-size: var(--al-text-xs); line-height: 1;
 }
 .cmp-pop {
-  position: absolute; z-index: 15; right: 0; bottom: calc(100% + var(--al-space-1));
+  position: absolute; z-index: 15; bottom: calc(100% + var(--al-space-1));
   width: min(340px, calc(100vw - 2 * var(--al-space-4)));
   max-height: min(420px, 70vh); overflow: auto;
   padding: var(--al-space-3) var(--al-pad-panel);
@@ -29,10 +29,3 @@
   color: var(--al-text-2); font-weight: 600; white-space: nowrap;
 }
 .table-data .th-group + tr th { top: 22px; }
-@media (max-width: 640px) {
-  /* the trigger may sit anywhere in a wrapped dock bar: span the popover across the bar instead of
-     anchoring it to the button (it ran off the left edge at 390 px) */
-  .dock-bar { position: relative; }
-  .cmp { position: static; }
-  .cmp-pop { left: var(--al-space-2); right: var(--al-space-2); width: auto; }
-}

@@ -4,6 +4,7 @@
 //
 //   node --experimental-strip-types scripts/check-array.mjs
 
+import "./check-port-mapping.mjs";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";

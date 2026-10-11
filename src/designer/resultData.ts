@@ -2,7 +2,7 @@ import { powerWaveReflection } from "../lib/powerWaves.ts";
 import type { Bundle, FarField } from "../types";
 import { complexDb, complexMagnitude, complexPhase } from "../charts/plotQuantities.ts";
 import { sweep } from "../lib/rf.ts";
-import { hasSParameterPhase, magDb, pairLabel, phaseDeg, reflectionAtPort, sMatrix } from "../lib/sparams.ts";
+import { hasSParameterPhase, magDb, mappedPairLabel, physicalPortNumber, pairLabel, phaseDeg, reflectionAtPort, sMatrix } from "../lib/sparams.ts";
 import type { ResultView } from "./resultFocus.ts";
 import { nearestFarfield, traceLabels } from "../compare/series.ts";
 import { effectiveQuantity, efficiencyData, mismatchAt, quantityGrid, type PatternQuantity } from "../lib/farfieldQuantity.ts";
@@ -47,8 +47,8 @@ const empty = (header: string[]): ResultDataTable => ({ header, rows: [] });
 // no NaN or ±Infinity in copied/CSV data (an exactly zero |Sij| is -Infinity dB): an empty cell
 const finiteCell = (n: number | undefined): number | null => typeof n === "number" && Number.isFinite(n) ? n : null;
 const phase = complexPhase;
-function sColumns(pair: [number, number], re: number[], im: number[], format: ResultDataFormat, phaseKnown = true) {
-  const p = pairLabel(pair);
+function sColumns(pair: [number, number], re: number[], im: number[], format: ResultDataFormat, phaseKnown = true, label = pairLabel(pair)) {
+  const p = label;
   const safe = (fn: (k: number) => number) => (k: number) => Number.isFinite(re[k]) && Number.isFinite(im[k]) ? fn(k) : Number.NaN;
   const modes: Record<ResultDataFormat, { label: string; value: (k: number) => number }[]> = {
     db: [{ label: `|${p}| (dB)`, value: safe(k => complexDb(re[k], im[k])) }],
@@ -86,8 +86,8 @@ export function resultDataTable(bundle: Bundle | null | undefined, view: ResultV
       const format = options.format;
       const cols = (options.pairs === undefined ? matrix.pairs : picked).flatMap((p) => {
         const c = matrix.get(p[0], p[1])!;
-        if (format) return sColumns(p, c.re, c.im, format, phaseKnown).map(x => ({ label: x.label, values: c.re.map((_, k) => x.value(k)) }));
-        return options.sparamMode === "phase" ? [{ label: `∠${pairLabel(p)} (deg)`, values: phaseKnown ? phaseDeg(c) : c.re.map(() => NaN) }] : [{ label: `|${pairLabel(p)}| (dB)`, values: magDb(c) }];
+        if (format) return sColumns(p, c.re, c.im, format, phaseKnown, mappedPairLabel(matrix, p)).map(x => ({ label: x.label, values: c.re.map((_, k) => x.value(k)) }));
+        return options.sparamMode === "phase" ? [{ label: `∠${mappedPairLabel(matrix, p)} (deg)`, values: phaseKnown ? phaseDeg(c) : c.re.map(() => NaN) }] : [{ label: `|${mappedPairLabel(matrix, p)}| (dB)`, values: magDb(c) }];
       });
       return { header: ["f (GHz)", ...cols.map((x) => x.label)], rows: matrix.f.map((f, k) => [f / 1e9, ...cols.map((x) => finiteCell(x.values[k]))]) };
     }
@@ -105,12 +105,14 @@ export function resultDataTable(bundle: Bundle | null | undefined, view: ResultV
     const m = sMatrix(bundle);
     const p = options.smithPort;
     const g = m?.get(p, p);
-    const s = pairLabel([p, p]);
-    const header = ["f (GHz)", `Re ${s}`, `Im ${s}`, `Re Zin port ${p} (Ω)`, `Im Zin port ${p} (Ω)`];
+    const s = m ? mappedPairLabel(m, [p, p]) : pairLabel([p, p]);
+    const physical = m ? physicalPortNumber(m, p) : p;
+    const zinPort = physical === p ? `port ${p}` : physical === null ? `matrix port ${p} (model unknown)` : `model port ${physical} (matrix ${p})`;
+    const header = ["f (GHz)", `Re ${s}`, `Im ${s}`, `Re Zin ${zinPort} (Ω)`, `Im Zin ${zinPort} (Ω)`];
     if (m && g && m.ports.length > 1) {
       const reflection = reflectionAtPort(bundle, p)!;
       const z = { re: reflection.zRe, im: reflection.zIm };
-      const extra = options.format ? [...sColumns([p, p], g.re, g.im, options.format), ...zColumns(z.re, z.im, options.format)].filter(c => !header.includes(c.label)) : [];
+      const extra = options.format ? [...sColumns([p, p], g.re, g.im, options.format, true, s), ...zColumns(z.re, z.im, options.format)].filter(c => !header.includes(c.label)) : [];
       return { header: [...header, ...extra.map(c => c.label)], rows: m.f.map((f, i) => [f / 1e9, finiteCell(g.re[i]), finiteCell(g.im[i]), finiteCell(z.re[i]), finiteCell(z.im[i]), ...extra.map(c => finiteCell(c.value(i)))]) };
     }
     // a compared run without that port is not on the chart: no samples (a one-port run's own port

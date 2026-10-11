@@ -519,9 +519,11 @@ terminated in its resistance. Default: all ports for models with up to 4 ports, 
 | `excited` | number[] | Indices of the driven ports, which are the known columns |
 | `complete` | boolean | Every port was excited, so the full matrix is known |
 | `method` | string | `"B A^-1"` (complete) or `"b_i / a_j"` (partial) |
-| `s` | object | Keys `"i,j"` = S_ij: wave out of port i per wave into port j. Each value is `{re: number[], im: number[]}` aligned with `frequency`, rounded to 5 decimals. Only columns j in `excited` are present |
+| `s` | object | Keys `"i,j"` = S_ij: wave out of port i per wave into port j. Each value is `{re: number[], im: number[]}` aligned with `frequency`, preserving the computed floating-point values. Only columns j in `excited` are present |
 | `qa` | object | See below |
 | `port_numbers` | number[]? | Present only when the model's port numbers are not 1..N; index k refers to port `port_numbers[k-1]` |
+
+S labels keep matrix indices: with `port_numbers: [2, 5]`, S22 is model port 5's reflection. Array weights, element patterns, and exported active-reflection rows use physical model port IDs. An omitted mapping means identity; an invalid mapping or unmatched array weight is unavailable rather than guessed. Preserving stored precision does not improve solver accuracy.
 
 **Definition.** For port i with real reference Z_i, U_i and I_i are the frequency-domain port
 voltage and current (current flowing into the structure). The power waves are
@@ -531,7 +533,8 @@ column j of the matrices A and B, the complete matrix is `S = B A^-1` at every f
 exact even though a terminated FDTD port has a small nonzero incident wave. With a partial
 excitation, the known columns are `S_ij = b_i / a_j`. For equal Z_i these are the usual
 S-parameters; otherwise they are power-wave S-parameters referenced to each port's own Z_i.
-`results.ports[k].s11_*` equals `S_kk` for every driven port k.
+`results.ports[p].s11_*` stores the driven-run reflection of physical port p;
+`port_numbers` associates it with matrix index k. Do not use a physical port ID as a matrix index.
 
 **`qa`.**
 

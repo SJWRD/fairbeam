@@ -157,6 +157,9 @@ export default function ArrayPanel() {
           <Show when={!S() || S()!.legacy}>
             <p class="note">{t("array.noSMatrix")}</p>
           </Show>
+          <Show when={S() && !S()!.legacy && [...active().values()].some(g => g === null)}>
+            <p class="note" role="status">{t("array.unavailableReflection")}</p>
+          </Show>
         </section>
       </div></div>
     </Show>

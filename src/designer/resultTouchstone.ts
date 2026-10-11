@@ -1,6 +1,6 @@
 import type { Bundle } from "../types.ts";
 import { touchstoneNPort, touchstoneS1p } from "../export/touchstone.ts";
-import { hasSParameterPhase, sMatrix } from "../lib/sparams.ts";
+import { hasSParameterPhase, physicalPortNumber, sMatrix } from "../lib/sparams.ts";
 import { saveDownload, type DownloadResult } from "../lib/download.ts";
 import { resultExportStem } from "../lib/resultExportNames.ts";
 import { t } from "../i18n/index.ts";
@@ -26,13 +26,14 @@ function checkedText(bundle: Bundle, label: string): { text: string; ports: numb
   let text: string | null;
   if (matrix.ports.length === 1) {
     const port = matrix.ports[0];
+    const physicalPort = physicalPortNumber(matrix, port);
     const excited = bundle.ports.find((p) => p.excite) ?? bundle.ports[0];
-    if (!excited || excited.number !== port) throw new Error(t("results.touchstone.portMismatch", { label }));
+    if (!excited || physicalPort === null || excited.number !== physicalPort) throw new Error(t("results.touchstone.portMismatch", { label }));
     const c = matrix.get(port, port);
     if (!c || c.re.length !== matrix.f.length || c.im.length !== matrix.f.length || c.re.some((x, i) => !Number.isFinite(x) || !Number.isFinite(c.im[i]))) {
       throw new Error(t("results.touchstone.badS11", { label }));
     }
-    const pr = bundle.results.ports[String(port)];
+    const pr = bundle.results.ports[String(physicalPort)];
     if (!pr || !Number.isFinite(pr.z_ref) || Math.abs(pr.z_ref - matrix.zRef[0]) > 1e-9) {
       throw new Error(t("results.touchstone.zRefMismatch", { label }));
     }

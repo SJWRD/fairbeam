@@ -33,8 +33,10 @@ export interface Complex {
 export interface SMatrix {
   /** frequency grid in Hz (results.frequency) */
   f: number[];
-  /** port numbers, in matrix order */
+  /** Matrix indices (legacy bundles use their physical port IDs). */
   ports: number[];
+  /** Matrix order → physical model IDs; omitted means identity, null means invalid metadata. */
+  physicalPorts?: number[] | null;
   zRef: number[];
   excited: number[];
   /** S_ij (receiving port i, driven port j); null when not stored */
@@ -97,6 +99,7 @@ export function sMatrix(b: Bundle | null | undefined): SMatrix | null {
       for (const i of ports) for (const j of ports) if (map.has(`${i},${j}`)) pairs.push([i, j]);
       return {
         f, ports, zRef,
+        physicalPorts: physicalMapping(raw.port_numbers, ports),
         excited: nums(raw.excited) ?? b.ports.filter((p) => p.excite).map((p) => p.number),
         get: (i, j) => map.get(`${i},${j}`) ?? null,
         pairs,
@@ -128,6 +131,26 @@ export function sMatrix(b: Bundle | null | undefined): SMatrix | null {
     passivity: null,
     legacy: true,
   };
+}
+
+/** Optional mapping is identity for older bundles; explicit malformed metadata is never guessed. */
+function physicalMapping(value: unknown, ports: number[]): number[] | null | undefined {
+  if (value === undefined) return undefined;
+  return Array.isArray(value) && ports.every((p, i) => p === i + 1) && value.length === ports.length && value.every(p => Number.isInteger(p) && p > 0) &&
+    new Set(value).size === value.length ? value : null;
+}
+
+export function physicalPortNumber(m: SMatrix, index: number): number | null {
+  const k = m.ports.indexOf(index);
+  return k < 0 || m.physicalPorts === null ? null : m.physicalPorts?.[k] ?? index;
+}
+
+/** Preserve S matrix indices while disambiguating physical model IDs in plots and exports. */
+export function mappedPairLabel(m: SMatrix, pair: [number, number]): string {
+  const [i, j] = pair, pi = physicalPortNumber(m, i), pj = physicalPortNumber(m, j);
+  const label = pairLabel(pair);
+  if (pi === i && pj === j) return label;
+  return `${label} [${i === j ? `P${pi ?? "?"}` : `P${pi ?? "?"} <- P${pj ?? "?"}`}]`;
 }
 
 export const pairLabel = ([i, j]: [number, number]) => (i < 10 && j < 10 ? `S${i}${j}` : `S${i},${j}`);
@@ -165,11 +188,8 @@ export function reflectionAtPort(b: Bundle | null | undefined, port: number) {
   if (!m || !g) return null;
   const z0 = m.zRef[m.ports.indexOf(port)] ?? 50;
   // Matrix indices are not necessarily physical model port IDs (e.g. after a port deletion).
-  const physicalNumbers = (b.results?.sparams as { port_numbers?: unknown } | undefined)?.port_numbers;
-  const validMapping = physicalNumbers === undefined || Array.isArray(physicalNumbers) &&
-    physicalNumbers.length === m.ports.length && physicalNumbers.every(p => Number.isInteger(p) && p > 0) && new Set(physicalNumbers).size === physicalNumbers.length;
-  const physicalPort = Array.isArray(physicalNumbers) ? physicalNumbers[m.ports.indexOf(port)] : port;
-  const pr = validMapping ? b.results?.ports[String(physicalPort)] : undefined;
+  const physicalPort = physicalPortNumber(m, port);
+  const pr = physicalPort === null ? undefined : b.results?.ports[String(physicalPort)];
   // A renormalized matrix must not inherit an old port's reference or measured impedance.
   const sameReference = pr?.z_ref === z0;
   const zRefF = sameReference && pr.z_ref_f?.length === m.f.length ? pr.z_ref_f : undefined;

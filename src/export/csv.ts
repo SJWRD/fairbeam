@@ -3,7 +3,7 @@
 import type { Bundle, FarField, Signals } from "../types";
 import { bandCentre } from "../lib/bands.ts";
 import { sweep } from "../lib/rf.ts";
-import { magDb, pairLabel, phaseDeg, sMatrix } from "../lib/sparams.ts";
+import { magDb, mappedPairLabel, phaseDeg, sMatrix } from "../lib/sparams.ts";
 import { activeReflection, gammaDb, type Weight } from "../lib/array.ts";
 
 const cell = (v: string | number | boolean | null | undefined): string => {
@@ -71,7 +71,7 @@ export function signalsCsv(b: Bundle): string | null {
 export function sparamsCsv(b: Bundle): string | null {
   const S = sMatrix(b);
   if (!S || S.ports.length < 2) return null;
-  const cols = S.pairs.map((p) => ({ label: pairLabel(p), c: S.get(p[0], p[1])! }));
+  const cols = S.pairs.map((p) => ({ label: mappedPairLabel(S, p), c: S.get(p[0], p[1])! }));
   const db = cols.map((x) => magDb(x.c));
   const ph = cols.map((x) => phaseDeg(x.c));
   const header = ["f_GHz", ...cols.flatMap((x) => [`${x.label}_dB`, `${x.label}_deg`, `${x.label}_re`, `${x.label}_im`])];

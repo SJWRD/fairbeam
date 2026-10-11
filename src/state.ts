@@ -33,6 +33,9 @@ export const [indexLoading, setIndexLoading] = createSignal(false);
 export const [indexLoadError, setIndexLoadError] = createSignal<"unavailable" | "invalid" | null>(null);
 export const [bundle, setBundle] = createSignal<Bundle | null>(null);
 export const [source, setSource] = createSignal<string>("");
+export type SourceOrigin = "local-file" | "project" | "generated";
+/** A local file can share a gallery basename; its origin must not be inferred from that label. */
+export const [sourceOrigin, setSourceOrigin] = createSignal<SourceOrigin>("generated");
 export const [loadError, setLoadError] = createSignal<string | null>(null);
 /** The project file whose load failed (a failed local file has nothing to retry). */
 export const [failedProject, setFailedProject] = createSignal<string | null>(null);
@@ -177,11 +180,12 @@ export function clearProject() {
   loadSeq++;
   setBundle(null);
   setSource("");
+  setSourceOrigin("generated");
   setLoadError(null);
   setLoadWarnings([]);
 }
 
-export function openBundle(raw: Bundle | unknown, label: string) {
+export function openBundle(raw: Bundle | unknown, label: string, origin: SourceOrigin = "generated") {
   const v = validateBundle(raw);
   if (!v.bundle) throw new Error(summarize(v.errors));
   openSeq++;
@@ -199,6 +203,7 @@ export function openBundle(raw: Bundle | unknown, label: string) {
   setFailedProject(null);
   setLoadError(null);
   setSource(label);
+  setSourceOrigin(origin);
   setBundle(b);
 }
 
@@ -212,7 +217,7 @@ export async function loadProject(file: string, isCurrent: () => boolean = () =>
     if (!r.ok) throw new Error(`HTTP ${r.status}`);
     const json = await r.json();
     if (stale()) return false; // a newer pick or open won the race
-    openBundle(json, file);
+    openBundle(json, file, "project");
     try {
       localStorage.setItem("fairbeam.last", file);
     } catch {
@@ -233,7 +238,7 @@ export async function loadFile(f: File, isCurrent: () => boolean = () => true) {
   try {
     const json = JSON.parse(await f.text());
     if (mine !== loadSeq || openSeq !== start || !isCurrent()) return false;
-    openBundle(json, f.name);
+    openBundle(json, f.name, "local-file");
     return true;
   } catch (e) {
     if (mine === loadSeq && openSeq === start && isCurrent()) setLoadError(t("load.openFailed", { file: f.name, error: (e as Error).message }));

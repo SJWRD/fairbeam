@@ -6,7 +6,7 @@
 
 import type { Bundle } from "../types";
 import { sweep } from "../lib/rf.ts";
-import { hasSParameterPhase, sMatrix } from "../lib/sparams.ts";
+import { hasSParameterPhase, physicalPortNumber, sMatrix } from "../lib/sparams.ts";
 import { APP_VERSION } from "../lib/appVersion.ts";
 import { renormalisePorts } from "../import/touchstone.ts";
 
@@ -117,7 +117,8 @@ export function touchstoneNPort(b: Bundle, exported: string = new Date().toISOSt
     `! Model:     ${ascii(b.model.id)}`,
     `! Simulated: ${b.created} (${ascii(b.solver.engine)}${b.generator.openems ? ` ${ascii(b.generator.openems)}` : ""}, ${ascii(b.solver.method)})`,
     `! Exported:  ${exported}`,
-    `! ${n} ports (${S.ports.join(", ")}), one simulation per excited port, power-wave S-parameters`,
+    `! ${n} matrix ports (${S.ports.join(", ")}), one simulation per excited port, power-wave S-parameters`,
+    `! Matrix index -> model port: ${S.ports.map(p => `${p} -> ${physicalPortNumber(S, p) ?? "unknown (invalid mapping)"}`).join(", ")}`,
     "! S-matrix renormalised to the fixed real R below using the actual per-port references",
     `! ${S.f.length} points, ${fmtF(S.f[0])} - ${fmtF(S.f[S.f.length - 1])} GHz, real/imaginary`,
     `# GHz S RI R ${num(z0)}`,

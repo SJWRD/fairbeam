@@ -421,11 +421,13 @@ Toplam verimlilik `rad_efficiency · (1 − |S11|²)` olur; S11, `ports[port]` i
 | `excited` | number[] | Uyarılan portların indisleri; bilinen sütunlar |
 | `complete` | boolean | Her port uyarılmıştır; tam matris bilinir |
 | `method` | string | `"B A^-1"` (tam) veya `"b_i / a_j"` (kısmi) |
-| `s` | object | `"i,j"` anahtarları = S_ij: j portuna giren dalga başına i portundan çıkan dalga. Her değer, `frequency` ile hizalı, 5 ondalığa yuvarlanmış `{re: number[], im: number[]}`. Yalnızca `excited` içindeki j sütunları bulunur |
+| `s` | object | `"i,j"` anahtarları = S_ij: j portuna giren dalga başına i portundan çıkan dalga. Her değer, `frequency` ile hizalı, hesaplanan kayan noktalı değerleri koruyan `{re: number[], im: number[]}`. Yalnızca `excited` içindeki j sütunları bulunur |
 | `qa` | object | Aşağıya bakın |
 | `port_numbers` | number[]? | Yalnızca modelin port numaraları 1..N değilse bulunur; k indisi `port_numbers[k-1]` portuna karşılık gelir |
 
-**Tanım.** Gerçek referansı Z_i olan i portunda U_i ve I_i, frekans alanı port gerilimi ve akımıdır (akım yapıya doğru). Güç dalgaları `a_i = (U_i + Z_i I_i) / (2 sqrt(Z_i))`, `b_i = (U_i − Z_i I_i) / (2 sqrt(Z_i))` olur; openEMS'in `uf_inc` ve `uf_ref` değerlerinin sqrt(Z_i)'ye bölümüdür. j portunu uyaran çalıştırmanın dalgaları A ve B matrislerinin j sütunu olduğunda her frekansta tam matris `S = B A^-1` olur. Sonlandırılmış FDTD portunda küçük, sıfır olmayan gelen dalga olsa da bu tanım tamdır. Kısmi uyarımda bilinen sütunlar `S_ij = b_i / a_j` olur. Z_i değerleri eşitse olağan S-parametreleridir; değilse her portun kendi Z_i değerine referanslı güç dalgası S-parametreleridir. Uyarılan her k portunda `results.ports[k].s11_*`, `S_kk` değerine eşittir.
+S etiketleri matris indislerini korur: `port_numbers: [2, 5]` olduğunda S22, modeldeki 5 numaralı portun yansımasıdır. Dizi ağırlıkları, eleman örüntüleri ve dışa aktarılan aktif yansıma satırları modelin fiziksel port numaralarını kullanır. Eşleştirme verilmemişse indis ve port numarası aynıdır; geçersiz eşleştirme veya eşleşmeyen dizi ağırlığı için değer tahmin edilmez. Saklanan sayısal hassasiyetin korunması çözücü doğruluğunu artırmaz.
+
+**Tanım.** Gerçek referansı Z_i olan i portunda U_i ve I_i, frekans alanı port gerilimi ve akımıdır (akım yapıya doğru). Güç dalgaları `a_i = (U_i + Z_i I_i) / (2 sqrt(Z_i))`, `b_i = (U_i − Z_i I_i) / (2 sqrt(Z_i))` olur; openEMS'in `uf_inc` ve `uf_ref` değerlerinin sqrt(Z_i)'ye bölümüdür. j portunu uyaran çalıştırmanın dalgaları A ve B matrislerinin j sütunu olduğunda her frekansta tam matris `S = B A^-1` olur. Sonlandırılmış FDTD portunda küçük, sıfır olmayan gelen dalga olsa da bu tanım tamdır. Kısmi uyarımda bilinen sütunlar `S_ij = b_i / a_j` olur. Z_i değerleri eşitse olağan S-parametreleridir; değilse her portun kendi Z_i değerine referanslı güç dalgası S-parametreleridir. `results.ports[p].s11_*`, fiziksel p portunun uyarıldığı çalıştırmadaki yansımayı saklar; `port_numbers` bu portu matris indisi k ile eşleştirir. Fiziksel port numarası matris indisi yerine kullanılmamalıdır.
 
 **`qa`.**
 

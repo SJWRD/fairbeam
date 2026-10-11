@@ -3,7 +3,7 @@ import { openResearch } from "./researchState";
 // geometry preview, job submission, the live event stream of one job, and run history.
 import { batch, createEffect, createMemo, createRoot, createSignal, on } from "solid-js";
 import { createStore, reconcile } from "solid-js/store";
-import { bundle, clearProject, loadIndex, loadProject, openBundle, openCount, setKeepCamera, source } from "../state";
+import { bundle, clearProject, loadIndex, loadProject, openBundle, openCount, setKeepCamera, source, sourceOrigin, type SourceOrigin } from "../state";
 import type { Bundle } from "../types";
 import type { Design } from "../designer/types";
 import { appMode } from "../workspace";
@@ -93,7 +93,7 @@ export const [copyExampleKey, setCopyExampleKey] = createSignal<string | null>(n
 export const [copyExampleFile, setCopyExampleFile] = createSignal<string | null>(null);
 export const openExampleCopy = (key: string, file?: string) => { setCopyExampleFile(file ?? null); setCopyExampleKey(key); };
 
-let saved: { bundle: Bundle | null; source: string } | null = null;
+let saved: { bundle: Bundle | null; source: string; origin: SourceOrigin } | null = null;
 let previewOpenCount = -1;
 
 // ------------------------------------------------------------------ server detection
@@ -604,7 +604,7 @@ createRoot(() =>
 function showPreview(b: Bundle): boolean {
   if (!previewIdentity.canOpen(openCount())) return false;
   const first = !previewActive();
-  if (first) saved = { bundle: bundle(), source: source() };
+  if (first) saved = { bundle: bundle(), source: source(), origin: sourceOrigin() };
   // keep the camera while editing; frame the first preview unless it is the same antenna
   const sameModel = !first || saved?.bundle?.model.id === b.model.id;
   setKeepCamera(sameModel);
@@ -636,7 +636,7 @@ export function restoreProject() {
   if (s?.bundle) {
     setKeepCamera(s.bundle.model.id === bundle()?.model.id);
     try {
-      openBundle(s.bundle, s.source);
+      openBundle(s.bundle, s.source, s.origin);
     } finally {
       setKeepCamera(false);
     }

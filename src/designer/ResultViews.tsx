@@ -23,7 +23,7 @@ import { radioGroupKeys } from "../lib/a11y";
 import { bandTexts } from "../lib/bands";
 import { freqText, ghzText, num, withUnit } from "../lib/format";
 import { nearestIndex, patternCut, sweep } from "../lib/rf";
-import { pairLabel, sMatrix } from "../lib/sparams";
+import { mappedPairLabel, pairLabel, sMatrix } from "../lib/sparams";
 import { efficiencyIssue, efficiencyWarningUi } from "../lib/runText";
 import { efficiencyData, effectiveQuantity, farfieldSummary, QUANTITY_LABEL, quantityGrid, quantityMax, toDb, type PortEfficiency } from "../lib/farfieldQuantity";
 import { efficiencyUnit, patternQuantity, setEfficiencyUnit } from "../lib/patternQuantityStore";
@@ -96,7 +96,7 @@ function ResultSParams(props: { b: Bundle; format: ResultDataFormat }) {
     const m = S();
     const inputs = mp() && m ? designSParams.selectedPairs().flatMap((p, k) => {
         const v = m.get(p[0], p[1]);
-        return v ? [{ id: pairLabel(p), label: pairLabel(p), color: COLORS[k], x: m.f.map((f) => f / 1e9), re: v.re, im: v.im }] : [];
+        return v ? [{ id: pairLabel(p), label: mappedPairLabel(m, p), color: COLORS[k], x: m.f.map((f) => f / 1e9), re: v.re, im: v.im }] : [];
       }) : [];
     if (inputs.length) return plotQuantities(inputs, props.format, designSParams.mode());
     const s = sw();

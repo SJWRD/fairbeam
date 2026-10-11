@@ -15,18 +15,42 @@ on:
 
 permissions:
   contents: read
+  actions: read
 
 concurrency:
   group: ci-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
+  plan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    outputs:
+      full: ${{ steps.scope.outputs.full }}
+      native: ${{ steps.scope.outputs.native }}
+      reuse: ${{ steps.scope.outputs.reuse }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: node scripts/check-ci-scope.mjs
+      - id: scope
+        run: node scripts/ci-scope.mjs
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+
   web:
+    needs: plan
+    if: needs.plan.outputs.reuse != 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - name: Native OS file locks (stdlib only, no solver SDK)
+        if: needs.plan.outputs.native == 'true'
         run: python3 -m unittest discover -s python/tests -p test_filelocks_native.py -v
       - uses: actions/setup-node@v4
         with:
@@ -34,6 +58,7 @@ jobs:
           cache: npm
       - run: npm ci
       - name: Install-count consent and scheduling checks (fake HTTP, no reports sent)
+        if: needs.plan.outputs.full == 'true'
         run: npm run -s check:telemetry
       - run: npx tsc --noEmit
       - run: npm run -s check:licenses
@@ -41,19 +66,31 @@ jobs:
       - run: npm run -s check:no-antenlab
       - run: npm run -s check:installer-info
       - run: npm run -s check:linux-desktop
-      - run: npm run -s check:designer
-      - run: npm run -s build
-      - run: npm run -s check:cst
-      - run: npm run -s check:exports
+      - if: needs.plan.outputs.full == 'true'
+        run: npm run -s check:designer
+      - if: needs.plan.outputs.full == 'true'
+        run: npm run -s build
+      - if: needs.plan.outputs.full == 'true'
+        run: npm run -s check:cst
+      - if: needs.plan.outputs.full == 'true'
+        run: npm run -s check:exports
       - name: Result Touchstone download contract
         run: node --experimental-strip-types scripts/check-result-touchstone.mjs
       - run: npm run -s check:docs-translations
       - run: npm run -s check:docs-highlight
-      - run: npm run -s check:state-lifecycle
+      - if: needs.plan.outputs.full == 'true'
+        run: npm run -s check:state-lifecycle
+      - name: Documentation and website build
+        if: needs.plan.outputs.full != 'true'
+        run: npm run build:site
       - name: Manual browser regressions
+        if: needs.plan.outputs.full == 'true'
         run: npm run -s check:browser-manual
 
   windows:
+    # Cheap manifest/static checks must pass before allocating the expensive native runner.
+    needs: [plan, web]
+    if: needs.plan.outputs.full == 'true' && needs.plan.outputs.reuse != 'true'
     runs-on: windows-latest
     timeout-minutes: 45
     env:
@@ -74,13 +111,24 @@ jobs:
       - name: Install-count consent and scheduling checks (fake HTTP, no reports sent)
         run: npm run -s check:telemetry
 
+      - name: Cache official openEMS archive
+        id: openems-cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/openems-download
+          key: openems-${{ runner.os }}-${{ runner.arch }}-cp313-${{ env.OPENEMS_TAG }}
       - name: Install openEMS (official MSVC build and its Python wheels)
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release download $env:OPENEMS_TAG -R thliebig/openEMS-Project -p "openEMS_x64_*_msvc.zip" -D $env:RUNNER_TEMP
-          $zip = Get-ChildItem "$env:RUNNER_TEMP\openEMS_x64_*_msvc.zip" | Select-Object -First 1
+          $downloadDir = Join-Path $env:RUNNER_TEMP 'openems-download'
+          New-Item -ItemType Directory -Force $downloadDir | Out-Null
+          if (-not (Get-ChildItem "$downloadDir/openEMS_x64_*_msvc.zip" -ErrorAction SilentlyContinue)) {
+            gh release download $env:OPENEMS_TAG -R thliebig/openEMS-Project -p "openEMS_x64_*_msvc.zip" -D $downloadDir
+            if ($LASTEXITCODE -ne 0) { throw "openEMS archive download failed" }
+          }
+          $zip = Get-ChildItem "$downloadDir/openEMS_x64_*_msvc.zip" | Select-Object -First 1
           Expand-Archive $zip.FullName -DestinationPath C:\opt\unpack -Force
           $exe = Get-ChildItem C:\opt\unpack -Recurse -Filter openEMS.exe | Select-Object -First 1
           if (-not $exe) { throw "openEMS.exe not found in $($zip.Name)" }
@@ -101,6 +149,7 @@ jobs:
         run: python -c "import fairbeam, CSXCAD, openEMS; print('fairbeam', fairbeam.__version__, 'CSXCAD', CSXCAD.__file__)"
 
       - name: Smoke simulation (coarse dipole, real openEMS)
+        if: needs.plan.outputs.native == 'true'
         shell: pwsh
         working-directory: python
         run: |
@@ -111,7 +160,7 @@ jobs:
       - name: Python tests
         shell: pwsh
         working-directory: python
-        if: always()
+        if: ${{ !cancelled() && needs.plan.outputs.native == 'true' }}
         run: python -m unittest discover -s tests -v
 
       - name: Browser scenarios (English and Turkish, no additional solver run)
@@ -123,6 +172,19 @@ jobs:
           $env:TMP = $env:RUNNER_TEMP
           node scripts/check-scenarios.mjs --skip-run
 
+      - name: Viewer identity, result recovery and Compare layout regressions
+        shell: pwsh
+        env:
+          FAIRBEAM_TEST_ARTIFACTS: ${{ runner.temp }}/fairbeam-scenario-failures/viewer-regressions
+        run: |
+          $env:FAIRBEAM_PYTHON = (Get-Command python).Source
+          $env:PYTHONUTF8 = '1'
+          node scripts/check-selected-result-deadline-browser.mjs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node scripts/check-compare-bounds-browser.mjs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node scripts/check-user-project-browser.mjs
+
       - name: Keep browser failure screenshots
         if: failure()
         uses: actions/upload-artifact@v4
@@ -130,6 +192,7 @@ jobs:
           name: windows-browser-failures
           path: ${{ runner.temp }}/fairbeam-scenario-failures
           if-no-files-found: ignore
+          retention-days: 7
 
       - name: Keep the smoke bundle
         if: always()
@@ -138,3 +201,26 @@ jobs:
           name: windows-smoke
           path: ${{ runner.temp }}/out
           if-no-files-found: ignore
+          retention-days: 7
+
+  gate:
+    needs: [plan, web, windows]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Require every selected check to pass
+        env:
+          PLAN: ${{ needs.plan.result }}
+          WEB: ${{ needs.web.result }}
+          WINDOWS: ${{ needs.windows.result }}
+          REUSE: ${{ needs.plan.outputs.reuse }}
+          FULL: ${{ needs.plan.outputs.full }}
+        run: |
+          test "$PLAN" = success
+          if [ "$REUSE" = true ]; then
+            test "$WEB" = skipped && test "$WINDOWS" = skipped
+          else
+            test "$WEB" = success
+            if [ "$FULL" = true ]; then test "$WINDOWS" = success; else test "$WINDOWS" = skipped; fi
+          fi

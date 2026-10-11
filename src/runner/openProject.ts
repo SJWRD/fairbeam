@@ -45,7 +45,7 @@ async function importDesign(design: Design, fileName: string): Promise<boolean> 
 }
 
 /** All user opens cancel pending previews; the loaders report failures through loadError. A design file becomes a new
- * design (Design mode); a result file opens in Examples. */
+ * design (Design mode); a compiled project opens in the geometry/results viewer. */
 export async function openUserProject(file: string | File): Promise<boolean> {
   const revision = appModeRevision();
   const current = () => appModeRevision() === revision;

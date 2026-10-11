@@ -9,7 +9,7 @@ import StackedCharts from "../charts/StackedCharts";
 import { plotQuantities, type PlotFormat } from "../charts/plotQuantities";
 import SmithChart from "../charts/SmithChart";
 import { bundle } from "../state";
-import { magDb, pairLabel, phaseDeg, reflectionAtPort, sMatrix, type SMatrix } from "../lib/sparams";
+import { magDb, mappedPairLabel, physicalPortNumber, pairLabel, phaseDeg, reflectionAtPort, sMatrix, type SMatrix } from "../lib/sparams";
 import { gridKeys, radioGroupKeys } from "../lib/a11y";
 import { numPlain } from "../lib/format";
 import { t } from "../i18n";
@@ -124,7 +124,7 @@ export function SParamTools(props: { smith?: boolean; store?: SParamSelection; f
     }
   };
   const summary = () => {
-    const p = store.selectedPairs().map(pairLabel);
+    const p = store.selectedPairs().map(p => mappedPairLabel(S(), p));
     return p.length ? p.join(", ") : t("sparams.none");
   };
 
@@ -135,8 +135,8 @@ export function SParamTools(props: { smith?: boolean; store?: SParamSelection; f
         <div class="seg seg-sm" role="radiogroup" aria-label={t("sparams.smithPort")} onKeyDown={radioGroupKeys}>
           <For each={S().ports}>
             {(p) => (
-              <button class="seg-btn" role="radio" aria-checked={store.smithPort() === p} classList={{ active: store.smithPort() === p }} onClick={() => store.setSmithPort(p)}>
-                {pairLabel([p, p])}
+              <button class="seg-btn" role="radio" aria-checked={store.smithPort() === p} classList={{ active: store.smithPort() === p }} onClick={() => store.setSmithPort(p)} title={t("sparams.portMapping", { mapping: `${p} → ${physicalPortNumber(S(), p) ?? t("sparams.unknownPort")}` })}>
+                {mappedPairLabel(S(), [p, p])}
               </button>
             )}
           </For>
@@ -153,6 +153,9 @@ export function SParamTools(props: { smith?: boolean; store?: SParamSelection; f
               <span class="menu-label">{t("sparams.matrixAxes")}</span>
               <span class="menu-label push">{store.selectedPairs().length}/{MAX_SERIES}</span>
             </div>
+            <Show when={S().physicalPorts !== undefined}>
+              <p class="menu-label">{t("sparams.portMapping", { mapping: S().ports.map(p => `${p} → ${physicalPortNumber(S(), p) ?? t("sparams.unknownPort")}`).join(", ") })}</p>
+            </Show>
             <div class="sp-grid" role="group" aria-label={t("sparams.matrixAria")} onKeyDown={(e) => gridKeys(e, S().ports.length)} style={{ "grid-template-columns": `repeat(${S().ports.length}, auto)` }}>
               <For each={S().ports}>
                 {(i) => (
@@ -170,7 +173,7 @@ export function SParamTools(props: { smith?: boolean; store?: SParamSelection; f
                           title={!avail() ? t("sparams.notStored") : !on() && store.selectedPairs().length >= MAX_SERIES ? t("sparams.atMost", { count: MAX_SERIES }) : on() && store.selectedPairs().length <= 1 ? t("sparams.keepOne") : undefined}
                           onClick={() => toggle([i, j])}
                         >
-                          {pairLabel([i, j])}
+                          {mappedPairLabel(S(), [i, j])}
                         </button>
                       );
                     }}
@@ -196,7 +199,7 @@ export function SParamChart(props: { markers?: { x: number; label: string; activ
   const groups = createMemo(() => plotQuantities(store.selectedPairs().flatMap((p, k) => {
       const c = S().get(p[0], p[1]);
       if (!c) return [];
-      return [{ id: key(p), label: pairLabel(p), color: COLORS[k], x: fGHz(), re: c.re, im: c.im }];
+      return [{ id: key(p), label: mappedPairLabel(S(), p), color: COLORS[k], x: fGHz(), re: c.re, im: c.im }];
     }), props.format ?? "plot", store.mode()));
   return (
     <Show when={groups().some((g) => g.series.length)} fallback={<div class="panel-empty">{t("sparams.chooseOneAbove")}</div>}>
@@ -215,10 +218,10 @@ export function SParamSmith(props: { markers: { f: number; label: string }[] }) 
   const z0 = () => S().zRef[S().ports.indexOf(port())] ?? 50;
   const reflection = createMemo(() => reflectionAtPort(bundle(), port()));
   return (
-    <Show when={gamma() && reflection()} fallback={<div class="panel-empty">{t("sparams.pairNotStoredProject", { pair: pairLabel([port(), port()]) })}</div>}>
+    <Show when={gamma() && reflection()} fallback={<div class="panel-empty">{t("sparams.pairNotStoredProject", { pair: mappedPairLabel(S(), [port(), port()]) })}</div>}>
       <SmithChart
-        ariaLabel={t("sparams.smithOf", { pair: pairLabel([port(), port()]) })}
-        quantity={pairLabel([port(), port()])}
+        ariaLabel={t("sparams.smithOf", { pair: mappedPairLabel(S(), [port(), port()]) })}
+        quantity={mappedPairLabel(S(), [port(), port()])}
         f={S().f}
         re={gamma()!.re}
         im={gamma()!.im}
@@ -240,11 +243,14 @@ export function portReflection(b: Bundle, port: number) {
 /** Smith chart of the selection's port S_pp for every compared run, each in its run's colour. */
 export function SParamSmithCompare(props: { store: SParamSelection; traces: Trace[]; markers: { f: number; label: string }[] }) {
   const port = () => props.store.smithPort();
-  const q = () => pairLabel([port(), port()]);
+  const q = (b = props.traces[0]?.bundle) => {
+    const m = sMatrix(b);
+    return m ? mappedPairLabel(m, [port(), port()]) : pairLabel([port(), port()]);
+  };
   const main = createMemo(() => (props.traces[0] ? portReflection(props.traces[0].bundle, port()) : null));
   const overlays = () => props.traces.slice(1).flatMap((t, i) => {
     const r = portReflection(t.bundle, port());
-    return r ? [{ label: `${q()} · ${t.label}`, color: SERIES_COLORS[i + 1], re: r.re, im: r.im }] : [];
+    return r ? [{ label: `${q(t.bundle)} · ${t.label}`, color: SERIES_COLORS[i + 1], re: r.re, im: r.im }] : [];
   });
   return (
     <Show when={main()} fallback={<div class="panel-empty">{t("sparams.pairNotStoredRun", { pair: q() })}</div>}>
@@ -269,7 +275,7 @@ export function sparamTable(): { columns: string[]; rows: (string | number)[][] 
   const phase = store.mode() === "phase";
   const cols = S.pairs.map((p) => (phase ? phaseDeg(S.get(p[0], p[1])!) : magDb(S.get(p[0], p[1])!)));
   return {
-    columns: ["f (GHz)", ...S.pairs.map((p) => `${pairLabel(p)} (${phase ? "°" : "dB"})`)],
+    columns: ["f (GHz)", ...S.pairs.map((p) => `${mappedPairLabel(S, p)} (${phase ? "°" : "dB"})`)],
     rows: every(S.f.length).map((k) => [Number(numPlain(S.f[k] / 1e9, 4)), ...cols.map((c) => c[k])]),
   };
 }

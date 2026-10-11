@@ -161,3 +161,22 @@ assert.equal(Number(weights[3]), lo / 1e9);
 assert.equal(Number(weights[5]), 1e-12);
 assert.equal(Number(weights[6]), -1e-13);
 console.log('Package CSV precision passed for sweeps, matrices, bands, far-fields and active reflection');
+
+// A one-port matrix index is distinct from the model's physical port number.
+const mappedOne = bundle(1);
+mappedOne.ports[0].number = 5;
+mappedOne.results.ports['5'] = mappedOne.results.ports['1'];
+delete mappedOne.results.ports['1'];
+mappedOne.results.sparams.port_numbers = [5];
+await exportResultTouchstone(mappedOne, 'physical-port-5');
+assert.equal(offered.name, 'physical-port-5.s1p');
+const mappedParsed = parseTouchstone(new TextDecoder().decode(await downloaded()));
+assert.deepEqual(mappedParsed.re, mappedOne.results.ports['5'].s11_re);
+assert.deepEqual(mappedParsed.im, mappedOne.results.ports['5'].s11_im);
+for (const invalid of [null, [6], [5, 6]]) {
+  const bad = structuredClone(mappedOne); bad.results.sparams.port_numbers = invalid;
+  const before = offered;
+  await assert.rejects(() => exportResultTouchstone(bad, 'bad-map'), /does not match the exported port/);
+  assert.equal(offered, before, 'an invalid association cannot offer a file');
+}
+console.log('Mapped single-port download keeps physical port identity and rejects invalid associations');

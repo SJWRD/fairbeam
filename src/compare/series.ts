@@ -5,7 +5,7 @@ import type { Series } from "../charts/LineChart";
 import { plotQuantities, type PlotFormat, type PlotQuantity } from "../charts/plotQuantities.ts";
 import type { PolarSeries } from "../charts/PolarChart";
 import { nearestIndex, patternCut, sweep, type Sweep } from "../lib/rf.ts";
-import { hasSParameterPhase, magDb, pairLabel, phaseDeg, sMatrix } from "../lib/sparams.ts";
+import { hasSParameterPhase, magDb, mappedPairLabel, pairLabel, phaseDeg, sMatrix } from "../lib/sparams.ts";
 import type { Bundle, FarField } from "../types";
 import { fmt } from "../i18n/index.ts";
 import { drivenPort } from "../lib/farfieldQuantity.ts";
@@ -148,7 +148,7 @@ export function compareSParams(ts: Trace[], pairs: [number, number][], mode: "db
       const c = m.get(p[0], p[1]);
       if (!c) return;
       const y = mode === "db" ? interp(grids[i], magDb(c), x) : interp(grids[i], unwrapDeg(phaseDeg(c)), x).map((v) => (Number.isFinite(v) ? wrapDeg(v) : NaN));
-      series.push({ id: `cmp-${i}-${p[0]},${p[1]}`, label: `${pairQuantity(p, mode)} · ${t.label}`, color: SERIES_COLORS[i], dash: PAIR_DASHES[k], x, y });
+      series.push({ id: `cmp-${i}-${p[0]},${p[1]}`, label: `${mode === "db" ? `|${mappedPairLabel(m, p)}|` : `∠${mappedPairLabel(m, p)}`} · ${t.label}`, color: SERIES_COLORS[i], dash: PAIR_DASHES[k], x, y });
     });
   });
   return { x, series };
@@ -165,7 +165,7 @@ export function compareSParamQuantities(ts: Trace[], pairs: [number, number][], 
     return pairs.flatMap((p, k) => {
       const c = m.get(p[0], p[1]);
       if (!c) return [];
-      return [{ id: `cmp-${i}-${p[0]},${p[1]}`, label: pairLabel(p), suffix: t.label, color: SERIES_COLORS[i], dash: PAIR_DASHES[k] ?? "", x,
+      return [{ id: `cmp-${i}-${p[0]},${p[1]}`, label: mappedPairLabel(m, p), suffix: t.label, color: SERIES_COLORS[i], dash: PAIR_DASHES[k] ?? "", x,
         phaseKnown: hasSParameterPhase(t.bundle),
         re: interp(grids[i], c.re, x), im: interp(grids[i], c.im, x) }];
     });

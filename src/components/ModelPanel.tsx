@@ -1,11 +1,11 @@
 import { lumpedLabel } from "../lumped.ts";
 import { For, Show } from "solid-js";
 import { Eye, EyeOff, PenTool } from "lucide-solid";
-import { bundle, fieldPlaneMap, hiddenParts, hoverPart, layers, meshPlane, setFieldPlaneMap, setHiddenParts, setHoverPart, setLayers, setMeshPlane, source, type Axis, type Layers } from "../state";
+import { bundle, fieldPlaneMap, hiddenParts, hoverPart, layers, meshPlane, setFieldPlaneMap, setHiddenParts, setHoverPart, setLayers, setMeshPlane, source, sourceOrigin, type Axis, type Layers } from "../state";
 import { fieldPlaneLabel } from "../designer/navModel";
 import "../styles/field-map.css";
 import { DEMO } from "../env";
-import { designFor, exampleConversionBlocker, exampleSourceFor, isExample } from "../runner/examples";
+import { designFor, exampleConversionBlocker, exampleSourceFor, isExampleSource } from "../runner/examples";
 import { models, openExampleCopy, serverState } from "../runner/store";
 import { enterDesign } from "../designer/store";
 import { dims, num } from "../lib/format";
@@ -22,10 +22,10 @@ const LAYERS: { key: keyof Layers }[] = [
 
 /** Examples mode: copy the source into Design or open its source design. */
 function ExampleActions(props: { model: string }) {
-  const design = () => designFor(models(), props.model);
-  const sourceModel = () => isExample({ file: source() }) ? exampleSourceFor(models(), props.model) : undefined;
+  const design = () => sourceOrigin() === "local-file" ? undefined : designFor(models(), props.model);
+  const sourceModel = () => isExampleSource(source(), sourceOrigin()) ? exampleSourceFor(models(), props.model) : undefined;
   // shapes the Design schema cannot hold: say so on the button (it stays hoverable for the reason)
-  const blocker = () => { const b = bundle(); return b && isExample({ file: source() }) ? exampleConversionBlocker(b) : null; };
+  const blocker = () => { const b = bundle(); return b && isExampleSource(source(), sourceOrigin()) ? exampleConversionBlocker(b) : null; };
   const reason = () => blocker() ? t("model.cantOpen", { reason: blocker() }) : !sourceModel() ? t("model.noSource") : null;
   return (
     <Show when={!DEMO && serverState() === "online"}>
