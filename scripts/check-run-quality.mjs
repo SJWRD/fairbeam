@@ -95,7 +95,7 @@ assert.equal(runQuality(preview), null, "a geometry preview has no verdict");
   }
   const results = readFileSync(new URL("../src/designer/runResults.ts", import.meta.url), "utf8");
   assert.ok(/return indexQuality\(indexedRuns\(\)\.get\(file\)\)/.test(results), "the tree's badge falls back to the index's verdict");
-  assert.ok(/const known = readQuality\(\)\.get\(file\);\s+if \(known !== undefined\) return known;/.test(results), "a bundle that was read outranks the index");
+  assert.ok(/const known = readQuality\(\)\.get\(file\);\s+if \(known !== undefined && readStamp\.get\(file\) === runStamp\(file\)\) return known;/.test(results), "only a bundle read for the current index generation outranks the index");
   const types = readFileSync(new URL("../src/types.ts", import.meta.url), "utf8");
   assert.ok(/quality\?: "converged" \| "not-converged" \| "suspicious"/.test(types), "ProjectIndexEntry.quality is optional");
 }

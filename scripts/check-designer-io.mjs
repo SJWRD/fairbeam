@@ -21,7 +21,7 @@ function fixture(owner){
  const io=createDesignerIO(core,{
   transport:{design:id=>{log.push(['get',id]);return get.promise;},saveDesign:(f,d,hash)=>{log.push(['put',f.backup_scope,d,hash]);return put.promise;}},
   rememberLastDesign:f=>log.push(['remember',f.backup_scope]),readBackup:f=>{log.push(['read',f.backup_scope]);return null;},clearBackup:f=>log.push(['clear',f.backup_scope]),
-  stopPreview:()=>log.push(['stop']),forgetPreviewFailure:()=>log.push(['forget']),resetParamAsks:()=>log.push(['reset']),schedulePreview:()=>log.push(['preview']),applyModelEntry:m=>log.push(['model',m.key]),
+  stopPreview:()=>log.push(['stop']),forgetPreviewFailure:()=>log.push(['forget']),resetParamAsks:()=>log.push(['reset']),schedulePreview:()=>log.push(['preview']),applyModelEntry:m=>log.push(['model',m.key]),restoreModelSelection:f=>log.push(['selection',f?.id??'']),
  });
  core.takeFile(file('same','base',owner));
  return{core,io,log,nextGet:()=>get=deferred(),nextPut:()=>put=deferred()};
@@ -47,6 +47,33 @@ da=a.nextPut();pa=a.io.save();a.core.setFile({...a.core.file(),hash:'renamed'});
 let ga=a.nextGet(),gb=b.nextGet();let oa=a.io.openDesign('new-a'),ob=b.io.openDesign('new-b');ga.resolve(file('new-a','a','A'));await oa;assert.equal(b.core.loading(),true);gb.resolve(file('new-b','b','B'));await ob;
 assert.equal(a.core.file().id,'new-a');assert.equal(b.core.file().id,'new-b');assert(a.log.some(x=>x[0]==='read'&&x[1]==='A'));
 for(const fails of [false,true]){ga=a.nextGet();oa=a.io.openDesign('old');const newer=a.nextGet(),on=a.io.openDesign('new');newer.resolve(file('new','next','A'));await on;fails?ga.reject(Error('obsolete')):ga.resolve(file('old'));await oa;assert.equal(a.core.file().id,'new');assert.equal(a.core.message(),null);}
+// A real edit while an open is pending revokes replacement permission, even if its reply fails.
+for(const fails of [false,true])for(const undo of [false,true]){
+ const x=fixture('pending-edit'),get=x.nextGet();x.io.releaseDraft();const opening=x.io.openDesign('other');
+ x.core.edit(d=>d.model.description='typed after navigation');if(undo)x.core.undo();
+ const mark=x.core.historyMark(),draft=x.core.snapshot(),saved=x.core.file();
+ fails?get.reject(Error('late network error')):get.resolve(file('other'));
+ await opening;assert.equal(x.core.file(),saved);assert.equal(x.core.snapshot(),draft);assert.deepEqual(x.core.historyMark(),mark);
+ assert.equal(x.core.dirty(),!undo);assert.equal(x.core.loading(),false);assert.equal(x.io.navigationTarget(),null);assert.equal(x.io.isReleased(),false);
+ assert.equal(x.core.message().tone,'warn');assert.match(x.core.message().text,/cancelled.*edited/);
+ assert.deepEqual(x.log.filter(e=>e[0]==='selection'),[['selection','same']]);
+ assert.equal(x.log.some(e=>['clear','read','remember'].includes(e[0])),false,'cancelled open neither replaces nor clears the edited backup');
+ assert.equal(x.log.filter(e=>e[0]==='preview').length,1,'only the retained current draft is previewed');
+ x.io.dispose();x.core.dispose();
+}
+// A newer open, close, document replacement or disposal owns the state, including its message.
+for(const change of ['new-open','cancel','replace','dispose'])for(const fails of [false,true]){
+ const x=fixture('superseded'),get=x.nextGet(),opening=x.io.openDesign('old');
+ x.core.edit(d=>d.model.description='new edit');
+ if(change==='new-open'){const next=x.nextGet(),p=x.io.openDesign('new');next.resolve(file('new'));await p;}
+ if(change==='cancel'){x.io.cancelNavigation();x.core.setLoading(false);}
+ if(change==='replace')x.core.takeFile(file('replacement'));
+ if(change==='dispose')x.io.dispose();
+ x.core.setMessage({tone:'good',text:'new owner'});const mark=x.core.historyMark(),saved=x.core.file(),calls=x.log.length;
+ fails?get.reject(Error('obsolete failure')):get.resolve(file('old'));await opening;
+ assert.equal(x.core.file(),saved);assert.deepEqual(x.core.historyMark(),mark);assert.equal(x.core.message().text,'new owner');assert.equal(x.log.length,calls);
+ x.io.dispose();x.core.dispose();
+}
 // Release tracks revision; disposal drops IO callbacks even if core survives.
 a.io.releaseDraft();assert.equal(a.io.isReleased(),true);a.core.edit(d=>d.model.description='changed');assert.equal(a.io.isReleased(),false);
 const c=fixture('C');ga=c.nextGet();oa=c.io.openDesign('pending');da=c.nextPut();pa=c.io.save();c.io.dispose();const logSize=c.log.length;ga.resolve(file('pending'));da.reject(fault(409));await oa;assert.equal(await pa,false);assert.equal(c.log.length,logSize);assert.equal(c.core.file().id,'same');assert.equal(c.core.saving(),false);assert.equal(c.core.loading(),false);assert.equal(c.core.message(),null);assert.equal(await c.io.save(),false);

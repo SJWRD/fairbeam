@@ -212,6 +212,7 @@ export const defaultDesignerIO = createDesignerIO(defaultDesignerSession, {
   readBackup: f => readBackup(f.id, f.hash, f.backup_scope), clearBackup: f => clearBackup(f.id, f.backup_scope, f.hash),
   stopPreview, forgetPreviewFailure, resetParamAsks: () => setParamAsks([]),
   schedulePreview: () => schedulePreview(0), applyModelEntry,
+  restoreModelSelection: f => selectModel(f?.id ?? ""),
 });
 export const { openDesign, save, saveExplicit, saveBeforeLeaving } = defaultDesignerIO;
 const { take, applyValidation, isReleased } = defaultDesignerIO;

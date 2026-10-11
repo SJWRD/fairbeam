@@ -1447,6 +1447,7 @@
   "load.indexInvalid": "Sonuç listesi okunamadı.",
   "load.indexPreserved": "Son yüklenen liste gösterilmeye devam ediyor.",
   "load.indexRetry": "Mevcut sonuçları görmek için yeniden deneyin.",
+  "load.runResultChanged": "Sonuç yüklenirken değişti. Yeniden deneyin.",
   "load.runResultFailed": "Çalıştırma bitti, ancak sonuç dosyası ({file}) okunamadı. Günlük sekmesine bakın veya yeniden çalıştırın. Ayrıntı: {error}",
   "mainTabs.close": "Kapat: {tab}",
   "mainTabs.efficiency": "Verimlilik",
@@ -2803,6 +2804,7 @@
   "runDock.runs.one": "Bir çalıştırma gösteriliyor.",
   "runDock.runs.openSummary": "Özeti aç",
   "runDock.runs.reading": "Çalıştırmalar okunuyor…",
+  "runDock.runs.readFailed": "{count} çalıştırma okunamadı. Tabloda eksik sonuçlar olabilir.",
   "runDock.runs.show": "{file}: bu çalıştırmayı gösterin",
   "runDock.runs.toggle": "{letter} çalıştırması karşılaştırmada",
   "runDock.runs.toggle.add": "{letter} · {label}: karşılaştırmaya eklemek için tıklayın",
@@ -3465,6 +3467,7 @@
     "other": "Kaydedildi. {count} hata: çalıştırmadan önce düzeltin (Denetimler'e bakın)."
   },
   "store.savedNewer": "Kaydedildi. Daha yeni değişiklikler kaydedilmedi.",
+  "store.openCancelledByEdit": "Diğer tasarım yüklenirken mevcut tasarımı düzenlediğiniz için açma işlemi iptal edildi. Değişiklikleriniz burada korundu. Hazır olduğunuzda diğer tasarımı yeniden açın.",
   "store.savedNoBuild": "Kaydedildi. Henüz oluşturulamıyor: çalıştırmadan önce düzeltin (Denetimler'e bakın).",
   "store.savedWarnings": {
     "other": "{count} uyarıyla kaydedildi (Denetimler'e bakın)."
@@ -4577,7 +4580,7 @@
   "research.source": "Geometri kaynağı",
   "research.fixture": "Dielektrik levha test durumu",
   "research.currentDesign": "Geçerli tasarımın anlık görüntüsü",
-  "research.designHint": "Kaydedilmemiş düzenlemeler dahil anlık görüntüyü gönderir. Yalnızca desteklenen kayıpsız kutular kabul edilir. Desteklenmeyen geometri, malzemeler ve portlar reddedilir.",
+  "research.designHint": "Kaydedilmemiş düzenlemeler dahil mevcut geometri ve malzemeleri kullanır. Deney, bu paneldeki frekans bandı ve mesh ayarlarıyla, kendi uyarımı, sınır koşulları ve problarıyla çalışır; tasarımın simülasyon ayarları ve monitörleri kullanılmaz. Yalnızca desteklenen kayıpsız kutular kabul edilir; desteklenmeyen geometri, malzemeler ve portlar reddedilir.",
   "research.fixtureHint": "Kayıpsız levha, bağıl dielektrik sabiti 4. Ön ve arka koordinatlar kalınlığını belirler.",
   "research.periodX": "X periyodu (mm)",
   "research.periodY": "Y periyodu (mm)",

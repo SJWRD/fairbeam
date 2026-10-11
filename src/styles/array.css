@@ -19,7 +19,8 @@
 .array-table-wrap { overflow-x: auto; }
 .array-table-wrap .table td { vertical-align: middle; }
 .array-input { width: 64px; flex: none; height: var(--al-control-h-sm); text-align: right; }
-.array-steer { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: var(--al-space-2) var(--al-space-3); align-items: center; }
+/* Each label precedes its full-width controls, including in the narrow three-column dock. */
+.array-steer { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--al-space-2); align-items: center; }
 .array-steer .seg { justify-self: start; }
 .array-scan { display: flex; align-items: center; gap: var(--al-space-2); min-width: 0; }
 .array-scan input[type="range"] { flex: 1; min-width: 80px; accent-color: var(--al-action); }

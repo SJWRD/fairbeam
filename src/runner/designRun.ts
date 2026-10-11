@@ -3,15 +3,16 @@ import { openResearch } from "./researchState";
 // Run dialog, followed in the designer's bottom dock, and its result bundle kept here. A design's
 // runs stay in Design mode (#51): the navigation tree lists them and selecting one shows it in place
 // (src/designer/runResults.ts). The third mode, Examples, is for the example projects.
-import { createEffect, createRoot, createSignal, on } from "solid-js";
+import { batch, createEffect, createMemo, createRoot, createSignal, on } from "solid-js";
 import type { Bundle } from "../types";
 import { projectUrl } from "../env";
 import { validateBundle, summarize } from "../lib/validate";
+import { matchesResultIndex, resultStamp } from "../lib/resultIdentity";
 import { runQuality } from "../lib/runQuality";
-import { appMode, setAppMode } from "../workspace";
+import { appMode, appModeRevision, setAppMode } from "../workspace";
 import { isTerminal, type Job } from "./api";
 import { checks, conflict, dirty, file as designFile, quickPreview, save, schedulePreview } from "../designer/store";
-import { bundle, clearProject, lastProject, loadIndex, loadProject, openCount, source } from "../state";
+import { bundle, clearProject, index, lastProject, loadIndex, loadProject, openCount, source } from "../state";
 import { newestResults } from "./resultsIndex";
 import { requireDesignResult, ResultFollow } from "./resultFollow";
 import { exampleEntries } from "./examples";
@@ -37,10 +38,23 @@ export function openSimSettings(section = "freq") {
 /** the job the designer started (the live job may later be another one, from the Run panel) */
 export const [designJobId, setDesignJobId] = createSignal<string | null>(null);
 /** the finished run's bundle, shown in the dock's result tabs */
-export const [designResult, setDesignResult] = createSignal<{ file: string; bundle: Bundle; jobId?: string } | null>(null);
+const [storedDesignResult, setDesignResultSignal] = createSignal<{ file: string; bundle: Bundle; jobId?: string } | null>(null);
+export const setDesignResult = setDesignResultSignal;
+export const [designResultLoading, setDesignResultLoading] = createSignal<string | null>(null);
 export const [designResultError, setDesignResultError] = createSignal<string | null>(null);
 /** The result file whose load failed, so the message can offer Retry. */
 export const [failedResultLoad, setFailedResultLoad] = createSignal<{ file: string; jobId?: string } | null>(null);
+export const designResult = createRoot(() => createMemo(() => {
+  const run = storedDesignResult();
+  const target = designResultLoading() ?? failedResultLoad()?.file;
+  return run && (!target || target === run.file) &&
+    matchesResultIndex(index().find(entry => entry.file === run.file), run.bundle) ? run : null;
+}));
+/** A replaced result stays selected while reloading or waiting for an explicit Retry. */
+export const pendingDesignResultFile = () => {
+  const run = storedDesignResult();
+  return designResultLoading() ?? failedResultLoad()?.file ?? (run && !designResult() ? run.file : null);
+};
 /** Load the result file that failed to load once more. */
 export const retryResultLoad = () => { const f = failedResultLoad(); if (f) void loadDesignResult(f.file, f.jobId); };
 
@@ -133,14 +147,20 @@ export function attachDesignOptimize(job: Job) {
 }
 
 let resultSeq = 0;
+let resultRequest: { file: string; key: string | undefined; jobId?: string; refreshing?: boolean } | null = null;
 const follower = new ResultFollow();
-export async function loadDesignResult(file: string, jobId?: string): Promise<boolean> {
+export async function loadDesignResult(file: string, jobId?: string, refreshIndex = false): Promise<boolean> {
   const expectedModel = designFile()?.design.model.id;
   if (!expectedModel) return false;
   const mine = ++resultSeq;
+  resultRequest = { file, key: resultStamp(index().find(entry => entry.file === file)), jobId, refreshing: refreshIndex };
+  setDesignResultLoading(file);
   setDesignResultError(null);
   setFailedResultLoad(null);
   try {
+    if (refreshIndex) { await loadIndex(); if (mine !== resultSeq) return false; }
+    const stamp = resultStamp(index().find(entry => entry.file === file));
+    resultRequest = { file, key: stamp, jobId };
     // one retry after 500 ms: right after a run the dev server can still answer the just-written
     // file with index.html (not JSON); the built app serves it directly
     const read = async () => {
@@ -153,6 +173,9 @@ export async function loadDesignResult(file: string, jobId?: string): Promise<bo
     const v = validateBundle(raw);
     if (!v.bundle) throw new Error(summarize(v.errors));
     if (mine !== resultSeq) return false;
+    const entry = index().find(entry => entry.file === file);
+    if (resultStamp(entry) !== stamp) return false;
+    if (!matchesResultIndex(entry, v.bundle)) throw new Error(t("load.runResultChanged"));
     requireDesignResult(v.bundle, expectedModel);
     setDesignResult({ file, bundle: v.bundle, jobId });
     // a run that did not converge keeps the dock on its Run tab: that is where the warning is
@@ -162,42 +185,61 @@ export async function loadDesignResult(file: string, jobId?: string): Promise<bo
     return true;
   } catch (e) {
     if (mine !== resultSeq) return false;
-    if (designResult()?.file === file) setDesignResult(null);
-    setDesignResultError(t("load.runResultFailed", { file, error: (e as Error).message }));
     setFailedResultLoad({ file, jobId });
+    if (storedDesignResult()?.file === file) setDesignResult(null);
+    setDesignResultError(t("load.runResultFailed", { file, error: (e as Error).message }));
     return false;
+  } finally {
+    if (mine === resultSeq) { resultRequest = null; setDesignResultLoading(null); }
   }
 }
 
 export function clearDesignResult() {
+  batch(() => {
   resultSeq++;
+  resultRequest = null;
   follower.dismiss();
+  setDesignResultLoading(null);
   setDesignResult(null);
   setDesignResultError(null);
   setFailedResultLoad(null);
   setDesignJobId(null);
   setDesignDockTab("checks");
+  });
 }
 
 /** Examples mode: keep an open example (or a bundle opened from a file); replace a geometry preview
  * or a run of one of your designs with the last example opened, else the newest one. */
 export async function openExamples() {
   setAppMode("results");
+  const navigation = appModeRevision();
+  let opened = openCount();
+  const current = () => appMode() === "results" && appModeRevision() === navigation && openCount() === opened;
   const b = bundle();
   const entries = exampleEntries(await loadIndex());
+  if (!current()) return;
   if (b && !b.preview && entries.some((p) => p.file === source())) return;
   invalidatePreview();
   clearProject();
-  const start = openCount();
-  if (openCount() !== start || appMode() !== "results") return;
+  opened = openCount();
   const last = lastProject();
   const pick = entries.find((p) => p.file === last && p.simulated) ?? newestResults(entries)[0] ?? entries[0];
-  if (pick) await loadProject(pick.file);
+  if (pick) await loadProject(pick.file, current);
 }
 
 // Watch the whole history, not only the job currently attached to the SSE stream. A run
 // finished in the Run panel or a sweep belongs in this design's dock too.
 createRoot(() => {
+  createEffect(on([index, appMode], () => {
+    const run = storedDesignResult();
+    if (appMode() !== "design") return;
+    const pending = resultRequest;
+    if (pending?.refreshing) return; // The finishing job owns its index refresh and job ID.
+    if (pending && pending.key !== resultStamp(index().find(entry => entry.file === pending.file)))
+      void loadDesignResult(pending.file, pending.jobId);
+    else if (!pending && run && !matchesResultIndex(index().find(entry => entry.file === run.file), run.bundle))
+      void loadDesignResult(run.file, run.jobId);
+  }, { defer: true }));
   createEffect(on(appMode, (mode) => {
     if (mode === "design" && designFile()) { quickPreview(); schedulePreview(0); }
   }));
@@ -220,16 +262,15 @@ createRoot(() => {
       .sort((a, b) => (b.finished ?? 0) - (a.finished ?? 0))[0];
     const key = latest ? `${latest.id}:${latest.finished}:${latest.bundle}` : "";
     if (!latest) {
-      resultSeq++;
-      setDesignResult(null);
+      // An unrelated/empty job refresh does not own a manually selected or external result.
+      // Switching designs already clears the result and cancels its pending request above.
       follower.reset();
       return;
     }
     const ticket = follower.begin(key);
     if (!ticket) return;
     // the index lists the new bundle for the navigation tree's Results
-    void loadIndex();
-    void loadDesignResult(latest.bundle!, latest.id).then((success) => follower.finish(ticket, success));
+    void loadDesignResult(latest.bundle!, latest.id, true).then((success) => follower.finish(ticket, success));
   }));
   // a run of the open design that this window did not start (a terminal, a script, an agent, another
   // window; #7): follow it in the dock like the designer's own run, unless a run is followed already

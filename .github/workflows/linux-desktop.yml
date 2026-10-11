@@ -35,6 +35,8 @@ jobs:
           rustup default stable
       - run: npm ci
       - run: npm run check:linux-desktop
+      - name: Test isolated package-check orchestration (no Docker install yet)
+        run: python3 -m unittest discover -s python/tests -p test_linux_package_install.py -v
       - name: Check notices for all packaged targets
         run: npm run check:licenses
       - name: Test Linux reveal path handling (no graphical session)
@@ -57,6 +59,23 @@ jobs:
           desktops=("$RUNNER_TEMP/fairbeam-deb/usr/share/applications/"*.desktop)
           test "${#desktops[@]}" -eq 1
           grep -Eq '^Exec=fairbeam([[:space:]]|$)' "${desktops[0]}"
+      - name: Install and purge package in a minimal Ubuntu container (no GUI or solver)
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          packages=(src-tauri/target/release/bundle/deb/*.deb)
+          test "${#packages[@]}" -eq 1
+          python3 scripts/check-linux-package-install.py "${packages[0]}" --source-sha "$GITHUB_SHA" 2>&1 \
+            | tee "$RUNNER_TEMP/linux-package-install.log"
+      - name: Keep package qualification log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fairbeam-linux-package-check-${{ github.sha }}
+          path: ${{ runner.temp }}/linux-package-install.log
+          if-no-files-found: ignore
+          retention-days: 7
       - name: Keep experimental package for manual desktop testing
         uses: actions/upload-artifact@v4
         with:

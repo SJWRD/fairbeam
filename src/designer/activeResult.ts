@@ -7,8 +7,9 @@
 import { createEffect, createRoot, createSignal, on } from "solid-js";
 import type { Bundle } from "../types";
 import { appMode } from "../workspace";
-import { bundle } from "../state";
-import { designResult } from "../runner/designRun";
+import { matchesResultIndex, resultStamp } from "../lib/resultIdentity";
+import { bundle, index, source } from "../state";
+import { designResult, designResultLoading, pendingDesignResultFile } from "../runner/designRun";
 import { file as designFile } from "./store";
 import { designRuns, loadRunBundle } from "./runResults";
 
@@ -22,19 +23,20 @@ export interface DesignResultState {
 }
 
 const [fallback, setFallback] = createSignal<{ file: string; bundle: Bundle } | null>(null);
-const [reading, setReading] = createSignal<string | null>(null);
+const [reading, setReading] = createSignal<{ file: string; key: string | undefined } | null>(null);
 
 /** The newest run the index lists for the open design when the dock has none (a run of an earlier session, or one a
- * script started): read once per file, only in Design mode. */
+ * script started): read once per indexed generation, only in Design mode. */
 createRoot(() => {
-  createEffect(on([() => appMode(), () => designFile()?.design.model.id, () => designResult()?.file, () => designRuns()[0]?.file], ([mode, model, shown, newest]) => {
-    if (fallback() && (fallback()!.bundle.model.id !== model || fallback()!.file !== newest)) setFallback(null);
-    if (mode !== "design" || !model || shown || !newest || fallback()?.file === newest || reading() === newest) return;
-    setReading(newest);
+  createEffect(on([() => appMode(), () => designFile()?.design.model.id, () => designResult()?.file, () => designRuns()[0]?.file, () => resultStamp(index().find(entry => entry.file === designRuns()[0]?.file))], ([mode, model, shown, newest]) => {
+    if (fallback() && (fallback()!.bundle.model.id !== model || fallback()!.file !== newest || !matchesResultIndex(index().find(entry => entry.file === fallback()!.file), fallback()!.bundle))) setFallback(null);
+    if (mode !== "design" || !model || shown || pendingDesignResultFile() || !newest || fallback()?.file === newest || reading()?.file === newest && reading()?.key === resultStamp(index().find(entry => entry.file === newest))) return;
+    const request = { file: newest, key: resultStamp(index().find(entry => entry.file === newest)) };
+    setReading(request);
     loadRunBundle(newest).then((b) => {
-      if (reading() === newest && b.model.id === designFile()?.design.model.id && b.results) setFallback({ file: newest, bundle: b });
+      if (reading() === request && b.model.id === designFile()?.design.model.id && b.results) setFallback({ file: newest, bundle: b });
     }, () => { /* the run cannot be read: the design has no exportable run */ }).finally(() => {
-      if (reading() === newest) setReading(null);
+      if (reading() === request) setReading(null);
     });
   }));
 });
@@ -43,10 +45,12 @@ createRoot(() => {
 export function designResultState(): DesignResultState {
   const model = designFile()?.design.model.id;
   if (appMode() !== "design" || !model) return { bundle: null, file: null, loading: false };
+  const pending = pendingDesignResultFile();
+  if (pending) return { bundle: null, file: pending, loading: designResultLoading() !== null };
   const shown = designResult();
   if (shown?.bundle.results && shown.bundle.model.id === model) return { bundle: shown.bundle, file: shown.file, loading: false };
   const f = fallback();
-  if (f && f.bundle.model.id === model) return { bundle: f.bundle, file: f.file, loading: false };
+  if (f && f.bundle.model.id === model && matchesResultIndex(index().find(entry => entry.file === f.file), f.bundle)) return { bundle: f.bundle, file: f.file, loading: false };
   return { bundle: null, file: null, loading: reading() !== null };
 }
 
@@ -57,9 +61,10 @@ export const designResultBundle = (): Bundle | null => designResultState().bundl
  * it (the preview, never a bundle of another model); outside Design mode the shown bundle. */
 export function exportBundle(): Bundle | null {
   if (appMode() !== "design") return bundle();
+  if (pendingDesignResultFile()) return null;
   const run = designResultBundle();
   if (run) return run;
   const b = bundle();
   const model = designFile()?.design.model.id;
-  return b && model && b.model.id === model ? b : null;
+  return b && model && b.model.id === model && (b.preview || matchesResultIndex(index().find(entry => entry.file === source()), b)) ? b : null;
 }

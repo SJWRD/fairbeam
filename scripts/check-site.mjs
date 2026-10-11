@@ -50,15 +50,15 @@ assert.match(features, /same-timestep Windows CPU \/ macOS Metal/);
 assert.ok([...translations.values()].some((tr) => tr.includes("−30 dB") && tr.includes("0,004 dB")));
 const meshClaim = features.match(/<p>(Auto mode picks.*?)<\/p>/)[1];
 assert.match(translations.get(meshClaim), /dipol ve yama.*rezonans.*%0,1/);
-// the counts on the pages follow the shipped examples
+// The counts describe this browser demo, not an older downloadable installer gallery.
 assert.ok(home.includes(`opens ${index.length} simulated example projects`), `home page says ${index.length} examples`);
 for (const page of [home, features]) {
   assert.ok(page.includes(`Open all ${index.length} examples in the demo`), `demo link says ${index.length} examples`);
-  assert.ok(page.includes(`${index.length} simulated projects come with the app`), `example description says ${index.length} projects`);
+  assert.ok(page.includes(`The browser demo contains ${index.length} simulated example projects.`), `example description says ${index.length} projects`);
 }
 for (const suffix of ["", " Six of them:"]) {
-  const description = `${index.length} simulated projects come with the app and are listed in the browser demo.${suffix}`;
-  assert.ok(translations.get(description)?.includes(`simülasyonu yapılmış ${index.length} proje`), `Turkish example description says ${index.length} projects`);
+  const description = `The browser demo contains ${index.length} simulated example projects.${suffix}`;
+  assert.ok(translations.get(description)?.includes(`simülasyonu yapılmış ${index.length} örnek proje`), `Turkish example description says ${index.length} projects`);
 }
 const roadmap = read("landing/roadmap.json");
 assert.doesNotMatch(roadmap, /interrupted downloads resume|No lost work|same results|half the time|4 to 64 times/);

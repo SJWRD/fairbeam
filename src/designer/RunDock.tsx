@@ -24,7 +24,7 @@ import { checks } from "./store";
 import { resultFocus } from "./resultFocus";
 import { activeMainResult } from "./mainTabsState";
 import { MAX_COMPARE } from "./navModel";
-import { bundleQuality, bundleRunMetrics, comparedRuns, designRunBundle, designRuns, ensureDesignRunBundles, runShortLabel, selectedRuns, selectRun, showView } from "./runResults";
+import { bundleQuality, bundleRunMetrics, comparedRuns, designRunBundle, designRunBundleLoadState, designRuns, ensureDesignRunBundles, retryDesignRunBundles, runShortLabel, selectedRuns, selectRun, showView } from "./runResults";
 import { differingParams, differs, madeLabels } from "./resultTabs";
 import type { RunMetrics } from "./runSummary";
 import { RunQualityBadge, RunQualityBanner } from "./RunQualityView";
@@ -297,6 +297,7 @@ function RunProgress() {
 function RunsTable() {
   // the runs' bundles are read once, when the table is first shown (runResults.ts)
   createEffect(() => ensureDesignRunBundles());
+  const failedReads = () => designRuns().filter(r => designRunBundleLoadState(r.file) === "error").length;
   const [note, setNote] = createSignal("");
   // a result tab in front shows the picked run(s); with the 3D view in front the run shows there
   const where = () => (activeMainResult() ? "main" as const : "keep" as const);
@@ -334,7 +335,8 @@ function RunsTable() {
   const solverTime = (b: Bundle) => seconds(b.run?.solver_time_s ?? b.run?.wall_time_total_s ?? b.run?.wall_time_s);
   return (
     <div class="rdk-runs-tab">
-      <Show when={rows().length} fallback={<div class="panel-empty">{t(designRuns().length ? "runDock.runs.reading" : "runDock.runs.none")}</div>}>
+      <Show when={failedReads()}><p class="status-block" role="status"><span>{t("runDock.runs.readFailed", { count: failedReads() })}</span><button type="button" class="btn btn-ghost btn-sm" onClick={retryDesignRunBundles}>{t("common.retry")}</button></p></Show>
+      <Show when={rows().length} fallback={<Show when={!failedReads()}><div class="panel-empty">{t(designRuns().length ? "runDock.runs.reading" : "runDock.runs.none")}</div></Show>}>
         <p class="rdk-key-note">
           {plotted() > 1 ? t("runDock.runs.comparing", { count: plotted() }) : t("runDock.runs.one")} {t("runDock.runs.help")}
           <Show when={rows().length > 1 && !columns().length}> {t("runDock.runs.noDiff")}</Show>

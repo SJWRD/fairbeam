@@ -29,6 +29,9 @@ assert.doesNotMatch(workflow, /publish-release|TAURI_SIGNING|gh release|contents
 assert.ok(workflow.indexOf("npm run check:licenses") > 0);
 assert.ok(workflow.indexOf("npm run check:licenses") < workflow.indexOf("actions/upload-artifact"), "license gate precedes artifact publication");
 assert.match(workflow, /rustc --edition 2021 --test src-tauri\/src\/linux_reveal.rs/);
+assert.match(workflow, /python3 scripts\/check-linux-package-install\.py/);
+assert.match(workflow, /Install and purge package[^\n]*\n\s+shell: bash\n\s+run: \|\n\s+set -euo pipefail/, "tee must not hide installation failures");
+assert.ok(workflow.indexOf("python3 scripts/check-linux-package-install.py") < workflow.indexOf("Keep experimental package for manual desktop testing"), "minimal-container install gate precedes package retention");
 const collector = read("scripts/third-party-licenses.py");
 assert.match(collector, /for target in \([^\n]*'x86_64-unknown-linux-gnu'/, "license collector includes the Linux target");
 const inventory = json("scripts/licenses/inventory.json");

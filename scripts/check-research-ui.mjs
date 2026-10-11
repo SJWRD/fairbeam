@@ -85,6 +85,10 @@ try {
       store.setFile({ id: "synthetic-sheet", file: "synthetic-sheet.design.json", design: { ...store.draft, model: { id: "synthetic-sheet", name: "Synthetic sheet" } }, hash: "synthetic", readonly: false });
     });
     await page.select(".research-options > label:nth-of-type(3) select", "design");
+    const designHint = await page.$eval(".research-options > label:nth-of-type(3) .note", e => ({ text: e.textContent, visible: e.getBoundingClientRect().height > 0 && getComputedStyle(e).visibility !== "hidden" }));
+    const expectedHint = await page.evaluate(async () => (await import("/src/i18n/index.ts")).t("research.designHint"));
+    assert.equal(designHint.text, expectedHint);assert.equal(designHint.visible, true, "Design reuse scope is visible before submitting");
+    assert.match(designHint.text, language === "en" ? /simulation settings and monitors are not used/ : /simülasyon ayarları ve monitörleri kullanılmaz/);
     assert.equal(await page.$eval(start, e => e.disabled), false, "zero-depth current design reaches backend validation for supported PEC sheets");
     await page.select(".research-options > label:nth-of-type(3) select", "fixture");
     await page.$eval(frontInput, e => { e.value = "0"; e.dispatchEvent(new Event("input", { bubbles: true })); });

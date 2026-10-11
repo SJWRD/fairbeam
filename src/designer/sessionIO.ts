@@ -16,6 +16,7 @@ export interface DesignerIODependencies {
   resetParamAsks: () => void;
   schedulePreview: () => void;
   applyModelEntry: (model: NonNullable<Validation["model"]>) => void;
+  restoreModelSelection: (file: DesignFile | null) => void;
 }
 /** IO owns no global registration or viewport: dependencies belong to its captured session. */
 export function createDesignerIO(core: Core, deps: DesignerIODependencies) {
@@ -59,18 +60,29 @@ export function createDesignerIO(core: Core, deps: DesignerIODependencies) {
   async function openDesign(id: string, expectedScope?: string) {
     if (!alive()) return;
     const mine = asyncState.navigationTicket();
+    const draftAtOpen = asyncState.ticket();
     navigationTarget = id;
     deps.stopPreview();
     setLoading(true);
     setMessage(null);
+    const keepNewerEdits = () => {
+      if (asyncState.isDraftCurrent(draftAtOpen)) return false;
+      released = null;
+      deps.restoreModelSelection(file());
+      setMessage({ tone: "warn", text: t("store.openCancelledByEdit"), sticky: true });
+      if (alive() && asyncState.isOwnedNavigationCurrent(mine)) deps.schedulePreview();
+      return true;
+    };
     try {
       const f = await deps.transport.design(id);
-      if (!(alive() && asyncState.isOwnedNavigationCurrent(mine))) return;
+      if (!(alive() && asyncState.isOwnedNavigationCurrent(mine) && asyncState.isDocumentCurrent(draftAtOpen))) return;
+      if (keepNewerEdits()) return;
       if (expectedScope !== undefined && f.backup_scope !== expectedScope) throw new Error(t("store.workspaceChanged"));
       take(f);
       if (alive() && asyncState.isOwnedNavigationCurrent(mine)) deps.schedulePreview();
     } catch (e) {
-      if (!(alive() && asyncState.isOwnedNavigationCurrent(mine))) return;
+      if (!(alive() && asyncState.isOwnedNavigationCurrent(mine) && asyncState.isDocumentCurrent(draftAtOpen))) return;
+      if (keepNewerEdits()) return;
       released = null;   // the draft stays open: a later replacement asks again
       setMessage({ tone: "critical", text: (e as Error).message });
     } finally {

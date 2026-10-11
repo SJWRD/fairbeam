@@ -65,6 +65,18 @@ Dosya adındaki `0.7.2`, paket bilgisidir; `v0.7.2` etiketinin yeni bir yayını
 Elle masaüstü doğrulaması için önce aşağıdaki kaynak yükleyicisiyle CPU ortamını hazırlayın. Kabuk `~/opt/openEMS/venv/bin/python` yolunu bulabilir; özel bir dizin kullanıyorsanız Python yolunu kurulum ekranından seçin. `FAIRBEAM_PYTHON` masaüstü kabuğunun değil, tarayıcı başlatıcısının ortamını seçer. Geçici çalışma klasöründe açılışı, dosya iletişim kutularını, iptal/çıkış temizliğini ve kaynak bulmayı doğruladıktan sonra kaba çözücü çalıştırmasını deneyin. Bu denetimler bitene kadar mevcut tarayıcı iş akışı, test edilmiş kaynak kod yoludur.
 
 
+İş akışı ayrıca `scripts/check-linux-package-install.py` denetiminin geçici bir
+`ubuntu:24.04` amd64 Docker konteynerinde geçmesini gerektirir. Yerel `.deb` dosyasını bildirdiği
+bağımlılıklarla kurar; tanılama araçlarını eklemeden **önce** çözümlenemeyen paylaşımlı kütüphaneleri
+denetler, ELF/masaüstü/simge bilgilerini ve paket kaynaklarını doğrular. Ardından paketi kaldırır ve
+kendisine ait çalışma klasöründeki deneme dosyasının korunduğunu kontrol eder. Günlük, kaynak
+commit'ini, paket SHA-256/boyutunu ve konteyner imaj kimliğini kaydeder; yedi gün saklanır. Betik ana
+makinede `apt` çalıştırmaz ve yalnızca kendi konteynerini temizler. Yalnızca güvenilir, yerelde
+derlenmiş paketlerle kullanın: paket kurulumu, paketin bakım betiklerini konteynerde çalıştırır.
+Başarı; arayüz açılışını, gerçek kullanıcı çalışma klasörünü, openEMS'yi, yönetilen çalışma ortamı
+kurulumunu veya güncellemeleri doğrulamaz. Bu denetimin eklenmesi başarılı kurulum sonucu anlamına
+gelmez; böyle bir sonuç belirtmeden önce başarılı iş akışı kaydını kanıt olarak saklayın.
+
 Masaüstü Rust bildirimleri Linux x64 bağımlılık ağacını da kapsar; iş akışı yüklemeden önce bunları
 denetler. Sistem GTK/WebKit kütüphaneleri ve harici çözücü ortamı dağıtım/kullanıcı tarafından
 yönetilir. “Klasörde göster”, `xdg-open` ile dosyanın bulunduğu dizini açar; dosyayı seçmez.

@@ -85,6 +85,9 @@ export function bandsOf(f: number[], db: number[]): Band[] {
 
 function setSweep(ref: RefBundle, f: number[], re: number[], im: number[], zRef: number, phaseKnown: boolean) {
   const r = ref.results!;
+  // A new S11 sweep replaces the previous network dataset. A later multi-port import
+  // installs its own matrix after this call; never pair an old matrix with this new grid.
+  delete r.sparams;
   r.frequency = f;
   const z = phaseKnown ? zFromGamma({ re, im }, zRef) : { re: re.map(() => NaN), im: re.map(() => NaN) };
   r.ports = { 1: { s11_re: re, s11_im: im, zin_re: z.re, zin_im: z.im, z_ref: zRef } };

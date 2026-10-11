@@ -17,9 +17,18 @@ const root = fileURLToPath(new URL("../", import.meta.url)).replaceAll("\\", "/"
 const read = (p) => readFileSync(`${root}${p}`, "utf8").replace(/\r\n/g, "\n");
 const built = await build({
   root, configFile: false, logLevel: "silent", css: { postcss: {} },
+  // Keep components/the markup renderer server-side, but use the real reactive core for stores:
+  // the server core freezes createMemo at import time, before these fixtures change.
   plugins: [solid({ ssr: true }), {
     name: "export-dialog-entry",
-    resolveId(id) { if (id.endsWith("export-dialog-entry")) return "\0export-dialog-entry"; },
+    enforce: "pre",
+    resolveId(id, importer) {
+      if (id.endsWith("export-dialog-entry")) return "\0export-dialog-entry";
+      if (id === "solid-js") {
+        const markup = importer?.endsWith(".tsx") || importer?.replaceAll("\\", "/").endsWith("/web/dist/server.js");
+        return `${root}node_modules/solid-js/dist/${markup ? "server" : "solid"}.js`;
+      }
+    },
     load(id) {
       if (id !== "\0export-dialog-entry") return;
       const src = (path) => JSON.stringify(`${root}src/${path}`);
@@ -46,9 +55,19 @@ const built = await build({
   },
 });
 const chunk = (Array.isArray(built) ? built[0] : built).output.find((o) => o.type === "chunk");
+const globalNames = ["localStorage", "window", "requestAnimationFrame", "cancelAnimationFrame"];
+const savedGlobals = new Map(globalNames.map(name => [name, Object.getOwnPropertyDescriptor(globalThis, name)]));
+const frames = new Map();
+try {
 globalThis.localStorage = { getItem: () => null, setItem() {}, removeItem() {} };
 const { ExportDialog, PanelBoundary, PackageDialog, state, workspace, designer, designRun, ribbon, validateBundle, renderToString, createComponent } =
   await import(`data:text/javascript;base64,${Buffer.from(chunk.code).toString("base64")}`);
+// Reactive navigation announces focus changes. No DOM is needed by this markup test.
+globalThis.window = new EventTarget();
+let frameId = 0;
+// Rendering is synchronous; keep navigation's geometry-frame requests queued, without a DOM or solver.
+globalThis.requestAnimationFrame = (fn) => { frames.set(++frameId, fn); return frameId; };
+globalThis.cancelAnimationFrame = (id) => frames.delete(id);
 const en = JSON.parse(read("src/i18n/en.json"));
 const text = (html) => html.replace(/<!--[^>]*-->/g, "").replace(/<[^>]+>/g, " ").replace(/&#39;/g, "'").replace(/&quot;/g, '"').replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/\s+/g, " ");
 const mount = () => renderToString(() => createComponent(ExportDialog, {}));
@@ -94,12 +113,15 @@ assert.ok(text(html).includes(en["export.sourcePreparing"]), "the design's geome
   state.openBundle(preview, design.model.name);
   assert.ok(!state.bundle().results, "the 3D view shows the geometry preview");
   designRun.setDesignResult({ file: "ux_inset_patch_24_20261006.json", bundle: run });
+  assert.equal(designRun.designResult()?.bundle, run, "the real result memo reacts to a newly completed run");
+  assert.equal(designRun.pendingDesignResultFile(), null, "the completed fixture has no pending replacement");
   const shown = text(renderToString(() => createComponent(PackageDialog, {})));
   for (const path of ["data/s11.s1p", "figures/s11.svg", "report.pdf", "images/view_iso.png"]) assert.ok(shown.includes(path), `the package of a design with a run lists ${path}`);
   assert.ok(!shown.includes(en["package.noRunYet"]) && !shown.includes(en["package.needsResults"]), "nothing asks for results the design has");
   assert.ok(new RegExp(`${design.model.id.replace(/-/g, "_")}_\\d{8}-\\d{4}`).test(shown), "the package is named after the design's file stem");
   assert.equal(ribbon.ribbonExportReady(), true, "the ribbon's PDF report and Package are enabled with a completed run");
   designRun.setDesignResult(null);
+  assert.equal(designRun.designResult(), null, "clearing the run also updates the real result memo");
   const none = text(renderToString(() => createComponent(PackageDialog, {})));
   assert.ok(!none.includes("data/s11.s1p") && none.includes(en["package.noRunYet"]), "without a run: geometry only, and the reason is the missing run");
   assert.equal(ribbon.ribbonExportReady(), false, "without a run the ribbon's PDF report and Package are disabled");
@@ -158,3 +180,10 @@ assert.match(app, /createEffect\(on\(appMode, \(\) => \{ setExportOpen\(false\);
   "going to another screen (Start, Design, Examples) closes the export dialogs and their error panels");
 
 console.log("check-export-dialog: ok (results mode opens on CST with the macro, design mode on Blender; a dialog's error panel closes)");
+} finally {
+  frames.clear();
+  for (const [name, descriptor] of savedGlobals) {
+    if (descriptor) Object.defineProperty(globalThis, name, descriptor);
+    else delete globalThis[name];
+  }
+}

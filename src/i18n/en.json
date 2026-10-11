@@ -1470,6 +1470,7 @@
   "load.indexInvalid": "The results list could not be read.",
   "load.indexPreserved": "The last loaded list is still shown.",
   "load.indexRetry": "Retry to check for available results.",
+  "load.runResultChanged": "Result changed while loading. Try again.",
   "load.runResultFailed": "The run finished, but its result file ({file}) could not be read. Open the Log tab, or run again. Details: {error}",
   "mainTabs.close": "Close {tab}",
   "mainTabs.efficiency": "Efficiency",
@@ -2857,6 +2858,7 @@
   "runDock.runs.one": "One run shown.",
   "runDock.runs.openSummary": "Open the summary",
   "runDock.runs.reading": "Reading the runs…",
+  "runDock.runs.readFailed": "Could not read {count} runs. The table may be incomplete.",
   "runDock.runs.show": "{file}: show this run",
   "runDock.runs.toggle": "Run {letter} in the comparison",
   "runDock.runs.toggle.add": "{letter} · {label}: click to add it to the comparison",
@@ -3533,6 +3535,7 @@
     "other": "Saved. {count} errors: fix before running (see Checks)."
   },
   "store.savedNewer": "Saved. Newer edits remain unsaved.",
+  "store.openCancelledByEdit": "Opening the other design was cancelled because you edited the current design while it was loading. Your changes are kept here. Open the other design again when you are ready.",
   "store.savedNoBuild": "Saved. It does not build yet: fix before running (see Checks).",
   "store.savedWarnings": {
     "one": "Saved with {count} warning (see Checks).",
@@ -4658,7 +4661,7 @@
   "research.source": "Geometry source",
   "research.fixture": "Dielectric slab fixture",
   "research.currentDesign": "Current design snapshot",
-  "research.designHint": "Submits a snapshot including unsaved edits. Only supported lossless boxes are accepted. Unsupported geometry, materials and ports are rejected.",
+  "research.designHint": "Uses the current geometry and materials, including unsaved edits. The experiment uses this panel's frequency band and mesh, plus its own excitation, boundaries and probes; the Design's simulation settings and monitors are not used. Only supported lossless boxes are accepted; unsupported geometry, materials and ports are rejected.",
   "research.fixtureHint": "Lossless slab, relative permittivity 4. The front and back coordinates define its depth.",
   "research.periodX": "X period (mm)",
   "research.periodY": "Y period (mm)",

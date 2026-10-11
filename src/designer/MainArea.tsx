@@ -84,7 +84,7 @@ export default function MainArea(props: { children: JSX.Element }) {
     if (view) setTransformRequest(null);
     if (view && designResult() && untrack(resultFocus)?.view !== view) showView(view, undefined, "main");
   }, { defer: true }));
-  const loading = () => { const f = resultFocus(); return !!f && f.file !== designResult()?.file; };
+  const loading = () => { const f = resultFocus(); return !designResultError() && !!f && f.file !== designResult()?.file; };
 
   return (
     <div class="dw-main">
@@ -120,7 +120,7 @@ export default function MainArea(props: { children: JSX.Element }) {
               </Show>
               <Show when={loading()}><p class="dw-result-note" role="status">{t("mainTabs.reading")}</p></Show>
               <Show when={designResult()} fallback={
-                <div class="panel-empty">{t("mainTabs.empty")}</div>
+                <Show when={!loading() && !designResultError()}><div class="panel-empty">{t("mainTabs.empty")}</div></Show>
               }>{(r) => (
                 <>
                   <ResultToolbar view={view()} />

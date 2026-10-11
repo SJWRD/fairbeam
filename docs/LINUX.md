@@ -124,6 +124,17 @@ cancel/quit cleanup and resource discovery before trying a coarse solver run. Ke
 browser workflow as the tested source route until those checks have been completed.
 
 
+The workflow also requires `scripts/check-linux-package-install.py` to pass in a disposable
+`ubuntu:24.04` amd64 Docker container. It installs the local `.deb` with its declared dependencies,
+checks unresolved shared libraries **before** adding diagnostic tools, validates ELF/desktop/icon
+metadata and bundled resources, then purges the package and verifies an owned workspace sentinel.
+The log records the source commit, package SHA-256/size and container image identity; it is kept
+for seven days. The wrapper never runs `apt` on the host and cleans up only its own container.
+Use this only with a trusted, locally built package: package installation runs its maintainer
+scripts inside the container. A pass does not verify GUI startup, a real user's workspace,
+openEMS, managed runtime installation or updates. Adding this gate is not itself a passing
+installation result; retain a successful workflow run as evidence before claiming that result.
+
 The desktop Rust notices include the Linux x64 dependency graph; the workflow checks them before
 upload. System GTK/WebKit libraries and the external solver environment remain distribution/user
 managed. “Show in folder” opens the containing directory with `xdg-open` (the package depends on

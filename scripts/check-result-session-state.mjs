@@ -69,3 +69,5 @@ createRoot(dispose=>{try {
  dispose();
 }});
 console.log('Result session factories: isolated focus/tabs, injected dock routing, input ownership and disposal passed');
+// Keep asynchronous project/result ownership in the same CI gate as result-session state.
+await import('./check-result-lifecycle.mjs');
