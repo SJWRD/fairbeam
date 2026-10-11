@@ -88,7 +88,8 @@ jobs:
         run: npm run -s check:browser-manual
 
   windows:
-    needs: plan
+    # Cheap manifest/static checks must pass before allocating the expensive native runner.
+    needs: [plan, web]
     if: needs.plan.outputs.full == 'true' && needs.plan.outputs.reuse != 'true'
     runs-on: windows-latest
     timeout-minutes: 45

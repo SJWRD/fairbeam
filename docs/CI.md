@@ -4,7 +4,8 @@ PRs remain the qualification point. Application changes run the web checks and f
 Windows browser suite, Python suite and one real coarse openEMS smoke. Native, dependency,
 script and unknown-path changes use the same full qualification. Documentation/site-only PRs run
 web/documentation/site checks without starting a Windows runner. Manual CI runs always use
-the full suite.
+the full suite. The web checks finish before Windows starts, so a manifest or static-check
+failure does not consume a native runner at the same time.
 
 After a normal merge, the planner compares the final merge tree with the PR head tree and
 checks GitHub for a successful `ci.yml` PR run at that exact head. Only when both match are
