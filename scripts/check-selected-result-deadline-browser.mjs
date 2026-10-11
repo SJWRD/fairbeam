@@ -9,15 +9,20 @@ import {Session} from './scenarios/harness.mjs';
 const out=process.env.FAIRBEAM_TEST_ARTIFACTS||join(tmpdir(),`fairbeam-selected-deadline-${Date.now()}`);
 await mkdir(out,{recursive:true});
 const template=JSON.parse(await readFile(join(root,'public/projects/patch-antenna.json'),'utf8'));
-const stack=await startStack({log:console.log});let browser;const results=[];
+const stack=await startStack({log:console.log});let browser,page,session;const results=[];
 try {
  browser=await puppeteer.launch({headless:true,executablePath:await chromePath(),args:['--no-sandbox','--enable-unsafe-swiftshader','--use-angle=swiftshader']});
  console.log(`Owned stack PIDs: ${stack.pids.join(', ')}`);
  for(const lang of ['en','tr']) {
-  const context=await browser.createBrowserContext(),page=await context.newPage();await page.setViewport({width:1440,height:1000});
+  const context=await browser.createBrowserContext();page=await context.newPage();await page.setViewport({width:1440,height:1000});
   await page.evaluateOnNewDocument(language=>localStorage.setItem('fairbeam.generalSettings',JSON.stringify({language})),lang);
   const s=new Session(page,{lang,scenario:'selected-deadline',url:stack.url});
-  await page.goto(stack.url,{waitUntil:'domcontentloaded'});await s.wait('.home');
+  session=s;
+  const started=Date.now();
+  await page.goto(stack.url,{waitUntil:'domcontentloaded'});
+  // Match the full suite's cold startup budget; the result deadline remains 30 s.
+  await s.wait('.home',undefined,{timeout:45000});
+  console.log(`${lang}: initial interface ready in ${Date.now()-started} ms`);
   await s.fill(await s.field(await s.T('home.newProject.name')),`Selected deadline ${lang}`,{blur:false});await s.click('home.newProject.create');await s.wait('.rb');
   const own=await s.store((_,m)=>JSON.parse(JSON.stringify(m.s.file()))),file=`${own.id}--deadline.json`;
   const fixture=structuredClone(template);fixture.model.id=own.design.model.id;fixture.created='2026-10-11T01:00:00Z';fixture.name='Selected deadline fixture';
@@ -56,4 +61,8 @@ try {
   await context.close();
  }
  await writeFile(join(out,'result.json'),JSON.stringify(results,null,2));console.log(JSON.stringify({out,results},null,2));
+} catch(error) {
+ await page?.screenshot({path:join(out,'selected-deadline-failure.png')}).catch(()=>{});
+ await writeFile(join(out,'selected-deadline-failure.json'),JSON.stringify({error:String(error),consoleIssues:session?.consoleIssues??[]},null,2));
+ throw error;
 } finally {await browser?.close();await stack.stop();}

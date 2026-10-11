@@ -27,7 +27,10 @@ try{
  for(const lang of ['en','tr']){
   const context=await browser.createBrowserContext();page=await context.newPage();await page.setViewport({width:1440,height:1000});
   await page.evaluateOnNewDocument(l=>{localStorage.setItem('fairbeam.generalSettings',JSON.stringify({language:l}));window.__cmpObservers=0;window.__cmpResizeCalls=0;const Native=ResizeObserver;window.ResizeObserver=class extends Native {tracked=false;constructor(fn){super((...args)=>{if(this.tracked)window.__cmpResizeCalls++;fn(...args);});}observe(el,...args){if(!this.tracked&&el.matches('.cmp')){this.tracked=true;window.__cmpObservers++;}return super.observe(el,...args);}disconnect(){if(this.tracked){this.tracked=false;window.__cmpObservers--;}return super.disconnect();}};},lang);
-  const s=new Session(page,{lang,scenario:'compare-bounds',url:stack.url});await page.goto(stack.url,{waitUntil:'domcontentloaded'});await s.wait('.home');
+  const s=new Session(page,{lang,scenario:'compare-bounds',url:stack.url});
+  const started=Date.now();await page.goto(stack.url,{waitUntil:'domcontentloaded'});
+  await s.wait('.home',undefined,{timeout:45000});
+  console.log(`${lang}: initial interface ready in ${Date.now()-started} ms`);
   await s.click('header.screen.examples');await s.wait('.example-picker-trigger');await s.waitFor(async()=>!!(await import('/src/state.ts')).bundle()?.results);await settle();
   for(const c of [{width:1440,size:'default'},{width:1440,size:'wide',key:'Home'},{width:1440,size:'narrow',key:'End'},{width:1024,size:'responsive'},{width:768,size:'responsive'},{width:390,size:'compact'},{width:768,height:600,size:'short'}]){
    await page.setViewport({width:c.width,height:c.height??1000});await settle();
