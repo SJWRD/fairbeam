@@ -319,7 +319,9 @@ staircase mesh makes metal look electrically larger.
   is not equivalent to a lumped port at the line end.
 - **Multi-port**: `fairbeam touchstone <bundle>` writes `.s2p`/`.s3p` files (v1, 50 Ω).
 - **Waveguide ports** (horn, section 13): S11 is normalized to the mode's wave impedance;
-  `fairbeam touchstone` does not renormalise waveguide ports.
+  `fairbeam touchstone` converts it from the stored per-frequency real reference to `--ref`
+  (50 Ω by default). The stored simulation data stay at their native reference. See
+  [Touchstone export](STUDIES.md#fairbeam-touchstone) for the limits of keeping that reference.
 - **Circular polarisation** (helix, section 14): the pattern CSV carries RHCP/LHCP directivity and
   axial ratio (IEEE convention). The helix wire is a zero-radius curve in openEMS, so R_in depends
   on the wire radius (section 14).

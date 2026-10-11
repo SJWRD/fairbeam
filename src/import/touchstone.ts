@@ -272,7 +272,7 @@ export function cinv(m: C[][]): C[][] {
  * One S-matrix from per-port (real) references `zOld` to a common `zNew` (power waves):
  * S' = C (S − G)(I − G S)⁻¹ C⁻¹, G_i = (Z' − Z_i)/(Z' + Z_i), C_i = (Z_i + Z')/(2√(Z_i Z')).
  */
-function renormalisePorts(S: C[][], zOld: number[], zNew: number): C[][] {
+export function renormalisePorts(S: C[][], zOld: number[], zNew: number): C[][] {
   const n = S.length;
   const g = zOld.map((z) => (zNew - z) / (zNew + z));
   const c = zOld.map((z) => (z + zNew) / (2 * Math.sqrt(z * zNew)));

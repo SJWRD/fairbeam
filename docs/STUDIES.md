@@ -368,8 +368,16 @@ renormalised exactly to `--ref`. openEMS measures S11
 against the lumped port's own resistance. For a one-port the reflection coefficient is renormalised
 **exactly** to any reference through the input impedance, `S' = (Zin − Z) / (Zin + Z)`. The default
 is 50 Ω, so the file imports into ADS or scikit-rf without surprises.
-`--ref 0` keeps the port's native reference. `--port N` selects a port; the default is the excited
-port.
+Waveguide data use the actual per-frequency positive real references, not their band-center
+summary. The full multi-port power-wave transform also handles unequal references; it does not
+renormalize matrix entries independently. Invalid references or ambiguous physical port mappings
+are refused before an existing output file is opened.
+
+`--ref 0` keeps the native reference only when it is constant across frequency and, for a full
+matrix, common to every port. A varying waveguide reference cannot be represented by the single
+Touchstone v1 header: choose a positive `--ref` instead (the default is 50 Ω). In the Python API,
+`z_ref=None` has the same keep-native rule. `--port N` selects a port; the default is the excited
+port. This converts the interchange data, not the stored simulation results.
 
 To read Touchstone files in Python, use `fairbeam.touchstone.read_snp(path)` (returns `(f_hz, S, z0)`)
 or `read_touchstone(path)`, which also returns the warnings. It reads v1 and v2 files. Y/Z data

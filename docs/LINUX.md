@@ -145,7 +145,7 @@ manual testing. Source/path tests do not establish file-manager integration.
 
 - Linux with a C/C++ compiler and development libraries (Debian 13 x86_64 was tested)
 - Python 3.10+ with development headers and `venv`; Python 3.12.14 was tested
-- Node.js 22.6+ and npm for the viewer and repository checks; Node 24.19.0/npm 11.9.0 were tested
+- Node.js 22.12.0+ and npm for the viewer and repository checks; Node 24.19.0/npm 11.9.0 were tested
 - Git, CMake, make, network access to the official GitHub sources and Python/npm registries
 - A modern browser with WebGL for the viewer
 

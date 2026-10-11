@@ -35,9 +35,35 @@ Sayı olarak kalanlar pencerede ("Sayı olarak yazılanlar") ve makronun üst yo
 
 - **Teknik çizim.** Örnekler görüntüleyicisinde (Ana ekran › Örnekler) görünüm üstündeki *3B | Çizim* seçimi, tasarımı desteklenen geometrik şekillerinden üretilen siyah beyaz mühendislik çizimi olarak gösterir: üst, ön, yan (varsayılan üçüncü açı, isteğe bağlı birinci açı) ve izometrik görünüş; ISO 128 çizgi kalınlıkları; kenardan görülen dielektriklerde 45° kesit taraması; kenardan görülen PEC levhalarda dolu siyah çizgi; sonsuz PEC yarı uzayı için toprak simgesi; ayrık port simgesi ve otomatik ölçüler (boyutlar, alttaş kalınlığı, besleme kayması ve aralığı, çentikler ve içeri besleme yarıkları, besleme hattı genişliği ve uzunluğu, Sierpinski yapısındaki 60° gibi tepe açıları; aynı konturlar bir kez ölçülür ve belirtilir). *Diğer* ile parametre etiketleri ("patch_w = 32", şekil modunda varsayılan açık), izometrik görünüşte kesikli gizli kenarlar, çizgi türü açıklaması ve görünüş başına ölçülendirme seçimi eklenir. Sayfalar: antetli A4 veya A3 (parametreler, malzemeler, ölçek, izdüşüm simgesi) ya da LaTeX/Word için *Şekil* (16 cm genişlikte, sayfasız). SVG, vektör PDF (gömülü IBM Plex Sans) veya 300 dpi PNG olarak dışa aktarın. Kod: `src/drawing/` (saf TypeScript, paket → SVG).
 - **Yayın şekilleri.** Örnekler görüntüleyicisinin alt panel çubuğundaki *Şekil*, siyah beyaz |S11|, Zin, Smith abağı ve kutupsal örüntü grafiklerini 8,8 cm (tek sütun) veya 18 cm (çift sütun) genişlikte SVG/PDF olarak aktarır.
-- **Dışa aktarma paketi.** Üst bölümdeki *Paketi dışa aktar* (tasarımcıda ayrıca Son işlem › Rapor ve dışa aktarma › **Paket**), `<model-id>_<yyyymmdd-hhmm>.zip` indirir. İçeriği: `project.json`, `README.md` raporu (kurulum, çalıştırma, sonuçlar, yeniden üretme komutu), `data/s11.s1p` (Touchstone v1, `# GHz S RI R 50`), CSV verileri, çizimler, şekiller, VBA makrosu, 3B görünüm PNG'si ve `report.pdf`.
+- **Dışa aktarma paketi.** Üst bölümdeki *Paketi dışa aktar* (tasarımcıda ayrıca Son işlem › Rapor ve dışa aktarma › **Paket**), `<model-id>_<yyyymmdd-hhmm>.zip` indirir. Seçilen gruplara ve mevcut verilere göre `project.json`, `README.md` raporu (kurulum, çalıştırma, sonuçlar, yeniden üretme komutu), Touchstone ve CSV verileri, çizimler, şekiller, VBA makrosu, 3B görünüm PNG'si ve `report.pdf` içerir. Oluşturulan README, pakete gerçekten eklenen dosyaları listeler.
 - **PDF raporu.** Paket penceresindeki *Raporu dışa aktar (PDF)* (tasarımcıda ayrıca Son işlem › Rapor ve dışa aktarma › **PDF raporu**) çok sayfalı A4 vektör PDF oluşturur: temel sonuçlarla özet, ölçülü çizim, parametre/çözücü/mesh/çalıştırma tabloları, |S11|, Zin, Smith abağı, her uzak alan frekansı için örüntü sayfası ve yeniden üretme komutu. Sayfalar SVG olarak oluşturulur, `src/drawing/svgpdf.ts` tarafından jsPDF ile çizilir; aynı kod Node'da da çalışır.
 - `npm run check:exports` bunları örnek paketlerde doğrular ve [examples/drawings/](../examples/drawings/) ile [examples/reports/patch-antenna.pdf](../examples/reports/patch-antenna.pdf) çıktılarını yazar.
+
+## Touchstone ve içe aktarılan faz bilgisi
+
+`data/s11.s1p`, yalnızca fazı bilinen kompleks S-parametreleri varsa eklenir.
+Touchstone v1 başlığında kayıtlı frekans taramasının referans empedansı kullanılır
+(`# GHz S RI R <referans>`); bu değer her zaman 50 Ω değildir. Dalga kılavuzu sonuçlarında
+kompleks S11 verileri, frekans başına gerçek port empedanslarından bu sabit referansa
+dönüştürülür. Böylece başlık ve veriler aynı referansı kullanır; veriyi alan araç giriş
+empedansını doğru şekilde yeniden hesaplayabilir.
+
+Tam bir çok portlu matris varsa `data/sparams.sNp` de üretilebilir. Hedef, ilk matris portunun
+kayıtlı skaler referansıdır. Farklı veya frekansa bağlı reel referanslar, fiziksel port
+eşleştirmesiyle tam güç dalgası matris dönüşümü kullanılarak dönüştürülür; matris elemanları
+bağımsız yansıma katsayıları gibi işlenmez. Eksik, pozitif olmayan, sonlu olmayan veya kompleks
+referans değerleri ve belirsiz port eşleştirmeleri Touchstone dışa aktarımını engeller. Dalga
+kılavuzu sonuçları için frekans başına referans vektörü gerekir; yalnızca bant merkezi özeti
+yeterli değildir. Matris bu vektörü kullanıyorsa skaler referansı, özgün portun skaler özetiyle
+eşleşmelidir; hangi verinin zaten yeniden normalize edildiği tahmin edilmeden çelişkili üst veriler
+reddedilir. Bu dönüşümler kayıtlı simülasyon sonuçlarını değiştirmez veya çözücü
+doğruluğunu kanıtlamaz.
+
+Yalnızca genlik içeren bir referansın içe aktarılması, fazı, S-parametrelerinin reel/sanal
+bileşenlerini veya giriş empedansını belirlemez. Bu veri genlik karşılaştırmalarında
+kullanılabilir; faz ve Smith eğrilerine eklenmez. Seçilen veriler böyle bir referans
+içeriyorsa sonuç sekmesindeki faz gerektiren Veriyi kopyala/CSV biçimleri ve Touchstone
+çıktısı engellenir. Bu çıktılar için kompleks verileri içe aktarın.
 
 ## Eşleşen bant CSV sütunları
 

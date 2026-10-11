@@ -46,6 +46,38 @@ for (let k = 0; k < 2; k++) for (let i = 1; i <= 2; i++) for (let j = 1; j <= 2;
   near(parsed2.s[k][i - 1][j - 1][1], two.results.sparams.s[`${i},${j}`].im[k]);
 }
 
+// Exercise the actual UI export/download boundary: independent 100/150-ohm loads,
+// originally referenced to unequal 50/75-ohm ports, both have native reflection 1/3.
+const unequal = bundle(2);
+unequal.results.sparams.z_ref = [50, 75];
+unequal.results.ports['2'].z_ref = 75;
+for (const [key, c] of Object.entries(unequal.results.sparams.s)) {
+  const [i, j] = key.split(',');
+  c.re.splice(0, 2, i === j ? 1/3 : 0, i === j ? 1/3 : 0);
+  c.im.splice(0, 2, 0, 0);
+}
+await exportResultTouchstone(unequal, 'unequal-loads');
+assert.equal(offered.name, 'unequal-loads.s2p');
+const converted = parseTouchstoneNPort(new TextDecoder().decode(await downloaded()), 2);
+assert.equal(converted.z0, 50);
+for (const m of converted.s) {
+  near(m[0][0][0], (100-50)/(100+50), 1e-14);
+  near(m[1][1][0], (150-50)/(150+50), 1e-14);
+  near(m[0][1][0], 0, 1e-14); near(m[1][0][0], 0, 1e-14);
+}
+for (const invalid of [0, -75, NaN]) {
+  const bad = structuredClone(unequal); bad.results.sparams.z_ref[1] = invalid;
+  const previous = offered;
+  await assert.rejects(() => exportResultTouchstone(bad, 'invalid-refs'));
+  assert.equal(offered, previous, 'invalid data must not reach the download boundary');
+}
+const stale = structuredClone(unequal);
+stale.results.ports['2'].z_ref = 600;
+stale.results.ports['2'].z_ref_f = [800, 500];
+const previous = offered;
+await assert.rejects(() => exportResultTouchstone(stale, 'stale-refs'));
+assert.equal(offered, previous, 'the UI must preserve the writer reference-consistency gate');
+
 await exportResultTouchstone(one, 'compare', [
   { file: '../same.case.json', bundle: one },
   { file: 'same.case.json', bundle: two },

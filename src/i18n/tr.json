@@ -2510,7 +2510,6 @@
   "results.touchstone.badMatrix": "{label}: {pair} matris verisi eksik ya da geçersiz",
   "results.touchstone.badS11": "{label}: tek portlu S11 verisi eksik ya da geçersiz",
   "results.touchstone.disagree": "{label}: tek portlu tarama ile matristeki S11 verisi uyuşmuyor",
-  "results.touchstone.equalZRef": "{label}: Touchstone v1 tüm portlarda aynı referans empedansını gerektirir",
   "results.touchstone.failed": "{label}: Touchstone verisi oluşturulamadı",
   "results.touchstone.needMatrix": "{label}: eksiksiz bir çok portlu matris gerekli",
   "results.touchstone.noFrequency": "{label}: frekans/sonuç verisi eksik ya da geçersiz",

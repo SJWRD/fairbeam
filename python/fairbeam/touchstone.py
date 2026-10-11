@@ -55,6 +55,41 @@ def _matrix(f, s):
     return s
 
 
+def _port_references(bundle, key, scalar, f):
+    """Actual real references, never the band-center summary for a waveguide port."""
+    pr = (bundle.get("results", {}).get("ports") or {}).get(str(key), {})
+    if "z_ref_f" in pr:
+        refs = np.asarray(pr["z_ref_f"], dtype=object)
+        if refs.shape != f.shape:
+            raise ValueError("Touchstone needs a finite positive real reference at every frequency")
+        return np.asarray([_reference(v) for v in refs])
+    if any(str(p.get("number")) == str(key) and p.get("type") == "waveguide"
+           for p in bundle.get("ports", [])):
+        raise ValueError("Waveguide Touchstone export needs the actual per-frequency reference impedances")
+    return np.full(len(f), _reference(scalar))
+
+
+def _matrix_references(bundle, f, scalar):
+    sp = bundle["results"]["sparams"]
+    physical = sp.get("port_numbers", sp["ports"])
+    if (not isinstance(physical, list) or len(physical) != len(scalar)
+            or any(isinstance(p, bool) or not isinstance(p, int) or p <= 0 for p in physical)
+            or len(set(physical)) != len(physical)):
+        raise ValueError("Touchstone needs an unambiguous physical port mapping")
+    mapped = {str(p) for p in physical}
+    frequency_ports = {str(k) for k, pr in (bundle["results"].get("ports") or {}).items() if "z_ref_f" in pr}
+    waveguide_ports = {str(p.get("number")) for p in bundle.get("ports", []) if p.get("type") == "waveguide"}
+    if not (frequency_ports | waveguide_ports).issubset(mapped):
+        raise ValueError("Touchstone frequency references do not match the physical port mapping")
+    for key, z in zip(physical, scalar):
+        pr = (bundle["results"].get("ports") or {}).get(str(key), {})
+        # Compare the two scalar summaries, not the actual vector with its rounded summary.
+        # A differing matrix reference may describe already-renormalized data; do not guess.
+        if "z_ref_f" in pr and _reference(pr.get("z_ref")) != z:
+            raise ValueError("Touchstone matrix and native port reference summaries disagree")
+    return np.column_stack([_port_references(bundle, key, z, f) for key, z in zip(physical, scalar)])
+
+
 def reflection(bundle: dict, port: str | int | None = None, z_ref: float | None = 50.0):
     """Return ``(f_hz, s11_complex, z_ref_used, port_key)`` for one port of a simulated bundle."""
     _known_phase(bundle)
@@ -74,13 +109,18 @@ def reflection(bundle: dict, port: str | int | None = None, z_ref: float | None 
     f = _frequencies(res["frequency"])
     s = _complex_samples(pr["s11_re"], pr["s11_im"], f)
     native = _reference(pr["z_ref"])
-    if z_ref is None or abs(z_ref - native) < 1e-9 or "z_ref_f" in pr:
-        # waveguide ports: S11 refers to the frequency-dependent TE wave impedance; renormalising to
-        # a fixed resistance has no physical meaning, so the native S11 is written as is
-        return f, s, native, key
+    refs = _port_references(bundle, key, native, f)
+    if z_ref is None:
+        if np.any(refs != refs[0]):
+            raise ValueError("Touchstone v1 cannot keep frequency-dependent native references; choose a positive --ref")
+        z_ref = float(refs[0])
+    if np.all(refs == z_ref):
+        return f, s, z_ref, key
     # Scalar form of multiport.renormalize: avoid the singular intermediate impedance at
     # an ideal open (S11=1). Use the full complex S data, not rounded impedance arrays.
-    g = (z_ref - native) / (z_ref + native)
+    # Scale first so even large finite positive references cannot overflow the sum.
+    scale = np.maximum(refs, z_ref)
+    g = (z_ref / scale - refs / scale) / (z_ref / scale + refs / scale)
     with np.errstate(divide="ignore", invalid="ignore", over="ignore"):
         s = (s - g) / (1 - g * s)
     if not np.isfinite(s).all():
@@ -98,8 +138,7 @@ def write_s1p(bundle: dict, path, port=None, z_ref: float | None = 50.0) -> str:
         f"{bundle.get('solver', {}).get('engine', 'openEMS')} simulation ({bundle.get('created', '')})",
         f"! model {model.get('id', '')}, port {key}, native port impedance {native:g} ohm"
         + ("" if abs(native - z) < 1e-9 else f", renormalised to {z:g} ohm"),
-        *(["! waveguide port: S11 refers to the frequency-dependent TE wave impedance;",
-           "! the R below is its band-centre value, and the data are not renormalised"]
+        *(["! S11 renormalised from the per-frequency real port reference to the fixed R below"]
           if "z_ref_f" in bundle["results"]["ports"][key] else []),
         f"# GHz S RI R {z:.17g}",
     ]
@@ -126,7 +165,10 @@ def full_matrix(bundle: dict):
     n = len(sp["ports"])
     if not n or not sp["s"]:
         raise ValueError("Touchstone requires S-parameter data for at least one port")
-    refs = np.asarray(sp["z_ref"])
+    if (not isinstance(sp["ports"], list)
+            or any(type(p) is not int or p != i + 1 for i, p in enumerate(sp["ports"]))):
+        raise ValueError("Touchstone matrix indices must be 1..N; use port_numbers for physical ports")
+    refs = np.asarray(sp["z_ref"], dtype=object)
     if refs.ndim != 1 or len(refs) != n:
         raise ValueError("Touchstone needs one reference impedance per matrix port")
     zr = [_reference(z) for z in refs]
@@ -179,18 +221,20 @@ def write_snp(bundle: dict, path, z_ref: float | None = 50.0) -> str:
         z_ref = _reference(z_ref)
     f, s, zr = full_matrix(bundle)
     n = s.shape[1]
-    if any(p.get("type") == "waveguide" for p in bundle.get("ports", [])):
-        z_ref = None if len(set(zr)) == 1 else z_ref   # waveguide ports: never renormalise
-        if z_ref is not None:
-            raise ValueError("waveguide ports with different reference impedances cannot be written as Touchstone v1")
+    refs = _matrix_references(bundle, f, zr)
     if z_ref is None:
-        if len(set(zr)) != 1:
-            raise ValueError("ports have different reference impedances; Touchstone v1 needs one (use --ref)")
-        z = zr[0]
+        if np.any(refs != refs[0, 0]):
+            raise ValueError("ports have different or frequency-dependent reference impedances; Touchstone v1 needs one (use --ref)")
+        z = float(refs[0, 0])
     else:
         z = float(z_ref)
-        if any(abs(zi - z) > 1e-9 for zi in zr):
-            s = renormalize(s, zr, [z] * n)
+        if np.any(refs != z):
+            try:
+                # The full power-wave transform, not an elementwise reflection conversion.
+                with np.errstate(divide="ignore", invalid="ignore", over="ignore"):
+                    s = np.concatenate([renormalize(s[k:k + 1], refs[k], [z] * n) for k in range(len(f))])
+            except np.linalg.LinAlgError:
+                raise ValueError("Touchstone renormalization is singular") from None
     model = bundle.get("model", {})
     sp = bundle["results"]["sparams"]
     header = [
@@ -200,6 +244,7 @@ def write_snp(bundle: dict, path, z_ref: float | None = 50.0) -> str:
         f"model {model.get('id', '')}, {n} ports, port impedances {', '.join(f'{v:g}' for v in zr)} ohm"
         + ("" if all(abs(v - z) < 1e-9 for v in zr) else f", renormalised to {z:g} ohm"),
         f"S-matrix method {sp.get('method')}; excited ports {sp.get('excited')}",
+        "S-matrix referred to the fixed real R below; per-frequency native references are renormalised",
     ]
     text = format_snp(f, s, z, header)
     with open(path, "w", encoding="utf-8", newline="\n") as fh:

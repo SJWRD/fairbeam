@@ -325,6 +325,17 @@ fairbeam touchstone public/projects/patch-antenna.json              # -> public/
 fairbeam touchstone public/projects/dipole.json -o dipole.s1p --ref 0   # keep the 73 ohm port reference
 ```
 
-Tek portlu pakette veya `--port N` ile `# GHz S RI R 50` başlıklı Touchstone v1 `.s1p` dosyası yazılır. Çok portlu pakette tam matris `.s<N>p` olarak yazılır; bunun için her portun uyarılmış olması gerekir (`--excite all`, en fazla 4 port için varsayılan). İki portlu dosya, v1 biçiminin gerektirdiği gibi her frekansta tek satırda sütun sırasıyla (S11 S21 S12 S22) yazılır; N ≥ 3 için satır başına en fazla dört karmaşık çift olacak şekilde satır satır yazılır. Farklı referans empedanslı portlar `--ref` değerine tam olarak yeniden normalize edilir. openEMS, S11'i ayrık portun kendi direncine göre ölçer. Tek portta yansıma katsayısı giriş empedansı üzerinden herhangi bir referansa **tam olarak** yeniden normalize edilir: `S' = (Zin − Z) / (Zin + Z)`. Varsayılan 50 Ω'dur; böylece dosya ADS veya scikit-rf'e beklendiği gibi aktarılır. `--ref 0`, portun özgün referansını korur. `--port N` bir port seçer; varsayılan uyarılan porttur.
+Tek portlu pakette veya `--port N` ile `# GHz S RI R 50` başlıklı Touchstone v1 `.s1p` dosyası yazılır. Çok portlu pakette tam matris `.s<N>p` olarak yazılır; bunun için her portun uyarılmış olması gerekir (`--excite all`, en fazla 4 port için varsayılan). İki portlu dosya, v1 biçiminin gerektirdiği gibi her frekansta tek satırda sütun sırasıyla (S11 S21 S12 S22) yazılır; N ≥ 3 için satır başına en fazla dört karmaşık çift olacak şekilde satır satır yazılır. Farklı referans empedanslı portlar `--ref` değerine tam olarak yeniden normalize edilir. openEMS, S11'i ayrık portun kendi direncine göre ölçer. Tek portta yansıma katsayısı giriş empedansı üzerinden herhangi bir referansa **tam olarak** yeniden normalize edilir: `S' = (Zin − Z) / (Zin + Z)`. Varsayılan 50 Ω'dur; böylece dosya ADS veya scikit-rf'e beklendiği gibi aktarılır.
+
+Dalga kılavuzu verilerinde bant merkezi özeti yerine frekans başına gerçek, pozitif reel
+referanslar kullanılır. Tam çok portlu güç dalgası dönüşümü farklı referansları da işler;
+matris elemanlarını bağımsız olarak yeniden normalize etmez. Geçersiz referanslar veya belirsiz
+fiziksel port eşleştirmeleri, mevcut çıktı dosyası açılmadan reddedilir.
+
+`--ref 0`, özgün referansı yalnızca frekans boyunca sabitse ve tam matris için tüm portlarda
+ortaksa korur. Değişken dalga kılavuzu referansı Touchstone v1 başlığındaki tek değerle temsil
+edilemez; bunun yerine pozitif bir `--ref` seçin (varsayılan 50 Ω). Python API'sinde
+`z_ref=None` aynı özgün referansı koruma kuralını uygular. `--port N` bir port seçer; varsayılan
+uyarılan porttur. Bu işlem kayıtlı simülasyon sonuçlarını değil, veri aktarımı çıktısını dönüştürür.
 
 Python'da Touchstone dosyalarını okumak için `fairbeam.touchstone.read_snp(path)` (`(f_hz, S, z0)` döndürür) veya uyarıları da döndüren `read_touchstone(path)` kullanın. v1 ve v2 dosyaları okunur. Y/Z verileri S'ye dönüştürülür, port başına v2 referansları tek empedansa yeniden normalize edilir ve gürültü blokları atlanır. Görüntüleyicinin içe aktarıcısıyla aynı kuralları kullanır.

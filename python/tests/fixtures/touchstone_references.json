@@ -1,0 +1,8 @@
+{
+  "provenance": "Assumed circuit fixtures for interchange tests; no simulation or measurement",
+  "frequency": [8000000000, 10000000000, 12000000000],
+  "references": [[800, 600, 500], [500, 600, 800]],
+  "scalarReference": 600,
+  "complexLoad": [600, 120],
+  "physicalPorts": [7, 19]
+}

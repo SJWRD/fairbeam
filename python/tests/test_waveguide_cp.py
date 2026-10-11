@@ -131,13 +131,20 @@ class WaveguidePortTest(unittest.TestCase):
         sim.dielectric("sub", 3.38, tan_d=0.002)
         self.assertFalse(sim._is_lossless())   # a lossy material: reported as measured
 
-    def test_touchstone_keeps_the_native_reference(self):
+    def test_touchstone_preserves_impedance_at_requested_fixed_reference(self):
         from fairbeam.touchstone import reflection
         res = wg_sim().evaluate(n_freq=9)
         bundle = {"ports": [{"number": 1, "excite": True, "type": "waveguide"}], "results": res}
-        f, s, z, key = reflection(bundle, z_ref=50.0)      # a 50 ohm request is ignored
-        np.testing.assert_allclose(s.real, GAMMA)
-        self.assertEqual(z, res["ports"]["1"]["z_ref"])
+        f, s, z, key = reflection(bundle, z_ref=50.0)
+        self.assertEqual((z, key), (50.0, "1"))
+        # Independent voltage/current impedance identity: a fixed native reflection
+        # against a varying wave impedance must become a varying 50-ohm reflection.
+        native = np.asarray(res["ports"]["1"]["z_ref_f"])
+        expected_z = native * (1 + GAMMA) / (1 - GAMMA)
+        np.testing.assert_allclose(z * (1 + s) / (1 - s), expected_z, rtol=1e-12)
+        self.assertGreater(np.ptp(s.real), 0.01)
+        with self.assertRaisesRegex(ValueError, "frequency-dependent"):
+            reflection(bundle, z_ref=None)
 
     def test_port_record(self):
         sim = Simulation(8e9, 12e9, boundaries=["PML_8"] * 6)

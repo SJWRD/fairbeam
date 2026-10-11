@@ -87,7 +87,7 @@ kaynak/yol testleri dosya yöneticisi entegrasyonunun kanıtı değildir.
 
 - C/C++ derleyicisi ve geliştirme kütüphaneleri bulunan Linux (Debian 13 x86_64 test edilmiştir)
 - Geliştirme başlıkları ve `venv` içeren Python 3.10+; Python 3.12.14 test edilmiştir
-- Görüntüleyici ve depo denetimleri için Node.js 22.6+ ve npm; Node 24.19.0/npm 11.9.0 test edilmiştir
+- Görüntüleyici ve depo denetimleri için Node.js 22.12.0+ ve npm; Node 24.19.0/npm 11.9.0 test edilmiştir
 - Git, CMake, make; resmi GitHub kaynaklarına ve Python/npm paket kayıtlarına ağ erişimi
 - Görüntüleyici için WebGL destekli modern bir tarayıcı
 

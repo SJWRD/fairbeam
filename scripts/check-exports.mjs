@@ -14,6 +14,7 @@ import { strFromU8, unzipSync, unzlibSync } from "fflate";
 import { technicalDrawing } from "../src/drawing/drawing.ts";
 import { ffTag, figureSet, patternTag } from "../src/drawing/charts.ts";
 import { parseTouchstone, parseTouchstoneNPort, touchstoneNPort, touchstoneS1p } from "../src/export/touchstone.ts";
+import './check-touchstone-references.mjs';
 import { sMatrix } from "../src/lib/sparams.ts";
 import { bandsCsv, parseCsv, patternCsv, signalsCsv, sweepCsv } from "../src/export/csv.ts";
 import { packageFiles, packageName, zipPackage } from "../src/export/package.ts";
@@ -265,8 +266,18 @@ for (const entry of index.projects) {
     const p = parseTouchstone(ts);
     check(p.f.length === s.f.length, where, `${p.f.length} rows, expected ${s.f.length}`);
     let maxErr = 0;
+    const physical = b.ports.find(port => port.excite) ?? b.ports[0];
+    const refs = b.results.ports[String(physical.number)].z_ref_f;
     p.f.forEach((f, i) => {
-      maxErr = Math.max(maxErr, Math.abs(f - s.f[i]) / 1e9, Math.abs(p.re[i] - s.s11Re[i]), Math.abs(p.im[i] - s.s11Im[i]));
+      let re = s.s11Re[i], im = s.s11Im[i];
+      if (refs) {
+        // Independent impedance route for these finite gallery loads, not the writer's fractional transform.
+        const d = (1-re)**2 + im**2;
+        const zr = refs[i]*(1-re*re-im*im)/d, zi = refs[i]*2*im/d;
+        const den = (zr+s.zRef)**2+zi**2;
+        re = (zr*zr+zi*zi-s.zRef*s.zRef)/den; im = 2*s.zRef*zi/den;
+      }
+      maxErr = Math.max(maxErr, Math.abs(f - s.f[i]) / 1e9, Math.abs(p.re[i] - re), Math.abs(p.im[i] - im));
     });
     check(maxErr < 1e-8, where, `round-trip error ${maxErr}`);
     check(p.z0 === s.zRef && p.format === "RI" && p.parameter === "S" && p.unit === "GHZ", where, "option line parsed wrong");

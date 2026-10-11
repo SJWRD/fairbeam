@@ -2560,7 +2560,6 @@
   "results.touchstone.badMatrix": "{label}: incomplete or invalid {pair} matrix data",
   "results.touchstone.badS11": "{label}: incomplete or invalid one-port S11 data",
   "results.touchstone.disagree": "{label}: one-port sweep and matrix S11 data disagree",
-  "results.touchstone.equalZRef": "{label}: Touchstone v1 requires equal reference impedances on every port",
   "results.touchstone.failed": "{label}: Touchstone data could not be generated",
   "results.touchstone.needMatrix": "{label}: a complete multi-port matrix is required",
   "results.touchstone.noFrequency": "{label}: missing or invalid frequency/result data",

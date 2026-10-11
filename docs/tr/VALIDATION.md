@@ -215,7 +215,7 @@ Yönlülük, rezonans frekansından çok daha hızlı yakınsar. İkisi de aşa�
 - **Kayıp:** openEMS, tan δ'yı yalnızca `tan_d_freq` noktasında (bant merkezi) doğru olan sabit iletkenlikle modeller. Sabit kayıp tanjantından fark merkez yakınında küçüktür, bant uçlarına doğru artar.
 - **Portlar:** Fairbeam besleme aralığı boyunca ayrık portlar kullanır. Mikroşerit hattaki dalga kılavuzu portu, hat ucundaki ayrık porta eşdeğer değildir.
 - **Çok portlu yapı:** `fairbeam touchstone <bundle>`, `.s2p`/`.s3p` dosyaları yazar (v1, 50 Ω).
-- **Dalga kılavuzu portları** (huni, bölüm 13): S11 modun dalga empedansına normalleştirilir; `fairbeam touchstone`, dalga kılavuzu portlarını yeniden normalleştirmez.
+- **Dalga kılavuzu portları** (huni, bölüm 13): S11 modun dalga empedansına normalleştirilir; `fairbeam touchstone`, kayıtlı frekans başına reel referanstan `--ref` değerine (varsayılan 50 Ω) dönüştürür. Kayıtlı simülasyon verileri özgün referansında kalır. Bu referansı korumanın sınırları için [Touchstone dışa aktarımı](STUDIES.md#fairbeam-touchstone) bölümüne bakın.
 - **Dairesel polarizasyon** (helis, bölüm 14): örüntü CSV'si RHCP/LHCP yönlülüğünü ve eksenel oranı içerir (IEEE kabulü). Helis teli openEMS'te sıfır yarıçaplı eğridir; dolayısıyla R_in tel yarıçapına bağlıdır (bölüm 14).
 
 ## 7. Mikroşerit hat (iki portlu referans)

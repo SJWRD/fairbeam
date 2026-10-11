@@ -46,8 +46,8 @@ function checkedText(bundle: Bundle, label: string): { text: string; ports: numb
     text = touchstoneS1p(bundle);
   } else {
     if (matrix.legacy) throw new Error(t("results.touchstone.needMatrix", { label }));
-    const z0 = matrix.zRef[0];
-    if (matrix.zRef.some((z) => Math.abs(z - z0) > 1e-9)) throw new Error(t("results.touchstone.equalZRef", { label }));
+    // The writer validates native references and converts the complete power-wave matrix
+    // to one fixed reference, including unequal positive-real port impedances.
     for (const i of matrix.ports) for (const j of matrix.ports) {
       const c = matrix.get(i, j);
       if (!c || c.re.length !== matrix.f.length || c.im.length !== matrix.f.length || c.re.some((x, k) => !Number.isFinite(x) || !Number.isFinite(c.im[k]))) {
