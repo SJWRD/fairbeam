@@ -26,6 +26,8 @@ const ALLOW = [
   { glob: "api/_ping-schema.json", line: /antenlab\.ping\/1/, reason: "installed old apps keep sending their ping id" },
   { glob: "python/tests/fixtures/legacy/**", reason: "files the old app wrote: proof that they still open" },
   { glob: "python/tests/test_legacy_formats.py", reason: "proof that files of the old app still open" },
+  { glob: "runtime/install.py", line: /antenlab-openems-libs/, reason: "identify the obsolete libs distribution for runtime cleanup, preserving packs that still ship it" },
+  { glob: "python/tests/test_runtime_files.py", line: /antenlab_openems_libs/, reason: "test cleanup and preservation of the obsolete runtime libs distribution" },
   { glob: "scripts/check-legacy-formats.mjs", reason: "proof that files of the old app still open" },
   { glob: "docs/MIGRATING-FROM-ANTENLAB.md", reason: "the migration page for users of the old app" },
   { glob: "docs/tr/MIGRATING-FROM-ANTENLAB.md", reason: "the Turkish migration page for users of the old app" },

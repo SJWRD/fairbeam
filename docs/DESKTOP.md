@@ -164,6 +164,7 @@ than the pack's `macos_min`, which is the major version it was built on (27 for 
 
 In practice the pack holds three wheels: CSXCAD, openEMS, and a libs wheel (`fairbeam_openems_libs`)
 with 66 dylibs (CSXCAD, openEMS, nf2ff, fparser, tinyxml, HDF5, Boost, GMP/MPFR and the VTK subset).
+When a pack replaces the libs wheel, the installer attempts to remove its obsolete distribution and verifies imports from the replacement folder.
 Both packages load the dylibs from the libs wheel's folder in `site-packages` through
 `@loader_path`, so there is a single `libCSXCAD`. The binaries are thinned to arm64 and ad-hoc signed. Because
 Homebrew's libraries target the macOS they were built on, the wheels are tagged with that macOS

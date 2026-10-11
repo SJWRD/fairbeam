@@ -84992,7 +84992,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 ### openems macos-arm64 v0.37.0-rc3
 
-License: GPL-3.0-or-later; LGPL-3.0-or-later; bundled library terms below. Source: https://github.com/ismailakdag/fairbeam-releases/releases/download/openems-macos-arm64-0.37.0rc3-g12cd91de2-ncpu1/openems-macos-arm64-0.37.0rc3-g12cd91de2-ncpu1.tar.gz.
+License: GPL-3.0-or-later; LGPL-3.0-or-later; bundled library terms below. Source: https://github.com/ismailakdag/fairbeam-releases/releases/download/openems-macos-arm64-0.37.0rc3-g12cd91de2-ncpu1-r2/openems-macos-arm64-0.37.0rc3-g12cd91de2-ncpu1-r2.tar.gz.
 
 <details>
 <summary>Boost-LICENSE.txt</summary>

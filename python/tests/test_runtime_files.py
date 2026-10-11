@@ -10,10 +10,11 @@ import shutil
 import subprocess
 import tempfile
 import threading
+from types import SimpleNamespace
 import unittest
 from unittest import mock
 import zipfile
-from contextlib import redirect_stderr
+from contextlib import redirect_stderr, redirect_stdout
 from io import StringIO
 
 
@@ -87,6 +88,149 @@ class RuntimeEngineSelection(unittest.TestCase):
             self.assertIn("SHA-256 does not match", stderr.getvalue())
             self.assertEqual(existing_manifest.read_bytes(), original_manifest)
             self.assertEqual(openems_exe.read_bytes(), b"existing working engine")
+
+
+class RuntimeLibsCleanup(unittest.TestCase):
+    legacy = "antenlab_openems_libs"
+    replacement = "fairbeam_openems_libs"
+
+    def test_current_pack_keeps_its_libs_without_querying_the_venv(self):
+        for names in ({self.legacy}, {self.legacy, self.replacement},
+                      {self.legacy.replace("_", "-")}, {"csxcad", "openems"}):
+            with self.subTest(names=names), mock.patch.object(install.subprocess, "run") as run:
+                self.assertIsNone(install.remove_stale_openems_libs(Path("python"), Path("runtime"), names))
+                run.assert_not_called()
+
+    def test_replacement_pack_without_stale_distribution_skips_uninstall(self):
+        with mock.patch.object(install.subprocess, "run", return_value=
+                               install.subprocess.CompletedProcess([], 0, "False\n", "")) as run:
+            self.assertEqual(install.remove_stale_openems_libs(Path("python"), Path("runtime"),
+                                                              {self.replacement}), self.replacement)
+        self.assertEqual(run.call_count, 1)
+        self.assertEqual(run.call_args.args[0][:2], ["python", "-c"])
+
+    def test_verify_requires_both_core_libraries_from_the_replacement_folder(self):
+        from importlib import metadata
+
+        folder = Path(tempfile.gettempdir()) / "runtime-libs-test" / self.replacement
+        old_folder = folder.with_name(self.legacy)
+        for csxcad_folder, openems_folder in ((folder, folder), (old_folder, folder), (folder, old_folder)):
+            with self.subTest(csxcad_folder=csxcad_folder, openems_folder=openems_folder):
+                paths = [csxcad_folder / "libCSXCAD.dylib", openems_folder / "libopenEMS.dylib"]
+                dyld = SimpleNamespace(
+                    _dyld_get_image_name=mock.Mock(side_effect=lambda i: str(paths[i]).encode()),
+                    _dyld_image_count=mock.Mock(return_value=len(paths)),
+                )
+                modules = {name: SimpleNamespace(__version__="1.0")
+                           for name in ("CSXCAD", "openEMS", "fairbeam")}
+                modules["ctypes"] = SimpleNamespace(CDLL=lambda _: dyld, c_char_p=object(), c_uint32=object())
+
+                def run(cmd, **kwargs):
+                    stdout = StringIO()
+                    try:
+                        with redirect_stdout(stdout):
+                            exec(cmd[2], {})
+                    except RuntimeError as e:
+                        return install.subprocess.CompletedProcess(cmd, 1, stdout.getvalue(), str(e))
+                    return install.subprocess.CompletedProcess(cmd, 0, stdout.getvalue(), "")
+
+                stderr = StringIO()
+                with mock.patch.object(install.sys, "platform", "darwin"), \
+                        mock.patch.dict(sys.modules, modules), \
+                        mock.patch.object(metadata, "version", return_value="1.0"), \
+                        mock.patch.object(metadata, "distribution", return_value=
+                                          SimpleNamespace(locate_file=lambda _: folder)), \
+                        mock.patch.object(install.subprocess, "run", side_effect=run), \
+                        mock.patch.object(install, "progress"), redirect_stderr(stderr):
+                    if csxcad_folder == openems_folder == folder:
+                        self.assertEqual(install.verify(Path("python"), Path("runtime"), self.replacement)["openems"], "1.0")
+                    else:
+                        with self.assertRaises(SystemExit):
+                            install.verify(Path("python"), Path("runtime"), self.replacement)
+                        self.assertIn("was not loaded from", stderr.getvalue())
+
+    def run_install(self, *, cleanup_result=0, verify_result=0, existing_build=False, repair=False):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = (Path(tmp) / "runtime").resolve()
+            resources = Path(tmp) / "resources"
+            py = install.venv_python(root)
+            uv = install.uv_exe(root)
+            for tool in (py, uv):
+                tool.parent.mkdir(parents=True, exist_ok=True)
+                tool.write_bytes(b"fake tool")
+            (resources / "runtime").mkdir(parents=True)
+            pins = {"openems": {"version": "test", "macos-arm64": {
+                "url": "https://example.invalid/pack.tar.gz", "sha256": "test-digest",
+                "kind": "macos-pack",
+            }}}
+            (resources / "runtime" / "pins.json").write_text(json.dumps(pins), encoding="utf-8")
+            oems = root / "openEMS"
+            oems.mkdir()
+            tag = f"cp{sys.version_info.major}{sys.version_info.minor}"
+            for name in ("CSXCAD", "openEMS", self.replacement):
+                (oems / f"{name}-1.0-{tag}-{tag}-macosx_27_0_arm64.whl").touch()
+            if existing_build:
+                (oems / install.STAMP).write_text('{"sha256": "test-digest"}', encoding="utf-8")
+            events = []
+            stderr = StringIO()
+
+            def run(cmd, **kwargs):
+                self.assertEqual(kwargs["env"], install.child_env(root))
+                self.assertEqual(kwargs["stdin"], install.subprocess.DEVNULL)
+                if cmd[0] == str(uv):
+                    events.append("cleanup")
+                    self.assertEqual(cmd, [str(uv), "pip", "uninstall", "--python", str(py),
+                                           self.legacy.replace("_", "-")])
+                    if isinstance(cleanup_result, OSError):
+                        raise cleanup_result
+                    return install.subprocess.CompletedProcess(cmd, cleanup_result, "", "cleanup error")
+                self.assertEqual(cmd[:2], [str(py), "-c"])
+                if "m.distributions()" in cmd[2]:
+                    events.append("query")
+                    return install.subprocess.CompletedProcess(cmd, 0, "True\n", "")
+                events.append("verify")
+                self.assertIn("import json, CSXCAD, openEMS, fairbeam", cmd[2])
+                return install.subprocess.CompletedProcess(cmd, verify_result,
+                    '{"openems": "1.0", "csxcad": "1.0", "fairbeam": "1.0"}\n', "import failed")
+
+            def install_wheels(cmd, step, runtime_root):
+                events.append(step)
+                if step == "install-openems-wheels":
+                    self.assertEqual("--reinstall" in cmd, repair or not existing_build)
+
+            args = ["install.py", "--runtime-root", str(root), "--resources", str(resources)]
+            if repair:
+                args.append("--repair")
+            with mock.patch.object(install.sys, "argv", args), \
+                    mock.patch.object(install, "platform_key", return_value="macos-arm64"), \
+                    mock.patch.object(install, "download"), \
+                    mock.patch.object(install, "unpack_openems", return_value=oems), \
+                    mock.patch.object(install, "run", side_effect=install_wheels), \
+                    mock.patch.object(install, "install_app", return_value="1.0"), \
+                    mock.patch.object(install.subprocess, "run", side_effect=run), \
+                    mock.patch.object(install, "progress"), redirect_stderr(stderr):
+                if verify_result:
+                    with self.assertRaises(SystemExit):
+                        install.main()
+                else:
+                    install.main()
+            self.assertEqual(events, ["install-packages", "install-openems-wheels", "query", "cleanup", "verify"])
+            self.assertEqual((root / "manifest.json").exists(), not verify_result)
+            return stderr.getvalue()
+
+    def test_cleanup_precedes_fresh_import_verification_and_preserves_reinstall_logic(self):
+        for existing_build, repair in ((False, False), (True, False), (True, True)):
+            with self.subTest(existing_build=existing_build, repair=repair):
+                self.assertEqual(self.run_install(existing_build=existing_build, repair=repair), "")
+
+    def test_uninstall_failure_continues_only_when_imports_pass(self):
+        for cleanup_result in (1, OSError("cannot launch uv")):
+            for verify_result in (0, 1):
+                with self.subTest(cleanup_result=cleanup_result, verify_result=verify_result):
+                    stderr = self.run_install(cleanup_result=cleanup_result, verify_result=verify_result)
+                    self.assertIn("could not remove the obsolete libs wheel", stderr)
+                    if verify_result:
+                        self.assertIn("the runtime does not import", stderr)
 
 
 class WindowsFileRetry(unittest.TestCase):

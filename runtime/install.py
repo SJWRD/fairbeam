@@ -196,6 +196,34 @@ def site_packages(py: Path, root: Path) -> Path:
     return Path(out)
 
 
+def remove_stale_openems_libs(py: Path, root: Path, names: set[str]) -> str | None:
+    legacy = "antenlab-openems-libs"
+    names = {name.replace("_", "-").lower() for name in names}
+    if legacy in names or not any(name.endswith("-openems-libs") for name in names):
+        return
+    libs = next(name.replace("-", "_") for name in sorted(names) if name.endswith("-openems-libs"))
+    code = ("from importlib import metadata as m; "
+            f"print(any(d.metadata['Name'].lower().replace('_', '-') == {legacy!r} "
+            "for d in m.distributions()))")
+    installed = subprocess.run([str(py), "-c", code], capture_output=True, encoding="utf-8",
+                               env=child_env(root), stdin=subprocess.DEVNULL, check=True)
+    if installed.stdout.strip() != "True":
+        return libs
+    # The fresh-process import verification below remains mandatory, even if cleanup fails.
+    try:
+        result = subprocess.run([str(uv_exe(root)), "pip", "uninstall", "--python", str(py), legacy],
+                                capture_output=True, encoding="utf-8", errors="replace",
+                                env=child_env(root), stdin=subprocess.DEVNULL)
+        if result.returncode == 0:
+            return libs
+        detail = (result.stdout + result.stderr)[-4000:]
+    except OSError as e:
+        detail = str(e)
+    print(f"Fairbeam runtime: could not remove the obsolete libs wheel; verifying imports:\n{detail}",
+          file=sys.stderr, flush=True)
+    return libs
+
+
 def install_app(root: Path, resources: Path, py: Path) -> str:
     """Copy the bundled fairbeam package to <root>/app and point the venv at it."""
     src = resources / "python" / "fairbeam"
@@ -242,9 +270,21 @@ def child_env(root: Path) -> dict:
     return env
 
 
-def verify(py: Path, root: Path) -> dict:
-    code = ("import json, CSXCAD, openEMS, fairbeam; from importlib import metadata as m; "
-            "print(json.dumps({'openems': m.version('openEMS'), 'csxcad': m.version('CSXCAD'), "
+def verify(py: Path, root: Path, libs: str | None = None) -> dict:
+    code = "import json, CSXCAD, openEMS, fairbeam; from importlib import metadata as m;\n"
+    if libs and sys.platform == "darwin":
+        # Import success alone could use obsolete dylibs if their uninstall failed.
+        code += ("import ctypes; from pathlib import Path\n"
+                 "dyld = ctypes.CDLL(None)\n"
+                 "dyld._dyld_get_image_name.restype = ctypes.c_char_p\n"
+                 "dyld._dyld_get_image_name.argtypes = [ctypes.c_uint32]\n"
+                 "loaded = [Path(dyld._dyld_get_image_name(i).decode()).resolve() "
+                 "for i in range(dyld._dyld_image_count())]\n"
+                 f"expected = Path(m.distribution({libs!r}).locate_file({libs!r})).resolve()\n"
+                 "for stem in ('libCSXCAD', 'libopenEMS'):\n"
+                 "    if not any(p.parent == expected and p.name.startswith(stem) for p in loaded):\n"
+                 "        raise RuntimeError(f'{stem} was not loaded from {expected}')\n")
+    code += ("print(json.dumps({'openems': m.version('openEMS'), 'csxcad': m.version('CSXCAD'), "
             "'fairbeam': fairbeam.__version__}))")
     r = subprocess.run([str(py), "-c", code], capture_output=True, encoding="utf-8", errors="replace",
                        env=child_env(root), stdin=subprocess.DEVNULL)
@@ -373,12 +413,13 @@ def main() -> None:
     # makes macOS scan each of them again on the next import (seconds); otherwise uv skips them
     reinstall = ["--reinstall"] if a.repair or not unpacked_before else []
     run([uv, "pip", "install", "--python", py, "--no-deps", *reinstall, *wheels], "install-openems-wheels", root)
+    libs = remove_stale_openems_libs(py, root, names)
     progress("install-app", None, "fairbeam")
     version = install_app(root, res, py)
     progress("install-app", 1.0, f"fairbeam {version}")
 
     progress("verify", None, "import CSXCAD, openEMS, fairbeam")
-    versions = verify(py, root)
+    versions = verify(py, root, libs)
     if a.engine == "gpu":
         if "+gpu" not in versions["openems"]:
             fail(f"the installed openEMS package is not the pinned GPU build ({versions['openems']})")

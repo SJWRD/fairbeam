@@ -22,9 +22,9 @@
     },
     "macos-arm64": {
       "kind": "macos-pack",
-      "url": "https://github.com/ismailakdag/fairbeam-releases/releases/download/openems-macos-arm64-0.37.0rc3-g12cd91de2-ncpu1/openems-macos-arm64-0.37.0rc3-g12cd91de2-ncpu1.tar.gz",
-      "sha256": "cfef9e8789d077fcaa8c6427740f7be0bd9ad92f99b17850c2a6df46e613b062",
-      "size": 26812405,
+      "url": "https://github.com/ismailakdag/fairbeam-releases/releases/download/openems-macos-arm64-0.37.0rc3-g12cd91de2-ncpu1-r2/openems-macos-arm64-0.37.0rc3-g12cd91de2-ncpu1-r2.tar.gz",
+      "sha256": "b8b79870b463f59aee96e8d3a8a8cbc1c66335910c1734f3d5c2b24c5def88bd",
+      "size": 26812809,
       "macos_min": 27,
       "note": "built by scripts/build-openems-macos-pack.py from openEMS 12cd91de2 + native CPU patches (scripts/native-cpu/apply-macos.sh) / CSXCAD bd2c13339"
     }
