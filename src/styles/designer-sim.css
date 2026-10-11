@@ -11,6 +11,8 @@
 .rd-solver select { width: 100%; min-width: 0; }
 .rd-enclosure summary { cursor: pointer; }
 .rd-enclosure .rd-grid { margin-top: var(--al-space-3); }
+.elmer-farfield-view { height: 260px; width: 100%; background: var(--al-viewport); border-radius: var(--al-radius); }
+.elmer-farfield-view canvas { display: block; max-width: 100%; }
 .rd-body { display: grid; gap: var(--al-space-3); padding: var(--al-space-4) var(--al-pad-panel); overflow: auto; }
 .rd-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--al-space-3) var(--al-space-4); }
 /* one block per error, no list marker: a long title that wraps left the bullet beside its last line */

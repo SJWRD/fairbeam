@@ -12,11 +12,12 @@ import { parseNumber } from "../lib/numberField";
 import { fmt, t } from "../i18n";
 import NumberField from "../components/NumberField";
 import LineChart, { type Series } from "../charts/LineChart";
+import ElmerAntennaResults from "./ElmerAntennaResults";
 import "../styles/research.css";
 
 type Backend = "periodic" | "elmer";
 const name = (backend: Backend) => t(`research.backend.${backend}`);
-const jobName = (job: Job) => job.research?.settings.closed_pec ? (job.name || t("elmerDesign.option")) : name(job.research?.backend ?? "periodic");
+const jobName = (job: Job) => job.research?.settings.analysis === "driven" ? (job.name || t("elmerAntenna.option")) : job.research?.settings.closed_pec ? (job.name || t("elmerDesign.option")) : name(job.research?.backend ?? "periodic");
 const db = (re: number, im: number) => 20 * Math.log10(Math.max(1e-15, Math.hypot(re, im)));
 const PHASE_LABELS: Record<string, string> = { building: "research.phase.building", simulating: "research.phase.simulating", results_exported: "research.phase.exported", validating: "research.phase.validating" };
 
@@ -43,7 +44,8 @@ function PeriodicResults(props: { result: ResearchResult }) {
 
 function ResearchResults(props: { job: Job }) {
   return <Show when={props.job.result}>{r => <div class="stack-lg">
-    <Show when={r().status !== "results_validated"}><p class="status-block status-warn"><CircleAlert size={14} />{t("research.qaUnvalidated")}</p></Show>
+    <Show when={r().status !== "results_validated"}><p class="status-block status-warn"><CircleAlert size={14} />{t(r().schema === "fairbeam.elmer-driven-result/1" ? "elmerAntenna.qa" : "research.qaUnvalidated")}</p></Show>
+    <Show when={r().schema !== "fairbeam.elmer-driven-result/1"} fallback={<ElmerAntennaResults result={r()} />}>
     <Show when={props.job.research?.backend === "periodic"} fallback={<>
       <p class="note">{t(r().schema === "fairbeam.elmer-design-result/1" ? "elmerDesign.resultHint" : "research.elmer.resultNote")}</p>
       <Show when={r().schema !== "fairbeam.elmer-design-result/1"}>
@@ -58,6 +60,7 @@ function ResearchResults(props: { job: Job }) {
         <For each={r().frequency_hz}>{(f, i) => <tr><td>{fmt.int(i() + 1)}</td><td class="num">{fmt.fixed(f / 1e9, 6)}</td></tr>}</For>
       </tbody></table>
     </>}><PeriodicResults result={r()} /></Show>
+    </Show>
     <details><summary>{t("research.provenance")}</summary><pre class="code research-json">{JSON.stringify({ research: props.job.research, result: r() }, null, 2)}</pre></details>
   </div>}</Show>;
 }
@@ -194,7 +197,7 @@ export default function ResearchDialog() {
 
   return <div class="scrim" onPointerDown={e => e.target === e.currentTarget && close()}>
     <div class="dialog research-dialog" role="dialog" aria-modal="true" aria-labelledby="research-title" aria-describedby="research-description" tabindex="-1" ref={box}>
-      <div class="dialog-head"><div><h2 id="research-title">{t(researchResultsOnly() ? "research.history" : "research.title")}</h2><p id="research-description" class="muted">{t(researchResultsOnly() ? "elmerDesign.resultHint" : "research.description")}</p></div><button class="icon-btn" aria-label={t("common.close")} onClick={close}><X /></button></div>
+      <div class="dialog-head"><div><h2 id="research-title">{t(researchResultsOnly() ? "research.history" : "research.title")}</h2><p id="research-description" class="muted">{t(researchResultsOnly() ? (selected()?.research?.settings.analysis === "driven" ? "elmerAntenna.resultHint" : "elmerDesign.resultHint") : "research.description")}</p></div><button class="icon-btn" aria-label={t("common.close")} onClick={close}><X /></button></div>
       <div class="dialog-body research-body" style={researchResultsOnly() ? { "grid-template-columns": "minmax(0, 1fr)" } : undefined}>
         <Show when={!researchResultsOnly()}>
         <form id="research-form" class="research-options stack-lg" onSubmit={submit}>

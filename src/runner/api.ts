@@ -370,6 +370,7 @@ export interface OptDone {
 
 /** Experimental results are never ordinary antenna bundles. */
 export interface ResearchResult {
+  farfield?: { frequency_hz: number; theta_deg: number[]; phi_deg: number[]; directivity: number[][]; peak_directivity_dbi: number; gain_qualified: false };
   schema?: string;
   backend?: string;
   status: string;

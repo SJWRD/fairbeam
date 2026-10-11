@@ -1,6 +1,6 @@
 # Experimental solvers in the app
 
-The regular **Run** dialog offers openEMS (the default) and **Elmer FEM — Experimental eigenmodes**. Elmer Design runs use the ordinary run server and serial queue, with their own settings and result history. The installed openEMS runtime, its run path, project format and antenna results are unchanged. The Simulation ribbon's **Experimental solvers** command also retains the fixed research fixtures and runtime setup. No additional solver is downloaded or installed automatically.
+The regular **Run** dialog offers openEMS (the default), **Elmer FEM — Experimental eigenmodes**, and **Elmer FEM · Experimental antenna**. Elmer Design runs use the ordinary run server and serial queue, with their own settings and result history. The installed openEMS runtime, its run path, project format and antenna results are unchanged. The Simulation ribbon's **Experimental solvers** command also retains the fixed research fixtures and runtime setup. No additional solver is downloaded or installed automatically.
 
 This is an opt-in research integration, not a production Floquet port or general FEM antenna solver. Windows native execution has been exercised; macOS native execution and packaging still need qualification.
 
@@ -41,7 +41,7 @@ Each result comes from an empty-reference/sample pair. The panel plots S11 and S
 ### Current Design from the Run dialog
 
 1. Open a saved Design and choose **Run → Solver → Elmer FEM — Experimental eigenmodes**.
-2. Enter the six enclosure bounds in millimeters, containing all solids. Empty space is vacuum. The mesh places planes at box faces and subdivides to the requested maximum cell size.
+2. Review the enclosure bounds suggested from box geometry, or enter custom bounds in millimeters. Empty space is vacuum. The mesh places planes at box faces and subdivides to the requested maximum cell size.
 3. Set a target frequency in GHz. The solver searches for two eigenmodes near that target, not necessarily the lowest modes or a frequency sweep. If the eigenvalue search does not converge, choose a target closer to an expected mode and inspect the retained solver log.
 4. Select the explicit closed-PEC option. All six enclosure faces and internal PEC surfaces get a zero tangential electric-field boundary. These are separate Elmer settings: existing openEMS boundary, frequency and mesh settings are neither applied nor modified.
 5. Leave the path blank for managed Elmer, or enter its installation folder. **Elmer setup and history** opens the existing installation controls. Save and run; results open in solver history, also accessible from the shared queue.
@@ -77,12 +77,38 @@ npm run check:research
 The browser check uses a synthetic API to exercise state and presentation. Native solver qualification is separate: retain actual input snapshots, raw outputs, numerical comparisons and solver hashes. Neither synthetic results nor a capability probe are evidence of numerical accuracy.
 
 The [Windows qualification record](benchmarks/research-solvers-windows-20261009.json) includes actual native fixture results, failed controls, refinement differences, binary hashes and the real HTTP queue checks. The slab's maximum absolute complex S-parameter error decreased from 0.00912 to 0.00364 to 0.00228 at 20/30/40 cells per wavelength. These are absolute complex-amplitude errors, not dB differences or relative percentages near a zero. This evidence covers those fixtures, not arbitrary designs.
-# Driven Elmer integration status
+## Driven Elmer antenna prototype
 
-The Design Run adapter currently solves closed PEC eigenmodes. It does **not** solve a
-driven patch antenna, S parameters, or radiation patterns. The normal openEMS path remains
-the antenna solver. Selecting Elmer for a Design with ports now explains this before
-submission and offers an explicit switch back to openEMS without changing the Design.
+Choose **Run → Elmer FEM · Experimental antenna** for a patch Design made of axis-aligned
+dielectric boxes and PEC sheets with one ideal line lumped port. Sweep bounds and far-field
+frequency start from the Design. Air padding generates the open region automatically; it
+uses first-order absorbing boundaries, not PEC walls or PML. The user explicitly accepts a
+finite rectangular FEM terminal width (initially 1 mm). Its width axis is the first Cartesian
+axis other than the excitation direction; both terminal ends must contact PEC sheets.
+The source Design and openEMS setup are never changed.
+
+The adapter uses Elmer VectorHelmholtz, native port impedance and complex S-matrix extraction,
+and a direct UMFPACK solve. Dielectric loss is translated to conductivity at the Design's
+loss-reference frequency. Metal conductivity, curved geometry, transforms, cuts, additional
+lumped components and multiple ports are rejected. The initial limits are 10,000 cells,
+3–21 sweep samples plus the requested far-field frequency, one thread and 180 seconds per
+frequency. Native macOS execution still needs qualification, including UMFPACK availability.
+
+Results include S11, a rotatable normalized 3D field pattern and directivity cuts. A vacuum
+Huygens surface integral uses exported complex E/H fields and Elmer's exp(-i omega t)
+convention. It is checked against Hertzian-dipole power and directivity at two surface radii
+(power error below 1%, directivity error below 0.02 dB). It does not expose gain or efficiency.
+Raw fields, complex S11, input Design, settings, generated meshes, logs and hashes stay with
+the job. A completed run is **results_exported**, never a convergence certificate.
+
+Windows patch starter smoke: at 2.35 GHz, 1 mm feed and 40 mm padding, maximum 12 mm air
+cells gave S11 = -0.77437268 + 0.16389637i and peak directivity 6.75286 dBi. With 8 mm cells,
+S11 = -0.81870534 + 0.10499537i and peak directivity 6.76860 dBi. With 12 mm cells and 60 mm
+padding, S11 = -0.79490084 + 0.15111720i and peak directivity 6.67766 dBi. These differences
+remain numerical uncertainty, not proof of convergence or agreement with an ideal line feed.
+An attempted iterative 8 mm solve failed to converge; its evidence is retained. The direct
+solver completed that mesh. A real three-frequency queue run and EN/TR browser flow also
+completed, showing S11 and the 3D/cut pattern while retaining the original port.
 
 For supported box Designs, the eigenmode enclosure initially follows the geometry envelope.
 The bounds remain editable. This convenience does not infer an open radiation boundary:
@@ -104,18 +130,10 @@ Its maximum S-matrix singular value was 1.0000000000396843 and reciprocity error
 patch-antenna results or a qualification of the Design adapter. Passivity is checked on the
 whole complex matrix, without clipping, with tolerance 0.001; reciprocity tolerance is 1e-6.
 
-## Remaining work before enabling driven Design results
+### Qualification still needed
 
-The patch starter contains a zero-width ideal line feed, zero-thickness PEC sheets, and
-a lossy dielectric. The current volume-box eigenmode adapter represents none of these
-as a driven antenna. Removing its port check, silently widening the feed, dropping loss,
-or turning the air box into PEC walls would change the problem.
-
-The driven adapter needs conforming metal interfaces and feed support, a documented
-terminal definition and impedance normalization, material loss, open radiation boundaries,
-a frequency sweep, and a complex S-matrix result adapter. Far-field results additionally
-need a verified near-to-far transformation or a supported native extraction route; cavity
-eigenvectors cannot be relabeled as radiation patterns. Keep the original Design unchanged.
-Before enabling antenna output, check a matched feed control and a patch with a consistent
-feed model, plus a coarse refinement on the claimed observables. The native scattering
-control above is the first prerequisite, not a substitute for those checks.
+Establish terminal-width, mesh and padding convergence with a sufficiently dense resonance
+sweep. Compare a consistent finite feed model across solvers before claiming agreement.
+Add matched-terminal and accepted/radiated-power controls before exposing gain/efficiency.
+The existing native waveguide test and analytical far-field test do not establish arbitrary
+Design accuracy. Keep this path explicitly experimental; openEMS remains the default.
