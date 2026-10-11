@@ -657,8 +657,12 @@ class JobManager:
     def submit_research(self, body: dict) -> Job:
         from .research import prepare
         spec = prepare(body)
+        design_model = (spec.get("design") or {}).get("model", {})
         return self.submit(model=f"research:{spec['backend']}", model_path="", threads=1,
-                           kind="research", research_input=spec)
+                           kind="research", research_input=spec,
+                           model_id=design_model.get("id"),
+                           name=(f"{design_model.get('name') or design_model.get('id')} · Elmer"
+                                 if spec['backend'] == 'elmer' and spec.get('design') is not None else ""))
 
     def cancel(self, job_id: str) -> Job | None:
         job = self.jobs.get(job_id)
@@ -883,7 +887,7 @@ class JobManager:
         job.exit_code = code
 
         if job.kind == "research" and not job.cancel_requested:
-            from .research import load_result
+            from .research import load_result, completed_result
             result_error = None
             try:
                 job.result, checksum = load_result(job)
@@ -893,7 +897,7 @@ class JobManager:
             except (OSError, ValueError, TypeError) as exc:
                 job.result = None
                 result_error = str(exc)
-            if code == 0 and not result_error and job.result["status"] == "results_validated":
+            if code == 0 and not result_error and completed_result(job.result):
                 self._finish(job, "done", error=None)
             else:
                 self._finish(job, "failed", error=result_error or (stderr_tail[-1] if stderr_tail else None)

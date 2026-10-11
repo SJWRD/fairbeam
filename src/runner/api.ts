@@ -370,6 +370,7 @@ export interface OptDone {
 
 /** Experimental results are never ordinary antenna bundles. */
 export interface ResearchResult {
+  schema?: string;
   backend?: string;
   status: string;
   frequency_hz: number[];

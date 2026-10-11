@@ -4669,5 +4669,16 @@
   "research.elmer.step2": "Uyumluluğu kontrol edin, ilk kavite çalıştırması için 0.025 m seçin; ardından 0.0125 m ile tekrarlayıp frekansları karşılaştırın.",
   "research.step3": "Araştırma çalıştırmasını başlatın. Durum ve sonuçlar bu panelin geçmişinde görünür; paneli kapatmak çalıştırmayı durdurmaz.",
   "research.periodic.pathHint": "Klasör veya normal openEMS yerine deneysel çalıştırılabilir dosyayı seçin. Yalnızca sunucuda FAIRBEAM_PERIODIC_EXECUTABLE ayarlanmışsa boş bırakın.",
-  "research.elmer.pathHint": "Elmer kurulum klasörünü girin veya yönetilen kurulumu, sunucu ayarını ya da PATH’i kullanmak için boş bırakın. Başarılı kontrolden sonra kaydedilir."
+  "research.elmer.pathHint": "Elmer kurulum klasörünü girin veya yönetilen kurulumu, sunucu ayarını ya da PATH’i kullanmak için boş bırakın. Başarılı kontrolden sonra kaydedilir.",
+  "elmerDesign.solver": "Çözücü",
+  "elmerDesign.option": "Elmer FEM — Deneysel özmodlar",
+  "elmerDesign.scope": "Mevcut Tasarım geometrisinden kapalı PEC hacmin özmodlarını çözün. Yalnız eksenlere paralel PEC ve kayıpsız dielektrik kutu hacimleri desteklenir. Portlar, kayıplar, levhalar, eğriler ve dönüşümler desteklenmez. S parametresi veya ışıma örüntüsü üretilmez.",
+  "elmerDesign.domainHint": "Tüm katıları içeren kapalı hacmin sınırlarını girin. Boşluk vakumdur. Bu ayarlar yalnız bu Elmer çalışmasına aittir; openEMS sınır ve frekans ayarları kullanılmaz veya değiştirilmez. En fazla 4000 eleman; CPU, tek iş parçacığı.",
+  "elmerDesign.domain": "PEC kapalı hacim sınırları",
+  "elmerDesign.cell": "En büyük hücre boyutu (mm)",
+  "elmerDesign.target": "Mod arama hedefi (GHz)",
+  "elmerDesign.path": "Yönetilen Elmer kurulumunu kullanmak için boş bırakın. Kurulu değilse Elmer kurulumunu açın.",
+  "elmerDesign.pec": "Kapalı hacmin altı yüzünde ve PEC katılarda PEC sınır koşulu kullan.",
+  "elmerDesign.setup": "Elmer kurulumu ve geçmiş",
+  "elmerDesign.resultHint": "Hedefe yakın iki özfrekans; en düşük modlar olmak zorunda değildir. Sonuçlar çözücü geçmişinde görünür. Mesh yakınsaması ve fiziksel doğruluk onaylanmamıştır."
 }

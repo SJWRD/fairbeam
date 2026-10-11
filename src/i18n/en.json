@@ -4750,5 +4750,16 @@
   "research.elmer.step2": "Check capability, select 0.025 m for the first cavity run, then repeat at 0.0125 m to compare the reported frequencies.",
   "research.step3": "Start the research run. Its status and results appear in this panel’s history; closing the panel does not stop it.",
   "research.periodic.pathHint": "Select the experimental executable, not a folder or the ordinary openEMS binary. Leave blank only if FAIRBEAM_PERIODIC_EXECUTABLE is configured on the server.",
-  "research.elmer.pathHint": "Enter the Elmer installation folder, or leave blank to use the managed installation, server configuration or PATH. Saved after a successful check."
+  "research.elmer.pathHint": "Enter the Elmer installation folder, or leave blank to use the managed installation, server configuration or PATH. Saved after a successful check.",
+  "elmerDesign.solver": "Solver",
+  "elmerDesign.option": "Elmer FEM — Experimental eigenmodes",
+  "elmerDesign.scope": "Solve closed PEC enclosure eigenmodes from the current Design. Supports axis-aligned PEC and lossless dielectric box volumes only. Ports, losses, sheets, curves and transforms are not supported. No S parameters or radiation patterns.",
+  "elmerDesign.domainHint": "Enter the enclosure bounds containing all solids. Empty space is vacuum. These settings are specific to this Elmer run; the openEMS boundary and frequency settings are not used or changed. Maximum 4000 elements; CPU, one thread.",
+  "elmerDesign.domain": "PEC enclosure bounds",
+  "elmerDesign.cell": "Maximum cell size (mm)",
+  "elmerDesign.target": "Mode search target (GHz)",
+  "elmerDesign.path": "Leave blank to use the managed Elmer installation. Use Elmer setup if it is not installed.",
+  "elmerDesign.pec": "Use PEC walls on all six enclosure faces and on PEC solids.",
+  "elmerDesign.setup": "Elmer setup and history",
+  "elmerDesign.resultHint": "Two eigenfrequencies near the target, not necessarily the lowest modes. Results appear in solver history. Mesh convergence and physical accuracy have not been certified."
 }

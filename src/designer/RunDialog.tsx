@@ -21,6 +21,7 @@ import { checkPlace, kindLabel } from "./DesignPane";
 import { humanizePaths } from "./pathText";
 import "../styles/run-quality.css";
 import NumberField from "../components/NumberField";
+import ElmerDesignRun from "./ElmerDesignRun";
 
 /** i18n keys of the engine names */
 const ENGINE_LABEL: Record<string, string> = { cpu: "run.engine.cpu", gpu: "run.engine.gpu" };
@@ -44,6 +45,7 @@ export default function RunDialog() {
   const [name, setName] = createSignal("");
   const [err, setErr] = createSignal<string | null>(null);
   const [busy, setBusy] = createSignal(false);
+  const [solver, setSolver] = createSignal("openems");
 
   onMount(() => {
     if (serverState() !== "online") probeServer();
@@ -109,11 +111,16 @@ export default function RunDialog() {
             <p class="muted">
               <b>{draft.model?.name}</b>
               <Show when={dirty()}> · {t("run.unsavedFirst")}</Show>
-              . {t("run.dockNote")}
+              . {solver() === "openems" ? t("run.dockNote") : t("elmerDesign.resultHint")}
             </p>
           </div>
           <button class="icon-btn" onClick={close} aria-label={t("common.close")}><X size={16} /></button>
         </div>
+        <div class="rd-body"><label class="dz-field"><span class="dz-label">{t("elmerDesign.solver")}</span>
+          <select class="rp-select dz-input" aria-label={t("elmerDesign.solver")} value={solver()} disabled={busy()} onChange={e => setSolver(e.currentTarget.value)}>
+            <option value="openems">openEMS</option><option value="elmer">{t("elmerDesign.option")}</option>
+          </select></label></div>
+        <Show when={solver() === "openems"} fallback={<ElmerDesignRun close={close} />}>
         <form class="rd-body" id="rd-form" onSubmit={run}>
           <Show when={errors().length}>
             <div class="status-block status-critical" role="alert">
@@ -203,6 +210,7 @@ export default function RunDialog() {
             </button>
           </div>
         </div>
+        </Show>
       </div>
     </div>
   );

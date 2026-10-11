@@ -1,6 +1,6 @@
 # Experimental solvers in the app
 
-The Simulation ribbon's **Experimental solvers** command opens a separate research panel. It uses the ordinary run server and its serial job queue. The regular Run command, installed openEMS runtime, project format and antenna result viewer remain unchanged. No additional solver is downloaded or installed automatically.
+The regular **Run** dialog offers openEMS (the default) and **Elmer FEM — Experimental eigenmodes**. Elmer Design runs use the ordinary run server and serial queue, with their own settings and result history. The installed openEMS runtime, its run path, project format and antenna results are unchanged. The Simulation ribbon's **Experimental solvers** command also retains the fixed research fixtures and runtime setup. No additional solver is downloaded or installed automatically.
 
 This is an opt-in research integration, not a production Floquet port or general FEM antenna solver. Windows native execution has been exercised; macOS native execution and packaging still need qualification.
 
@@ -38,7 +38,23 @@ Each result comes from an empty-reference/sample pair. The panel plots S11 and S
 
 ## Elmer FEM cavity
 
-Select a native package containing `bin/ElmerSolver` and `bin/ElmerGrid` (or its binary directory). The integration runs only a fixed 0.10 × 0.05 × 0.20 m vacuum PEC cavity, at mesh targets 0.025 or 0.0125 m. It does not translate the current Design. It reports eigenfrequencies, the TE101 exact-frequency error and complex field-shape correlation. It has no driven ports, antenna S parameters, radiation boundary or far-field output.
+### Current Design from the Run dialog
+
+1. Open a saved Design and choose **Run → Solver → Elmer FEM — Experimental eigenmodes**.
+2. Enter the six enclosure bounds in millimeters, containing all solids. Empty space is vacuum. The mesh places planes at box faces and subdivides to the requested maximum cell size.
+3. Set a target frequency in GHz. The solver searches for two eigenmodes near that target, not necessarily the lowest modes or a frequency sweep. If the eigenvalue search does not converge, choose a target closer to an expected mode and inspect the retained solver log.
+4. Select the explicit closed-PEC option. All six enclosure faces and internal PEC surfaces get a zero tangential electric-field boundary. These are separate Elmer settings: existing openEMS boundary, frequency and mesh settings are neither applied nor modified.
+5. Leave the path blank for managed Elmer, or enter its installation folder. **Elmer setup and history** opens the existing installation controls. Save and run; results open in solver history, also accessible from the shared queue.
+
+Supported geometry is axis-aligned box volumes with constant, positive, lossless isotropic dielectric properties or PEC. Overlaps, ports, lumped elements, sheets, curves, transforms, cuts, losses and dispersion are rejected before submission. The experimental solve is limited to 4,000 elements, 10,000 nodes, one CPU thread and a 120-second native timeout. No driven ports, S parameters, radiation pattern or field viewer are provided. Raw VTU fields, mesh, SIF, logs and immutable Design inputs are retained with the job.
+
+A completed Design run is **results_exported**, not **results_validated**. Completion requires two finite positive frequencies and a finite nonzero electric field; it is not mesh convergence or physical validation. Repeated eigenfrequencies are permitted for degenerate modes. The selected target and material properties are recorded with the mesh.
+
+Minimal Windows smoke: an air-filled Design box from (0,0,0) to (100,50,200) mm, matching PEC enclosure bounds, 25 mm cells and a 1.8 GHz target returned 1.712767517 and 2.174670253 GHz with native Elmer 26.1, including through the actual shared queue. The first agrees with the earlier fixed-fixture numerical result (analytical TE101 is 1.675890788 GHz, about 2.20% discretization error). This single control is not qualification of arbitrary Design geometries. Native macOS execution still needs a platform check.
+
+### Fixed reference fixture
+
+Select a native package containing `bin/ElmerSolver` and `bin/ElmerGrid` (or its binary directory). The reference experiment runs a fixed 0.10 × 0.05 × 0.20 m vacuum PEC cavity, at mesh targets 0.025 or 0.0125 m. This reference fixture does not translate the current Design; use the Run dialog workflow above for that. It reports eigenfrequencies, the TE101 exact-frequency error and complex field-shape correlation. It has no driven ports, antenna S parameters, radiation boundary or far-field output.
 
 See [the Elmer experiment](ELMER-EXPERIMENT.md) for the analytical definition, standalone command, native observations and distribution evidence. The standalone command remains independent of the app queue; do not run it concurrently with another solver. Third-party binaries are external and are not redistributed by this integration.
 
