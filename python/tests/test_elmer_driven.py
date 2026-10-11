@@ -7,6 +7,18 @@ from fairbeam.elmer_driven import prepare, huygens_pattern, C0, MU0, EPS0
 
 
 class DrivenTests(unittest.TestCase):
+    def test_pec_approximation_is_explicit_and_preserves_conductivity(self):
+        d = blank_design('p', 'Patch')
+        metal = next(m for m in d['materials'] if m['kind'] == 'metal')
+        metal.update(conductivity=5.8e7, thickness=.035)
+        original = copy.deepcopy(d)
+        with self.assertRaises(ValueError):
+            prepare(d)
+        mesh = prepare(d, approximate_metals=True)
+        reference = prepare(blank_design('p', 'Patch'))
+        self.assertEqual(mesh['elements'], reference['elements'])
+        self.assertEqual(d, original)
+
     def test_patch_preserves_input_and_loss(self):
         d=blank_design('p','Patch'); original=copy.deepcopy(d)
         m=prepare(d,cell_mm=15,padding_mm=35,feed_width_mm=1)

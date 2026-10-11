@@ -9,7 +9,7 @@ import { t } from "../i18n";
 import NumberField from "../components/NumberField";
 
 export default function ElmerAntennaRun(props: { close: () => void }) {
-  const number = (v: unknown, fallback: number) => tryEvaluate(v as string | number, names().names).value ?? fallback;
+  const number = (v: unknown, fallback: number) => Number((tryEvaluate(v as string | number, names().names).value ?? fallback).toPrecision(12));
   const [values, setValues] = createSignal({
     f_min_hz: String(number(draft.simulation?.f_min, 1.5)), f_max_hz: String(number(draft.simulation?.f_max, 3.2)),
     farfield_hz: String(number(draft.far_field?.frequencies?.[0], 2.45)), points: "11",
@@ -25,10 +25,11 @@ export default function ElmerAntennaRun(props: { close: () => void }) {
     e.preventDefault(); if(invalid() || busy() || !file())return;
     setBusy(true);setError(""); const identity=file()!.id;
     try{
+      if ((await api.health()).elmer_driven !== 1) throw Error(t("elmerAntenna.serverUpdate"));
       if(dirty() || conflict())await save();
       if(!alive)return;
       if(file()?.id!==identity || dirty() || conflict())throw Error(t("run.err.notSaved"));
-      const settings:Record<string,unknown>={analysis:"driven",accept_finite_feed:true};
+      const settings:Record<string,unknown>={analysis:"driven",accept_finite_feed:true,approximate_metals:true};
       for(const [key,v] of Object.entries(values()))settings[key]=Number(v)*(key.endsWith("_hz")?1e9:1);
       const job=await api.researchStart({backend:"elmer",path:researchPath("elmer"),design:structuredClone(unwrap(draft)),settings});
       void refreshRuns();if(alive){props.close();openResearch(job.id,"elmer",true);}
@@ -36,6 +37,7 @@ export default function ElmerAntennaRun(props: { close: () => void }) {
   };
   return <form class="rd-body" onSubmit={submit} data-testid="elmer-antenna-form">
     <p class="note">{t("elmerAntenna.scope")}</p>
+    <p class="note">{t("elmerAntenna.pec")}</p>
     <fieldset class="stack" disabled={busy()}><legend>{t("elmerAntenna.option")}</legend>
       <div class="rd-grid"><For each={Object.keys(values()) as (keyof ReturnType<typeof values>)[]}>{key=><label class="dz-field">
         <span class="dz-label">{t(`elmerAntenna.${key}`)}</span>

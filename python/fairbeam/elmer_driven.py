@@ -4,6 +4,7 @@ Rectilinear dielectric volumes, PEC sheets and a finite rectangular terminal.
 The terminal width is explicit: a zero-width Design feed is not a FEM surface.
 """
 from pathlib import Path
+import copy
 import json
 import math
 import os
@@ -22,8 +23,14 @@ MU0 = 4e-7 * math.pi
 EPS0 = 1 / (MU0 * C0 * C0)
 
 
-def prepare(design, *, cell_mm=8., padding_mm=40., feed_width_mm=1.):
+def prepare(design, *, cell_mm=8., padding_mm=40., feed_width_mm=1., approximate_metals=False):
     check_design(design)
+    design = copy.deepcopy(design)
+    if approximate_metals:
+        for material in design.get('materials', []):
+            if material.get('kind') == 'metal' and material.get('conductivity') is not None:
+                material.pop('conductivity', None)
+                material.pop('thickness', None)
     for value in (cell_mm, padding_mm, feed_width_mm):
         if isinstance(value, bool) or not isinstance(value,(int,float)) or not math.isfinite(value) or value <= 0:
             raise ValueError("Mesh, padding and finite feed width must be positive")
@@ -365,7 +372,7 @@ SCHEMA = 'fairbeam.elmer-driven-result/1'
 
 
 def settings_mesh(design, settings):
-    allowed={'analysis','cell_mm','padding_mm','feed_width_mm','f_min_hz','f_max_hz','points','farfield_hz','accept_finite_feed'}
+    allowed={'analysis','cell_mm','padding_mm','feed_width_mm','f_min_hz','f_max_hz','points','farfield_hz','accept_finite_feed','approximate_metals'}
     if set(settings)-allowed or settings.get('analysis')!='driven' or settings.get('accept_finite_feed') is not True:
         raise ValueError('Explicit experimental finite-feed acceptance is required')
     for key in ('f_min_hz','f_max_hz','farfield_hz'):
@@ -377,7 +384,9 @@ def settings_mesh(design, settings):
     points=settings.get('points')
     if type(points) is not int or not 3<=points<=21:
         raise ValueError('Initial driven sweep supports 3 to 21 frequency points')
-    return prepare(design,cell_mm=settings.get('cell_mm',12),padding_mm=settings.get('padding_mm',40),feed_width_mm=settings.get('feed_width_mm',1))
+    if type(settings.get('approximate_metals', False)) is not bool:
+        raise ValueError('approximate_metals must be boolean')
+    return prepare(design,cell_mm=settings.get('cell_mm',12),padding_mm=settings.get('padding_mm',40),feed_width_mm=settings.get('feed_width_mm',1),approximate_metals=settings.get('approximate_metals',False))
 
 
 def run(design, settings, outdir, root):
@@ -391,6 +400,9 @@ def run(design, settings, outdir, root):
                              'First-order absorbing outer boundary; mesh and padding convergence are not certified.',
                              'Far field is directivity only, not qualified gain or efficiency.'])
     (out/'design.json').write_text(json.dumps(design,indent=2),encoding='utf-8')
+    result['pec_approximations'] = [m['name'] for m in design.get('materials', []) if settings.get('approximate_metals') and m.get('kind') == 'metal' and m.get('conductivity') is not None]
+    if result['pec_approximations']:
+        result['limitations'].append('Finite conductor loss omitted by PEC approximation: ' + ', '.join(result['pec_approximations']))
     try:
         for i,f in enumerate(frequencies):
             folder=out/f'frequency-{i:03d}'

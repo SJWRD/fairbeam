@@ -89,7 +89,9 @@ The source Design and openEMS setup are never changed.
 
 The adapter uses Elmer VectorHelmholtz, native port impedance and complex S-matrix extraction,
 and a direct UMFPACK solve. Dielectric loss is translated to conductivity at the Design's
-loss-reference frequency. Metal conductivity, curved geometry, transforms, cuts, additional
+loss-reference frequency. The antenna UI approximates finite-conductivity metals as PEC only
+in the FEM snapshot, explicitly omitting conductor loss; affected material names are recorded
+in the result. The source Design keeps its conductivity. Curved geometry, transforms, cuts, additional
 lumped components and multiple ports are rejected. The initial limits are 10,000 cells,
 3–21 sweep samples plus the requested far-field frequency, one thread and 180 seconds per
 frequency. Native macOS execution still needs qualification, including UMFPACK availability.

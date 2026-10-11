@@ -132,7 +132,8 @@ await writeFile(overlay, JSON.stringify({
 await run(process.execPath, [cli, 'build', '--no-bundle', '--config', overlay, '--ci'], repo, buildEnv);
 if (!(await exists(exe))) throw new Error(`Tauri build did not produce ${exe}`);
 
-await mkdir(dirname(output), { recursive: true });
+// Node on Windows can reject recursive mkdir on an existing drive root (e.g. E:\).
+if (!(await exists(dirname(output)))) await mkdir(dirname(output), { recursive: true });
 await mkdir(output);
 await copyFile(exe, join(output, 'fairbeam.exe'));
 await copyDirectory(dist, join(output, 'ui'));

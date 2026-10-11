@@ -639,7 +639,7 @@ class App:
     # ---- endpoint implementations (return JSON-able objects or raise ApiError)
 
     def health(self) -> dict:
-        return {"ok": True, "api": 1, "research": True, **self.versions, "cpu_count": self.cpu,
+        return {"ok": True, "api": 1, "research": True, "elmer_driven": 1, **self.versions, "cpu_count": self.cpu,
                 "physical_cores": self.physical, "host_cpu": resources.host_cpu_name(),
                 "default_threads": resources.auto_threads(self.cpu, self.physical),
                 "throughput": resources.measured_throughput(self.projects_dir, resources.host_cpu_name()),

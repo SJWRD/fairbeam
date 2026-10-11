@@ -17,6 +17,7 @@ export interface Preflight { level: "ok" | "warn" | "refuse" | "unknown"; messag
 const withThreads = <T extends { threads: number }>(b: T) => ({ ...b, threads: b.threads === 0 ? "auto" : b.threads });
 
 export interface Health {
+  elmer_driven?: number;
   research?: boolean;
   ok: boolean;
   api: number;

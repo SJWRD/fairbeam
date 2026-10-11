@@ -1,4 +1,4 @@
-import { For, Show, createEffect, createSignal, onCleanup, onMount, untrack } from "solid-js";
+import { Show, createEffect, createSignal, onCleanup, onMount, untrack } from "solid-js";
 import { X } from "lucide-solid";
 import type { PickedFace } from "./faceAlign";
 import { draft, edit, file, names, selectAddedGeometry } from "./store";
@@ -10,6 +10,7 @@ import { quickBundle } from "./geometry";
 import { setPreviewGeometry } from "./transforms";
 import { t } from "../i18n";
 import { isReservedName } from "../lib/legacy";
+import MaterialPicker from "./MaterialPicker";
 
 export default function FaceExtrudeDialog() {
   const [face, setFace] = createSignal<PickedFace | null>(null);
@@ -88,10 +89,9 @@ export default function FaceExtrudeDialog() {
     <p>{faceOf()[0]}<b>{f().part}</b>{faceOf()[1]} · {t("faceExtrude.axis")} {"xyz"[f().axis]} {f().sign > 0 ? "+" : "−"}</p>
     <label>{t("faceExtrude.thickness")}<input autocomplete="off" ref={thicknessInput} class="rp-input" value={thickness()} onInput={e => setThickness(e.currentTarget.value)} /></label>
     <label>{t("faceExtrude.material")}
-      <select class="rp-select" value={material()} onChange={e => setMaterial(e.currentTarget.value)}>
+      <MaterialPicker value={material()} onChange={setMaterial}>
         <option value="">{t("faceExtrude.newMetal")}</option>
-        <For each={draft.materials}>{m => <option value={m.name}>{m.name}</option>}</For>
-      </select>
+      </MaterialPicker>
     </label>
     <label>{t("faceExtrude.name")}<input autocomplete="off" class="rp-input" value={name()} onInput={e => setName(e.currentTarget.value)} /></label>
     <label>{t("faceExtrude.component")}<input autocomplete="off" class="rp-input" value={component()} onInput={e => setComponent(e.currentTarget.value)} /></label>

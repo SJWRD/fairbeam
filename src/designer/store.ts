@@ -972,12 +972,14 @@ export function addLibraryMaterial(m: LibraryMaterial) {
   const material = atDesignFrequency(designMaterial(m, unique(m.name, draft.materials.map((q) => q.name))));
   edit((d) => { d.materials.push(material); });
   setSelection({ type: "material", i: draft.materials.length - 1 });
+  return material.name;
 }
 
 /** A copy of a "My materials" entry's values, under a free name (the design stays self-contained). */
 export function addUserMaterial(m: UserMaterial) {
   edit((d) => { d.materials.push(designMaterialFromUser(m, unique(m.name, d.materials.map((q) => q.name)))); });
   setSelection({ type: "material", i: draft.materials.length - 1 });
+  return draft.materials[draft.materials.length - 1].name;
 }
 
 /** Set (or, with undefined, clear) the display color of parts or materials: one undo step for all. */
