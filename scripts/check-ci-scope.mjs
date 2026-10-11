@@ -5,7 +5,7 @@ import {tmpdir} from 'node:os';
 import {join, resolve} from 'node:path';
 import {classify, verifiedMergeReuse} from './ci-scope.mjs';
 for (const files of [['README.md'],['docs/BUNDLE.md','docs/tr/BUNDLE.md'],['landing/index.html'],['examples/drawings/dipole.svg']]) assert.deepEqual(classify(files),{full:false,native:false});
-for (const file of ['src/designer/runResults.ts','api/ping.js','public/projects/index.json']) assert.deepEqual(classify([file]),{full:true,native:true});
+for (const file of ['src/designer/runResults.ts','api/ping.js','public/projects/index.json','design-system/tokens.css']) assert.deepEqual(classify([file]),{full:true,native:true});
 for (const file of ['python/fairbeam/server.py','src-tauri/src/lib.rs','package-lock.json','scripts/check-ci-scope.mjs','.github/workflows/ci.yml','new-unknown-folder/input.dat']) assert.deepEqual(classify([file]),{full:true,native:true});
 assert.deepEqual(classify([]),{full:true,native:true});
 assert.deepEqual(classify(['docs/BUNDLE.md','python/fairbeam/server.py']),{full:true,native:true});

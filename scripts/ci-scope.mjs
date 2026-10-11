@@ -5,7 +5,7 @@ import {pathToFileURL} from 'node:url';
 
 export function classify(files) {
   const docsOnly = files.length > 0 && files.every(file =>
-    /^(docs\/|landing\/|landing-src\/|design-system\/|examples\/drawings\/|examples\/reports\/)/.test(file) ||
+    /^(docs\/|landing\/|landing-src\/|examples\/drawings\/|examples\/reports\/)/.test(file) ||
     /^(README(?:\.[a-z]+)?\.md|CONTRIBUTING\.md|AI_POLICY\.md|LICENSE|CITATION\.cff)$/.test(file));
   const full = !docsOnly;
   // UI/TS edits can affect the Python geometry contract; keep native qualification for code.

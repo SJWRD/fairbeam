@@ -11,7 +11,7 @@ const out = resolve(process.env.FAIRBEAM_TEST_ARTIFACTS || join(tmpdir(), `fairb
 await mkdir(out, { recursive: true });
 const original = JSON.parse(await readFile('public/projects/dipole.json', 'utf8'));
 const stack = await startStack({ log: console.log });
-let browser, page;
+let browser, page, session;
 try {
   browser = await puppeteer.launch({ headless: true, executablePath: await chromePath(), args: ['--no-sandbox', '--enable-unsafe-swiftshader', '--use-angle=swiftshader'] });
   for (const lang of ['en', 'tr']) {
@@ -20,8 +20,12 @@ try {
     await page.setViewport({ width: 1440, height: 1000 });
     await page.evaluateOnNewDocument(language => localStorage.setItem('fairbeam.generalSettings', JSON.stringify({ language })), lang);
     const s = new Session(page, { lang, scenario: 'user-project', url: stack.url });
+    session = s;
+    const started = Date.now();
     await page.goto(stack.url, { waitUntil: 'domcontentloaded' });
-    await s.wait('.home');
+    // Match the full scenario suite's cold Vite startup budget; action assertions keep their defaults.
+    await s.wait('.home', undefined, { timeout: 45000 });
+    console.log(`${lang}: initial interface ready in ${Date.now() - started} ms`);
     for (const ports of [0, 1]) {
       const fixture = structuredClone(original);
       fixture.model.id = `user-geometry-${ports}`;
@@ -78,6 +82,7 @@ try {
   console.log('User project browser: EN/TR geometry with 0/1 ports, repeated mouse/keyboard selection, saved result, explicit gallery, active example and editable design import passed.');
 } catch (error) {
   await page?.screenshot({ path: join(out, 'failure.png') });
+  await writeFile(join(out, 'failure.json'), JSON.stringify({ error: String(error), console: session?.consoleIssues }, null, 2));
   throw error;
 } finally {
   await browser?.close();

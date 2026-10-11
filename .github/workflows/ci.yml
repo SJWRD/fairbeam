@@ -171,14 +171,18 @@ jobs:
           $env:TMP = $env:RUNNER_TEMP
           node scripts/check-scenarios.mjs --skip-run
 
-      - name: Selected-result recovery and Compare layout regressions
+      - name: Viewer identity, result recovery and Compare layout regressions
         shell: pwsh
+        env:
+          FAIRBEAM_TEST_ARTIFACTS: ${{ runner.temp }}/fairbeam-scenario-failures/viewer-regressions
         run: |
           $env:FAIRBEAM_PYTHON = (Get-Command python).Source
           $env:PYTHONUTF8 = '1'
           node scripts/check-selected-result-deadline-browser.mjs
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           node scripts/check-compare-bounds-browser.mjs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node scripts/check-user-project-browser.mjs
 
       - name: Keep browser failure screenshots
         if: failure()
