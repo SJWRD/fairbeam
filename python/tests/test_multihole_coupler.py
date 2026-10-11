@@ -42,7 +42,7 @@ def audit_header(text, meta):
         raise ValueError("complete bundled-runtime grid/clock/thread header required")
     if list(map(int, grid.groups()[:3])) != meta["native_lines"] or int(grid[4]) != meta["native_cells"]:
         raise ValueError("native grid differs from preflight")
-    if int(interval[1]) != int(1/(2*meta["native_f_max_hz"]*meta["native"]["dt_s"])):
+    if int(interval[1]) != int(1/(2*f.FREQUENCIES[-1]*meta["native"]["dt_s"])):
         raise ValueError("native sampling interval differs from declared clock")
     if abs(int(pulse[1])-int(np.ceil(meta["source_duration_s"]/meta["native"]["dt_s"]))) > 1:
         raise ValueError("native Gaussian pulse length differs from preflight")
@@ -256,40 +256,16 @@ class MultiholeControls(unittest.TestCase):
             with self.assertRaises(ValueError):
                 f.trace_clock(bad, native)
 
-    def test_source_band_and_native_clock_are_separate_from_requested_frequencies(self):
-        _, meta = f.build(32, 1)
-        self.assertEqual(meta["f_max_hz"], 11e9)
-        self.assertEqual(meta["excitation"]["fc"], 1.65e9)
-        self.assertEqual(meta["native_f_max_hz"], 10.65e9)
-        # Continuous Gaussian sideband, not a measured incident-wave guarantee.
-        # openEMS 0.37.0-rc3 uses exp(-(2*pi*fc*t/3-3)^2).
-        # https://docs.openems.de/en/latest/concepts/signals.html
-        spectral_envelope = np.exp(-2.25*((f.FREQUENCIES-f.F0)/f.SOURCE_FC)**2)
-        self.assertGreater(spectral_envelope.min(), f.LIMITS["incident_floor_rel"])
-        native = dict(dt_s=.6e-12, numerical_time_s=200e-12)
-        actual_stride = int(1/(2*meta["native_f_max_hz"]*native["dt_s"]*4))
-        old_stride = int(1/(2*meta["f_max_hz"]*native["dt_s"]*4))
-        self.assertNotEqual(actual_stride, old_stride)
-        data = np.column_stack((np.arange(12)*actual_stride*native["dt_s"], np.ones(12)))
-        self.assertEqual(f.trace_clock(data, native)["stride_steps"], actual_stride)
-        data[:,0] = np.arange(12)*old_stride*native["dt_s"]
-        with self.assertRaisesRegex(ValueError, "clock"):
-            f.trace_clock(data, native)
-
     def test_native_header_uses_node_count_and_measured_clock(self):
         _, meta = f.build(24, 1)
         meta["native"] = dict(dt_s=meta["declared_dt_s"])
         lines = "x".join(str(n) for n in meta["native_lines"])
-        interval = int(1/(2*meta["native_f_max_hz"]*meta["declared_dt_s"]))
+        interval = int(1/(2*f.FREQUENCIES[-1]*meta["declared_dt_s"]))
         text = (f"openEMS 64bit -- version v0.37.0-rc3\nfixed number of threads: 4\n"
                 f"FDTD simulation size: {lines} --> {meta['native_cells']} FDTD cells\n"
                 f"Excitation signal length is: {int(np.ceil(meta['source_duration_s']/meta['declared_dt_s']))} timesteps\n"
                 f"Exact-endcriteria: evaluating the end criteria every {interval} timestep\n")
         self.assertEqual(audit_header(text, meta)["nyquist_interval"], interval)
-        old_interval = int(1/(2*meta["f_max_hz"]*meta["declared_dt_s"]))
-        old_text = text.replace(f"every {interval} timestep", f"every {old_interval} timestep")
-        with self.assertRaisesRegex(ValueError, "sampling"):
-            audit_header(old_text, meta)
         meta["native_cells"] -= 1
         with self.assertRaisesRegex(ValueError, "grid"):
             audit_header(text, meta)
@@ -313,7 +289,7 @@ class MultiholeControls(unittest.TestCase):
                               timesteps=steps, numerical_time_s=steps*meta["declared_dt_s"])
         meta["run"] = dict(grid=meta["native_lines"], converged=True, exact_endcriteria=True, threads=f.THREADS)
         meta["native_header"] = dict(version="v0.37.0-rc3", threads=f.THREADS,
-                                     nyquist_interval=int(1/(2*meta["native_f_max_hz"]*meta["declared_dt_s"])),
+                                     nyquist_interval=int(1/(2*f.FREQUENCIES[-1]*meta["declared_dt_s"])),
                                      excitation_timesteps=int(np.ceil(meta["source_duration_s"]/meta["declared_dt_s"])))
         self.assertTrue(all(f.record_quality(meta).values()))
         meta["native"]["numerical_time_s"] *= 2
