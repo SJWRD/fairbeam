@@ -1,4 +1,4 @@
-import { createEffect, createMemo, For, onCleanup, onMount, Show } from "solid-js";
+import { createEffect, createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { FileUp, GitCompareArrows, TriangleAlert, X } from "lucide-solid";
 import { index, source } from "../state";
 import { clearPinned, clearReference, compareOpen, importReferenceFile, isPinned, MAX_PINNED, pin, pinned, reference, refError, REF_KEY, restorePinned, setCompareOpen, unpin } from "./store";
@@ -11,6 +11,22 @@ import { fmt, t, decimalComma } from "../i18n";
 export default function ComparePicker() {
   let root: HTMLDivElement | undefined;
   let button: HTMLButtonElement | undefined;
+  const [position, setPosition] = createSignal<{ left: string; width: string; "max-height": string }>();
+
+  // Dock tools wrap independently of viewport breakpoints. Keep this trigger-anchored panel
+  // inside both its own pane and the viewport, including when the side panels are resized.
+  const place = () => {
+    if (!root || !button) return;
+    const anchor = root.getBoundingClientRect();
+    const dock = root.closest(".dock")?.getBoundingClientRect();
+    const left = Math.max(0, dock?.left ?? 0) + 8;
+    const right = Math.min(window.innerWidth, dock?.right ?? window.innerWidth) - 8;
+    const width = Math.max(0, Math.min(340, right - left));
+    const x = Math.max(left, Math.min(button.getBoundingClientRect().right - width, right - width));
+    // The rendered bottom already includes the CSS gap above the trigger (including rem scaling).
+    const bottom = root.querySelector(".cmp-pop")?.getBoundingClientRect().bottom ?? anchor.top;
+    setPosition({ left: `${x - anchor.left}px`, width: `${width}px`, "max-height": `min(420px, 70vh, ${Math.max(0, bottom - 8)}px)` });
+  };
 
   let refInput: HTMLInputElement | undefined;
   // labels over the whole index, so a project reads the same here as in the header's picker
@@ -32,10 +48,18 @@ export default function ComparePicker() {
         button?.focus();
       }
     };
+    const observer = new ResizeObserver(place);
+    for (const element of [root, root?.closest(".dock"), root?.closest(".dock-bar")]) if (element) observer.observe(element);
+    window.addEventListener("resize", place);
     document.addEventListener("pointerdown", onDown);
     document.addEventListener("keydown", onKey, true);
-    queueMicrotask(() => (root?.querySelector(".cmp-pop input, .cmp-pop button") as HTMLElement | null)?.focus());
+    queueMicrotask(() => {
+      place();
+      (root?.querySelector(".cmp-pop input, .cmp-pop button") as HTMLElement | null)?.focus();
+    });
     onCleanup(() => {
+      observer.disconnect();
+      window.removeEventListener("resize", place);
       document.removeEventListener("pointerdown", onDown);
       document.removeEventListener("keydown", onKey, true);
     });
@@ -59,7 +83,7 @@ export default function ComparePicker() {
         </Show>
       </button>
       <Show when={compareOpen()}>
-        <div class="cmp-pop" role="dialog" aria-label={t("compare.picker.aria")}>
+        <div class="cmp-pop" style={position()} role="dialog" aria-label={t("compare.picker.aria")}>
           <div class="section-label">
             {t("compare.picker.with")}
             <Show when={pinned().length}>
