@@ -1045,6 +1045,36 @@ class DesignApi(unittest.TestCase):
                 self.assertIn({"severity": "error", "path": path, "code": code},
                               [{k: c[k] for k in ("severity", "path", "code")} for c in pv["checks"]])
 
+    def test_designs_of_a_few_mb_preview_and_save(self):
+        """A design with scanned mesh solids (a micro-CT tooth) is a few MB of JSON: more than the 1 MiB of the
+        other routes and the 256 KB of a Python source. Preview and save take it; a body past MAX_DESIGN_BODY and a
+        file past MAX_DESIGN are still refused."""
+        from fairbeam import modelfiles
+        from fairbeam.server import MAX_BODY, MAX_DESIGN_BODY
+
+        st, body = self.request("POST", "/api/designs", {"id": "big_scan", "name": "Big scan"})
+        self.assertEqual(st, 201, body)
+        d = body["design"]
+        d["model"]["description"] = "x" * (3 << 20)   # stands in for the vertices of a scanned solid
+        st, saved = self.request("PUT", "/api/designs/big_scan", {"design": d, "base_hash": body["hash"]})
+        self.assertEqual(st, 200, saved)
+        self.assertGreater((self.models / "big_scan.design.json").stat().st_size, MAX_BODY)
+        st, again = self.request("GET", "/api/designs/big_scan")
+        self.assertEqual((st, len(again["design"]["model"]["description"])), (200, 3 << 20))
+        st, pv = self.request("POST", "/api/preview", {"design": d})
+        self.assertEqual(st, 200, pv)
+        self.assertTrue(pv["bundle"]["parts"])
+        for method, path in (("POST", "/api/preview"), ("PUT", "/api/designs/big_scan")):
+            conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=30)
+            conn.request(method, path, headers={"Host": f"127.0.0.1:{self.port}", "Content-Type": "application/json",
+                                                "Content-Length": str(MAX_DESIGN_BODY + 1)})
+            self.assertEqual(conn.getresponse().status, 413, path)
+            conn.close()
+        with mock.patch.object(modelfiles, "MAX_DESIGN", 1 << 20):
+            st, err = self.request("PUT", "/api/designs/big_scan", {"design": d, "base_hash": saved["hash"]})
+        self.assertEqual(st, 422, err)
+        self.assertIn("a design is at most 1 MB", err["error"])
+
     def test_preview_refuses_build_fatal_resistance(self):
         base = blank_design("fatal-preview", "Fatal preview")
         for r in (0, -1):

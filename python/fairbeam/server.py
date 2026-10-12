@@ -35,7 +35,8 @@ Endpoints (all JSON unless noted)::
     GET  /api/models/{id}/source    {source, hash, readonly}
     PUT  /api/models/{id}/source    {source, base_hash} save (409 on a stale hash), then validate
     GET  /api/models/{id}/history   last 20 saved versions; .../history/{version} one of them
-    POST /api/preview               {design, params?} -> the bundle of an unsaved design and its checks
+    POST /api/preview               {design, params?} -> the bundle of an unsaved design and its checks (a design body may be
+                                    up to 32 MiB, as for a save; the other routes take 1 MiB)
     POST /api/designs               {id, name?, from? | template? | python?: {source_model, model?} | cst?: {source, filename?} | pcb?: {files, options?}}
                                     create python/models/<id>.design.json; {design, name?, id?}: a design file (fairbeam.design/1)
                                     as a new design, under a free id from its name when no id is given
@@ -46,7 +47,8 @@ Endpoints (all JSON unless noted)::
                                     Excellon) as a design (not saved): {design, report, layers, checks}; at most 12 files,
                                     8 MB each and 16 MB together (413/422 beyond)
     GET  /api/designs/{id}          {design, hash}
-    PUT  /api/designs/{id}          {design, base_hash} save (also with check errors; they come back in validation.checks)
+    PUT  /api/designs/{id}          {design, base_hash} save (also with check errors; they come back in validation.checks);
+                                    at most 32 MiB
     GET  /api/designs/{id}/python   the design as a Python model file
     POST /api/design/from-python    {source, model?} a model script built (never solved) in a child process, 20 s limit:
                                     {design, python, normalized, output}; a failure is a 422 with {error, line?, timeout?}
@@ -91,6 +93,9 @@ LOOPBACK_HOSTS = {"127.0.0.1", "localhost", "::1", "[::1]"}
 LOOPBACK_PEERS = {"127.0.0.1", "::1", "::ffff:127.0.0.1"}
 DEFAULT_PORT = 5320
 MAX_BODY = 1 << 20
+# an unsaved design travels in the body of a preview and of a save: a design with mesh solids from a scan (a tooth from
+# micro-CT, about 30 000 triangles) is a few MB of JSON, so these two routes take more than the rest
+MAX_DESIGN_BODY = 32 << 20
 # PCB artwork import: the files travel base64-encoded in the JSON body (POST /api/import/pcb, and POST /api/designs
 # with pcb), so these two routes take a larger body than the rest
 MAX_PCB_FILES = 12
@@ -1921,7 +1926,7 @@ class Handler(BaseHTTPRequestHandler):
             ("GET", r"/api/render-jobs/(rb-[0-9a-f]+)", lambda i: self._json(200, app.render_job(i).to_dict())),
             ("POST", r"/api/render-jobs/(rb-[0-9a-f]+)/cancel", self._cancel_render),
             ("GET", r"/api/models", lambda: self._json(200, app.models())),
-            ("POST", r"/api/preview", lambda: self._json(200, app.do_preview(self._body()))),
+            ("POST", r"/api/preview", lambda: self._json(200, app.do_preview(self._body(MAX_DESIGN_BODY)))),
             ("POST", r"/api/research/probe", lambda: self._json(200, app.research_probe(self._body()))),
             ("GET", r"/api/research/elmer/runtime", lambda: self._json(200, app.elmer_runtime_status())),
             ("POST", r"/api/research/elmer/install", lambda: self._json(202, app.elmer_runtime_install())),
@@ -1955,7 +1960,7 @@ class Handler(BaseHTTPRequestHandler):
             ("POST", r"/api/import/pcb", lambda: self._json(200, app.import_pcb(self._body(MAX_PCB_BODY)))),
             ("GET", r"/api/designs/([a-z][a-z0-9_]*)",
              lambda i: self._json(200, app.design_file(i))),
-            ("PUT", r"/api/designs/([a-z][a-z0-9_]*)", lambda i: self._json(200, app.save_design(i, self._body()))),
+            ("PUT", r"/api/designs/([a-z][a-z0-9_]*)", lambda i: self._json(200, app.save_design(i, self._body(MAX_DESIGN_BODY)))),
             ("GET", r"/api/designs/([a-z][a-z0-9_]*)/python", lambda i: self._json(200, app.design_python(i))),
             ("POST", r"/api/designs/([a-z][a-z0-9_]*)/delete", self._delete_design),
             ("POST", r"/api/designs/([a-z][a-z0-9_]*)/rename", lambda i: self._json(200, app.rename_design(i, self._body()))),
