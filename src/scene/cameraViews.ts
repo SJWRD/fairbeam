@@ -1,4 +1,19 @@
 export type ViewName = "iso" | "top" | "front" | "right" | "bottom" | "back" | "left";
+/** A camera pose in design coordinates (mm): the camera position and the orbit target (a design's opening view). */
+export interface CameraPose { camera: [number, number, number]; target: [number, number, number] }
+
+const point = (p: unknown): p is [number, number, number] => Array.isArray(p) && p.length === 3 && p.every((x) => typeof x === "number" && Number.isFinite(x));
+/** A saved pose that the 3D view can take (python/fairbeam/design.py _check_view), else null. */
+export function validPose(v: unknown): CameraPose | null {
+  const o = v as Partial<CameraPose> | null | undefined;
+  if (!o || !point(o.camera) || !point(o.target)) return null;
+  return Math.hypot(...o.camera.map((x, i) => x - o.target![i])) < 1e-9 ? null : { camera: [...o.camera], target: [...o.target] };
+}
+/** The pose to save, on a 1e-4 mm grid (a design file holds short numbers; far below any visible change). */
+export function poseToSave(camera: { x: number; y: number; z: number }, target: { x: number; y: number; z: number }): CameraPose {
+  const r = (x: number) => Math.round(x * 1e4) / 1e4 || 0;
+  return { camera: [r(camera.x), r(camera.y), r(camera.z)], target: [r(target.x), r(target.y), r(target.z)] };
+}
 export type ViewCommand = ViewName | "nearest" | "fit";
 
 export const CAMERA_VIEWS = [

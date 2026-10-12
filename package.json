@@ -116,7 +116,7 @@
     "check:shape-workflow": "node scripts/check-shape-workflow.mjs",
     "check:local-frame": "node --experimental-strip-types scripts/check-local-frame.mjs",
     "check:wcs": "node scripts/check-wcs.mjs",
-    "check:camera-views": "node scripts/check-camera-views.mjs",
+    "check:camera-views": "node --experimental-strip-types scripts/check-camera-views.mjs",
     "desktop:preview:windows": "node scripts/build-windows-preview.mjs",
     "check:affine-consumers": "node --experimental-strip-types scripts/check-affine-consumers.mjs",
     "check:transformed-drawing": "node --experimental-strip-types scripts/check-transformed-drawing.mjs",
