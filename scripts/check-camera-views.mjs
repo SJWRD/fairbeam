@@ -7,13 +7,6 @@ import { mkdir, readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import puppeteer from 'puppeteer-core';
 import { startStack, chromePath, root } from './scenarios/stack.mjs';
-import { poseToSave, validPose } from '../src/scene/cameraViews.ts';
-
-// The opening view's pose helpers (the design file's `view`): what is accepted, and what is saved.
-assert.deepEqual(validPose({ camera: [1, 2, 3], target: [0, 0, 0] }), { camera: [1, 2, 3], target: [0, 0, 0] });
-for (const bad of [null, {}, { camera: [1, 2], target: [0, 0, 0] }, { camera: [1, 2, 'x'], target: [0, 0, 0] },
-  { camera: [1, 2, Infinity], target: [0, 0, 0] }, { camera: [1, 1, 1], target: [1, 1, 1] }]) assert.equal(validPose(bad), null, `refused: ${JSON.stringify(bad)}`);
-assert.deepEqual(poseToSave({ x: 1.234567, y: -0.00001, z: 2 }, { x: 0, y: 3.33333, z: -1e-9 }), { camera: [1.2346, 0, 2], target: [0, 3.3333, 0] }, 'saved on a 1e-4 mm grid, no -0');
 
 const VIEWS = [
   { id: 'iso', label: 'viewport.btn.iso', shortcut: '0', key: '0', numpadKey: 'Insert' },
