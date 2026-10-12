@@ -10,7 +10,7 @@
 // Only erasable TypeScript syntax is used (no enums/namespaces/parameter properties) so the file
 // also runs directly under `node --experimental-strip-types` (see scripts/gen-cst-examples.mjs).
 
-import type { Bundle, Matrix4Rows, Part, PolygonPrim, Primitive, Vec3 } from "../types";
+import type { Bundle, Matrix4Rows, Part, PolygonPrim, Port, Primitive, Vec3 } from "../types";
 import { Symbols, type DesignParam } from "./cstParams.ts";
 import { APP_VERSION } from "../lib/appVersion.ts";
 
@@ -866,6 +866,24 @@ function symbolize(ctx: Ctx, d: ParametricDesign, b: Bundle) {
 
 export interface CstParameter { key: string; name: string; value: number; expression?: string }
 
+/** The macro's note on an exported native coaxial port; the dialog translates it too. */
+export const coaxialPortWarning = (number: number): string =>
+  `port ${number}: native coaxial TEM port exported as a CST waveguide port on its feed plane; check its TEM mode, orientation and reference plane in CST.`;
+
+/** The free-coordinate ranges of the CST waveguide port of a native coaxial port: its start (feed)
+ * plane along the axis and, across it, a square to the shield's outer radius around the centerline,
+ * so the port face holds the whole coax cross-section and CST solves its TEM mode. Null when the
+ * port is not an axis-aligned coax with 0 < r_i < r_o < r_os and a finite measurement offset. */
+export function coaxialPortRange(p: Port): [number, number][] | null {
+  const k = "xyz".indexOf(p.direction);
+  const { r_i, r_o, r_os } = p;
+  if (k < 0 || r_i === undefined || r_o === undefined || r_os === undefined || !finite(...p.start, ...p.stop, r_i, r_o, r_os)) return null;
+  if (!(0 < r_i && r_i < r_o && r_o < r_os) || !(Math.abs(p.stop[k] - p.start[k]) > EPS)) return null;
+  if ([0, 1, 2].some((i) => i !== k && Math.abs(p.stop[i] - p.start[i]) > EPS)) return null;
+  if (!Number.isFinite(p.actual_measurement_shift) && !Number.isFinite(p.measurement_shift)) return null;
+  return [0, 1, 2].map((i): [number, number] => (i === k ? [p.start[k], p.start[k]] : [p.start[i] - r_os, p.start[i] + r_os]));
+}
+
 /** Shared diagnostic identity; the dialog translates it while the macro keeps English comments. */
 export const finitePortWarning = (number: number): string =>
   `port ${number}: finite-width source exported as an axial line; transverse size is not preserved. Recheck the feed model.`;
@@ -1090,8 +1108,12 @@ export function cstMacro(b: Bundle, opt: CstOptions = DEFAULT_CST_OPTIONS, extra
   if (opt.includePorts) {
     const used = new Set<number>();
     for (const p of b.ports) {
-      if (used.has(p.number) || p.type === "coaxial") continue;
-      if (p.type === "waveguide") {
+      if (used.has(p.number)) continue;
+      if (p.type === "coaxial") {
+        const rng = coaxialPortRange(p);
+        if (!rng) continue;
+        grow(ctx, rng.map((r) => r[0]), rng.map((r) => r[1]));
+      } else if (p.type === "waveguide") {
         const k = "xyz".indexOf(p.direction), u = (k + 1) % 3, v = (k + 2) % 3;
         if (k < 0 || !finite(...p.start, ...p.stop) || Math.abs(p.stop[u] - p.start[u]) <= EPS || Math.abs(p.stop[v] - p.start[v]) <= EPS) continue;
         const lo = p.start.map((x, i) => i === k ? x : Math.min(x, p.stop[i]));
@@ -1225,7 +1247,46 @@ export function cstMacro(b: Bundle, opt: CstOptions = DEFAULT_CST_OPTIONS, extra
     const portNos = new Set<number>();
     for (const p of b.ports) {
       if (p.type === "coaxial") {
-        m.warnings.push(`port ${p.number}: native coaxial TEM port export is unsupported; port skipped`);
+        const rng = coaxialPortRange(p);
+        if (!rng || portNos.has(p.number)) {
+          m.warnings.push(`port ${p.number}: native coaxial TEM port skipped (invalid radii, centerline, direction or duplicate number)`);
+          continue;
+        }
+        portNos.add(p.number);
+        const k = "xyz".indexOf(p.direction);
+        // the native port is excited at start and measures toward stop: CST feeds from the start plane
+        const orient = `${p.direction}${p.stop[k] >= p.start[k] ? "min" : "max"}`;
+        // openEMS reports S at the (snapped) measurement plane; CST moves its reference plane there,
+        // into the line (a negative distance points from the port plane toward the structure)
+        const shift = Number.isFinite(p.actual_measurement_shift) ? p.actual_measurement_shift! : p.measurement_shift!;
+        data(m, { port: p.number, type: "coaxial", mode: "TEM", start: p.start, stop: p.stop, direction: p.direction,
+          r_i: p.r_i, r_o: p.r_o, r_os: p.r_os, feed_shift: p.feed_shift ?? 0, measurement_shift: p.measurement_shift,
+          termination: p.termination ?? "open", ...(Number.isFinite(p.R) ? { R: p.R } : {}),
+          ...(Number.isFinite(p.reference_plane) ? { reference_plane: p.reference_plane } : {}),
+          ...(p.excite === false ? { excite: false } : {}) });
+        m.comment(`port ${p.number}: native coaxial TEM line (inner radius ${n(p.r_i!)}, shield ${n(p.r_o!)} to ${n(p.r_os!)} ${unit}) -> CST waveguide port on its ${p.direction} = ${n(p.start[k])} plane, a square to the shield's outer radius, 1 mode (TEM)`);
+        m.comment(`port ${p.number}: reference plane ${n(shift)} ${unit} into the line, at the openEMS measurement plane${Number.isFinite(p.R) ? `; openEMS normalizes to the lossless TEM line impedance ${n(Number(p.R.toPrecision(6)))} ohm` : ""}`);
+        if ((p.termination ?? "open") === "short") m.comment(`port ${p.number}: the openEMS feed has a physical short behind it; the CST port terminates the line instead`);
+        m.history(`define waveguide port: ${p.number}`, [
+          "With Port",
+          "     .Reset",
+          `     .PortNumber ${q(String(p.number))}`,
+          '     .Label ""',
+          '     .NumberOfModes "1"',
+          '     .AdjustPolarization "False"',
+          '     .PolarizationAngle "0.0"',
+          `     .ReferencePlaneDistance ${q(c(ctx, -shift))}`,
+          `     .Orientation ${q(orient)}`,
+          '     .Coordinates "Free"',
+          ...(["X", "Y", "Z"] as const).map((a, i) => `     .${a}range ${q(c(ctx, rng[i][0]))}, ${q(c(ctx, rng[i][1]))}`),
+          '     .PortOnBound "False"',
+          '     .ClipPickedPortToBound "False"',
+          "     .Create",
+          "End With",
+        ]);
+        m.warnings.push(coaxialPortWarning(p.number));
+        // the port generates its conductor and filling in openEMS: no design solid to follow the parameters
+        if (S) S.numeric.push(`port ${p.number}: the native coaxial port, its conductor and its filling are numbers (their radii and offsets are not CST parameters)`);
         continue;
       }
       if (p.type === "waveguide") {

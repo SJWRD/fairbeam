@@ -49,9 +49,14 @@ Output waves use the positive real lossless TEM reference
 Native differential-TL complex impedance is retained in `native_tem_z_re`/`native_tem_z_im`.
 This separates physical loading, numerical impedance estimation and output normalization.
 
-CST-compatible VBA macro export retains generated material geometry but warns that the native coaxial
-port is skipped. The exported macro is therefore not an equivalent operational simulation.
-No macro execution or cross-solver equivalence has been established.
+CST-compatible VBA macro export retains the generated conductor and filling geometry and writes the
+native coaxial port as a one-mode waveguide port on its start (feed) plane. Its free-coordinate face is
+a square to the shield's outer radius, so it holds the whole cross-section, and it is oriented toward
+the stop end. Its reference plane is moved into the line to the openEMS measurement plane. The
+openEMS feed termination is not modelled: the macro's port terminates the line itself. The macro
+carries the exact port in a `fairbeam-data` record and warns that the TEM mode, orientation and
+reference plane should be checked after running it. No macro execution or cross-solver equivalence
+has been established.
 
 ## Reproducible controls
 

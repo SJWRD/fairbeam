@@ -42,9 +42,13 @@ kullanılmak yerine anlaşılır hata verilir.
 kompleks empedansı `native_tem_z_re`/`native_tem_z_im` alanlarında korunur. Fiziksel yükleme,
 sayısal empedans tahmini ve çıkış normalizasyonu birbirinden ayrılır.
 
-CST uyumlu VBA makro dışa aktarımı üretilen malzeme geometrisini korur; yerel koaksiyel portun
-atlanacağını açıkça bildirir. Makro eşdeğer çalışan simülasyon değildir. Makro çalıştırma veya
-çözücüler arası eşdeğerlik doğrulanmamıştır.
+CST uyumlu VBA makro dışa aktarımı üretilen iletken ve dolgu geometrisini korur ve yerel koaksiyel
+portu başlangıç (besleme) düzleminde tek modlu bir dalga kılavuzu portu olarak yazar. Serbest
+koordinatlı yüzeyi, dış iletkenin dış yarıçapına kadar uzanan bir karedir; böylece kesitin tamamını
+kapsar ve bitiş ucuna yönelir. Referans düzlemi hat içinde openEMS ölçüm düzlemine taşınır. openEMS
+besleme sonlandırması modellenmez: hattı makrodaki port sonlandırır. Makro portun tam tanımını bir
+`fairbeam-data` kaydında taşır ve TEM modunun, yönün ve referans düzleminin makro çalıştırıldıktan
+sonra kontrol edilmesi gerektiğini bildirir. Makro çalıştırma veya çözücüler arası eşdeğerlik doğrulanmamıştır.
 
 ## Tekrarlanabilir kontroller
 

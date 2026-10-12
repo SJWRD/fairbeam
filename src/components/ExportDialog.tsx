@@ -3,7 +3,7 @@ import { createStore, unwrap } from "solid-js/store";
 import { strToU8, zipSync } from "fflate";
 import { Check, Copy, Download, TriangleAlert, X } from "lucide-solid";
 import { bundle, setExportOpen } from "../state";
-import { cstInsertPairs, cstMacro, DEFAULT_CST_OPTIONS, finitePortWarning, type CstOptions } from "../export/cst";
+import { coaxialPortWarning, cstInsertPairs, cstMacro, DEFAULT_CST_OPTIONS, finitePortWarning, type CstOptions } from "../export/cst";
 import { useModal } from "../lib/dialog";
 import { downloadFailedMessage, downloadMessage, revealDownloadedFile, saveDownload } from "../lib/download";
 import { t } from "../i18n";
@@ -57,8 +57,8 @@ export default function ExportDialog() {
   });
   const previewText = () => result()?.text ?? "";
   const warningText = (warning: string) => {
-    const coax = /^port (\d+): native coaxial TEM port export is unsupported; port skipped$/.exec(warning);
-    if (coax) return t("export.coaxialPortWarning", { port: coax[1] });
+    const coax = source()?.ports.find((p) => warning === coaxialPortWarning(p.number));
+    if (coax) return t("export.coaxialPortWarning", { port: coax.number });
     const port = source()?.ports.find((p) => warning === finitePortWarning(p.number));
     return port ? t("export.finitePortWarning", { port: port.number }) : warning;
   };

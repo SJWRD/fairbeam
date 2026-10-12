@@ -1,5 +1,5 @@
 // Assertions on the text of the CST macro for the shapes and elements added to src/export/cst.ts:
-// affine transforms (rotation / mirror / scale / shear), waveguide ports, series and parallel RLC
+// affine transforms (rotation / mirror / scale / shear), waveguide and native coaxial ports, series and parallel RLC
 // lumped elements, wires, circle recognition and general solids of revolution.
 //
 //   node --experimental-strip-types scripts/check-cst-emit.mjs
@@ -10,7 +10,7 @@
 // positive angle about +axis) is an assumption; the documentation does not state it.
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { cstMacro, decomposeAffine, DEFAULT_CST_OPTIONS, finitePortWarning, regularCircle } from "../src/export/cst.ts";
+import { coaxialPortWarning, cstMacro, decomposeAffine, DEFAULT_CST_OPTIONS, finitePortWarning, regularCircle } from "../src/export/cst.ts";
 import { Symbols, cstNames } from "../src/export/cstParams.ts";
 
 const base = JSON.parse(readFileSync(new URL("../public/projects/patch-antenna.json", import.meta.url), "utf8"));
@@ -195,6 +195,63 @@ eq(decomposeAffine(hom([[1, 0, 0], [0, 1, 0], [0, 0, 0]], [0, 0, 0])), null, "si
   ok(!warnings.some((w) => w.includes("port 1")), "port 1 no warning");
   ok(warnings.some((w) => w.includes("port 2") && w.includes("TE20")), "TE20 mode warning");
   ok(text.includes("fairbeam-data:") && text.includes('"type":"waveguide"'), "fairbeam-data record kept");
+}
+
+// ---- 5b. native coaxial TEM port -> CST waveguide port on its feed plane
+{
+  const coax = (extra) => ({ number: 1, type: "coaxial", mode: "TEM", R: 49.84, direction: "z", start: [0, 0, -10], stop: [0, 0, 0], excite: true,
+    r_i: 0.2555, r_o: 0.84, r_os: 1.1, conductor: "PEC", dielectric: "ptfe", feed_shift: 3.5, measurement_shift: 6, termination: "open", ...extra });
+  const line = metal("Coaxial port 1 conductor", [prim({ kind: "cylinder", start: [0, 0, -10], stop: [0, 0, 0], radius: 0.2555 })]);
+  const port = (result, number = 1) => blocks(result.text).find((b) => b[0] === "With Port" && b.includes(`     .PortNumber "${number}"`));
+  const field = (b, key) => lits(b.find((l) => l.trim().startsWith(`.${key} `)));
+  const r = cstMacro(mk([line], { ports: [coax({ reference_plane: -3.95, actual_measurement_shift: 6.05 })] }));
+  const b1 = port(r);
+  ok(!!b1, "the coaxial port is a CST waveguide port");
+  ok(!r.text.includes("With DiscretePort"), "...never a discrete port");
+  eq(field(b1, "Orientation")[0], "zmin", "fed from the start plane toward +z");
+  eq(field(b1, "Coordinates")[0], "Free", "free coordinates (what the macro import reads back)");
+  eq(field(b1, "NumberOfModes")[0], "1", "one mode: the TEM mode");
+  eq(field(b1, "Xrange").join(","), "-1.1,1.1", "x: a square to the shield's outer radius");
+  eq(field(b1, "Yrange").join(","), "-1.1,1.1", "y: a square to the shield's outer radius");
+  eq(field(b1, "Zrange").join(","), "-10,-10", "z: the start (feed) plane");
+  eq(field(b1, "ReferencePlaneDistance")[0], "-6.05", "the reference plane moves into the line to the snapped openEMS measurement plane");
+  ok(b1.at(-2) === "     .Create" && b1.at(-1) === "End With", "port block is created");
+  ok(r.warnings.includes(coaxialPortWarning(1)) && r.text.includes("WARNING: " + coaxialPortWarning(1)), "the mapping is a warning in the macro");
+  ok(!r.warnings.some((w) => /unsupported|skipped/.test(w)), "nothing is skipped");
+  const rec = r.text.split("\r\n").find((l) => l.includes("fairbeam-data:") && l.includes('"type":"coaxial"'));
+  ok(!!rec, "fairbeam-data record of the exact native port");
+  const meta = JSON.parse(rec.slice(rec.indexOf("{")));
+  ok(meta.port === 1 && meta.r_i === 0.2555 && meta.r_o === 0.84 && meta.r_os === 1.1 && meta.measurement_shift === 6 && meta.feed_shift === 3.5
+    && meta.termination === "open" && meta.direction === "z" && meta.reference_plane === -3.95, "record keeps radii, offsets, termination and plane");
+  // without a snapped plane (a design preview) the requested offset is used
+  eq(field(port(cstMacro(mk([line], { ports: [coax({})] }))), "ReferencePlaneDistance")[0], "-6", "requested measurement offset");
+  // a reversed line along x off the origin: fed from x max toward -x, centred on its axis
+  const rev = cstMacro(mk([line], { ports: [coax({ number: 3, direction: "x", start: [5, 1, 2], stop: [-5, 1, 2], termination: "short", excite: false })] }));
+  const b3 = port(rev, 3);
+  eq(field(b3, "Orientation")[0], "xmax", "reversed line is fed toward -x");
+  eq(field(b3, "Xrange").join(","), "5,5", "x: the start plane");
+  eq(field(b3, "Yrange").join(","), "-0.1,2.1", "y: centred on the axis");
+  eq(field(b3, "Zrange").join(","), "0.9,3.1", "z: centred on the axis");
+  ok(rev.text.includes("physical short behind it"), "a short feed termination is called out");
+  ok(rev.text.includes('"excite":false'), "a passive port stays passive in the record");
+  // units other than mm scale the port like the geometry
+  const cm = cstMacro({ ...mk([line], { ports: [coax({})] }), units: { ...base.units, length_m: 1e-2 } });
+  eq(field(port(cm), "ReferencePlaneDistance")[0], "-6", "cm export keeps the drawing-unit offset");
+  // invalid geometry is refused explicitly, never written as another feed
+  for (const bad of [{ r_o: 1.2 }, { r_i: 0 }, { stop: [0, 0.5, 0] }, { stop: [0, 0, -10] }, { measurement_shift: undefined }]) {
+    const res = cstMacro(mk([line], { ports: [coax(bad)] }));
+    ok(!res.text.includes("With Port") && !res.text.includes("With DiscretePort"), `invalid ${JSON.stringify(bad)}: no port block`);
+    ok(res.warnings.some((w) => /port 1: native coaxial TEM port skipped/.test(w)), `invalid ${JSON.stringify(bad)}: skip warning`);
+  }
+  const dup = cstMacro(mk([line], { ports: [coax({}), coax({ start: [3, 0, -10], stop: [3, 0, 0] })] }));
+  eq(blocks(dup.text).filter((b) => b[0] === "With Port").length, 1, "a duplicate port number is written once");
+  const off = cstMacro(mk([line], { ports: [coax({})] }), { ...DEFAULT_CST_OPTIONS, includePorts: false });
+  ok(!off.text.includes("With Port") && !off.warnings.includes(coaxialPortWarning(1)), "geometry-only export has no port and no port warning");
+  // the port plane counts toward the structure extent: a PEC wall on it stays there
+  const wall = mk([metal("pin", [prim({ kind: "cylinder", start: [0, 0, -4], stop: [0, 0, 0], radius: 0.2555, bbox: [[-0.2555, -0.2555, -4], [0.2555, 0.2555, 0]] })])], {
+    domain: { min: [-5, -5, -10], max: [5, 5, 5] }, solver: { ...base.solver, boundaries: { ...base.solver.boundaries, "z-": "PEC" } }, ports: [coax({})] });
+  const zmin = blocks(cstMacro(wall).text).find((x) => x[0] === "With Background").find((x) => x.includes(".ZminSpace"));
+  eq(lits(zmin)[0], "0", "the port plane reaches the z- wall: no extra background gap");
 }
 
 // ---- 6. lumped RLC
@@ -539,4 +596,4 @@ for (const direction of ["x", "y", "z"]) {
   ok(!result.warnings.includes(finitePortWarning(2)), "waveguide aperture is not reduced to a discrete line");
 }
 
-console.log(`CST emit checks passed (${checks} assertions): transforms, waveguide ports, finite-source warnings, RLC, wires, circles, revolution, polyhedra (STL), parametric export, port boundary extent.`);
+console.log(`CST emit checks passed (${checks} assertions): transforms, waveguide ports, finite-source warnings, RLC, wires, circles, revolution, polyhedra (STL), parametric export, port boundary extent, native coaxial ports.`);

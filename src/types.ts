@@ -94,6 +94,9 @@ export interface Port {
   feed_shift?: number;
   measurement_shift?: number;
   termination?: "open" | "short";
+  /** coaxial: the snapped measurement plane (along the axis) and its offset from start, after meshing */
+  reference_plane?: number;
+  actual_measurement_shift?: number;
   a?: number;
   b?: number;
   f_cutoff?: number;

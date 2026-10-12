@@ -295,6 +295,27 @@ class ExportedDesigns(RoundTrip):
             {"name": "p", "material": "copper", "primitives": [{"kind": "box", "start": [0, 0, 0], "stop": [1, 1, 1]}]}]})["bundle"]))
         self.assertEqual(len(empty["design"]["parts"]), 1)
 
+    def test_native_coaxial_port_becomes_a_waveguide_port(self):
+        # the macro holds a CST waveguide port on the coax feed plane (no longer a skipped port), and
+        # the import still reads it: as its documented coax reading, a discrete port across the gap
+        from tests.test_coaxial_port import design as coax_design
+        d = coax_design()
+        d["materials"].append({"name": "PTFE", "kind": "dielectric", "eps_r": 2.1})
+        d["ports"][0]["dielectric"] = "PTFE"
+        bundle = build_preview(None, {}, design=d)["bundle"]
+        macro = _export(bundle)
+        self.assertIn('AddToHistory "define waveguide port: 1"', macro)
+        self.assertIn('.Orientation ""zmin""', macro)
+        self.assertIn('.Zrange ""-30"", ""-30""', macro)
+        self.assertIn('.Xrange ""-3.5"", ""3.5""', macro)
+        self.assertIn('.ReferencePlaneDistance ""-20""', macro)
+        self.assertNotIn("unsupported", macro)
+        res = import_cst(macro, filename="coax.bas")
+        self.assertEqual(res["report"]["refused"], 0, [n for n in res["report"]["notes"] if n["severity"] == "refused"])
+        port, = res["design"]["ports"]
+        self.assertEqual((port["number"], port["type"], port["direction"]), (1, "lumped", "y"))
+        self.assertTrue(any("coaxial line" in n["message"] for n in res["report"]["notes"]))
+
     def test_every_shape_and_transform(self):
         res = self.round_trip(every_shape_design(), "every-shape")
         kinds = {p["kind"] for pt in res["design"]["parts"] for p in pt["primitives"]}
