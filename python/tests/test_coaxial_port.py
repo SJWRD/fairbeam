@@ -4,7 +4,7 @@ import numpy as np
 from fairbeam.coax import resolved_coax, validate_coax
 from fairbeam.design import build, evaluate, to_python
 from fairbeam.design_checks import lint
-from fairbeam.simulation import Simulation
+from fairbeam.simulation import Simulation, _time_signals
 
 
 def design():
@@ -31,6 +31,22 @@ class CoaxialPortTests(unittest.TestCase):
         self.assertEqual(len(bundle["parts"][0]["primitives"]), 2)
         sim.finalize_coaxial_ports()
         self.assertEqual(len(sim._port_objs), 1)
+
+    def test_time_signals_read_the_coax_time_axis_from_u_data(self):
+        # openEMS' CoaxialPort has no u_time; evaluate() must still write the time signals
+        t = np.linspace(0, 1e-9, 11)
+
+        class UI:
+            ui_time = [t]
+
+        class FakeCoaxPort:
+            u_data, Z_ref = UI(), 50.0
+            ut_inc = ut_ref = ut_tot = it_tot = np.zeros_like(t)
+
+        sig = _time_signals(FakeCoaxPort())
+        self.assertEqual(sig["samples"], 11)
+        self.assertAlmostEqual(sig["dt_s"], 1e-10)
+        self.assertEqual(_time_signals(type("NoData", (), {})()), {})
 
     def test_invalid_input_never_becomes_lumped(self):
         for changes in [dict(direction=None), dict(direction=1), dict(direction=""), dict(r_i=0), dict(r_os=3), dict(stop=[1, 0, 0]), dict(measurement_shift=30),

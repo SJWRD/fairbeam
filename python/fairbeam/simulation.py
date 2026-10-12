@@ -1236,7 +1236,15 @@ class GroupedLumpedPort:
 
 
 def _time_signals(p, max_points=1500):
-    t = np.asarray(p.u_time)
+    # openEMS' CoaxialPort.ReadUIData keeps the time axis only in u_data (no u_time attribute,
+    # unlike the lumped and microstrip ports), so a finished native-coax run must read it there
+    t = getattr(p, "u_time", None)
+    if t is None:
+        u_data = getattr(p, "u_data", None)
+        if u_data is None:
+            return {}
+        t = u_data.ui_time[0]
+    t = np.asarray(t)
     step = max(1, int(np.ceil(len(t) / max_points)))
     z = float(p.Z_ref)
     current = (np.interp(t, p.i_time, p.it_tot) if isinstance(p, GroupedLumpedPort)
