@@ -2897,8 +2897,11 @@ def build(d: dict, values: dict):
                 a, c = vec(member.get("start"), f"{w}.start"), vec(member.get("stop"), f"{w}.stop")
                 if po.get("type") not in ("waveguide", "coaxial"):
                     a, c = snap_to_sheets(a, c, AXES.index(member["direction"]), sheets)
+                # a coaxial port's centerline needs no transverse line: its annulus is checked when
+                # the native probes are built; only its ends along the axis must sit on lines
+                checked = [AXES.index(po["direction"])] if po.get("type") == "coaxial" else range(3)
                 for label, point in (("start", a), ("stop", c)):
-                    for ax, name in enumerate(AXES):
+                    for ax in checked:
                         if min(abs(v - point[ax]) for v in manual_lines[ax]) > 1e-6:
                             raise DesignError("port coordinate must lie on a mesh line (within 1e-6 mm)",
                                               f"{w}.{label}[{ax}]")

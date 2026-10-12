@@ -1127,6 +1127,7 @@
   "exampleCopy.notCarried": "Not carried over:",
   "exampleCopy.notCarried.body": "parameters that only shape the mesh or the model's structure (a fractal's iterations), dimensions the example computes with a rule that is not a linear formula (they keep their default size), and the example's results (run the copy to get your own).",
   "exampleCopy.note.carried": "Parameters carried over from the example: {params}. {count} coordinates and values that are an exact linear formula of them are expressions, so the design can be swept and optimized by them; the other numbers are fixed. Mesh lines follow the geometry they sit on and stretch with it; after a large change of a geometry parameter, switch to the automatic mesh.",
+  "exampleCopy.note.coaxMesh": "No automatic mesh setting resolves the native coaxial port's cross-section, so this design keeps only the example's mesh lines. Refine the coaxial cross-section before switching to the automatic mesh.",
   "exampleCopy.note.currents": "The example's surface-current monitors are kept at their frequencies.",
   "exampleCopy.note.frozen": "Parameters of the example that are not carried over (fixed at the example's values): {params}.",
   "exampleCopy.note.meshLines": "This design uses the example's own mesh lines, rounded to 1e-6 mm.",

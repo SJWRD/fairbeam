@@ -166,14 +166,14 @@ class ExampleDesignTests(unittest.TestCase):
         root = MODELS.parents[1]
         for lang in ("en", "tr"):
             table = json.loads((root / "src" / "i18n" / f"{lang}.json").read_text(encoding="utf-8"))
-            for code in ("source", "meshLines", "carried", "partial", "frozen", "currents"):
+            for code in ("source", "meshLines", "carried", "partial", "frozen", "currents", "coaxMesh"):
                 with self.subTest(lang=lang, code=code):
                     text = table[f"exampleCopy.note.{code}"]
                     wanted = {"source": {"example", "file"}, "carried": {"params", "count"}, "partial": {"params"},
                               "frozen": {"params"}}.get(code, set())
                     self.assertEqual(set(re.findall(r"\{(\w+)\}", text)), wanted)
         source_text = (root / "python" / "fairbeam" / "example_design.py").read_text(encoding="utf-8")
-        self.assertEqual(set(re.findall(r'_note\("(\w+)"', source_text)), {"source", "meshLines", "carried", "partial", "frozen", "currents"})
+        self.assertEqual(set(re.findall(r'_note\("(\w+)"', source_text)), {"source", "meshLines", "carried", "partial", "frozen", "currents", "coaxMesh"})
         # the design format holds it, and refuses a malformed one
         check_design(design)
         broken = json.loads(json.dumps(design))

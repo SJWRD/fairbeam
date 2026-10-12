@@ -1106,6 +1106,7 @@
   "exampleCopy.notCarried": "Aktarılmayanlar:",
   "exampleCopy.notCarried.body": "yalnızca mesh'i ya da modelin yapısını belirleyen parametreler (fraktalın iterasyonu), örneğin doğrusal olmayan bir kuralla hesapladığı ölçüler (varsayılan boyutlarında kalır) ve örneğin sonuçları (kendi sonuçlarınız için kopyayı çalıştırın).",
   "exampleCopy.note.carried": "Örnekten aktarılan parametreler: {params}. Bunların tam doğrusal formülü olan {count} koordinat ve değer ifadedir; böylece tasarım bu parametrelerle taranabilir ve optimize edilebilir; diğer sayılar sabittir. Mesh çizgileri üzerinde durdukları geometriyi izler ve onunla esner; bir geometri parametresi çok değişirse otomatik mesh'e geçin.",
+  "exampleCopy.note.coaxMesh": "Hiçbir otomatik mesh ayarı doğal koaksiyel portun kesitini çözümlemiyor; bu yüzden bu tasarım yalnızca örneğin mesh çizgilerini tutar. Otomatik mesh'e geçmeden önce koaksiyel kesiti inceltin.",
   "exampleCopy.note.currents": "Örneğin yüzey akımı monitörleri kendi frekanslarında korunur.",
   "exampleCopy.note.frozen": "Aktarılmayan örnek parametreleri (örneğin değerlerinde sabit): {params}.",
   "exampleCopy.note.meshLines": "Bu tasarım örneğin kendi mesh çizgilerini 1e-6 mm'ye yuvarlayarak kullanır.",

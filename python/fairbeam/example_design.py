@@ -29,6 +29,10 @@ class ExampleConversionError(ValueError):
     """The resolved example uses a feature that Design cannot reproduce exactly."""
 
 
+# the numbers of a native coaxial port besides its endpoints (mm)
+_COAX_KEYS = ("r_i", "r_o", "r_os", "feed_shift", "measurement_shift")
+
+
 def _primitive(p):
     kind = p["kind"]
     if not p.get("exact", False):
@@ -227,6 +231,36 @@ def _snap_coordinates(design: dict, digits: int = 6) -> None:
                 for k in ("start", "stop"):
                     if k in feed:
                         feed[k] = r(feed[k])
+    for port in design.get("ports", []):
+        if port.get("type") == "coaxial":
+            for k in _COAX_KEYS:
+                port[k] = r(port[k])
+
+
+def _coaxial_generated(sim) -> dict:
+    """``{property name: property ID}`` of the conductor and filling a native coaxial port created.
+
+    A Design coaxial port creates this geometry itself, so it is not a part of the copy.  The port is
+    converted only while its native probes are still pending (``Simulation.coaxial_port`` attaches them
+    after meshing, when the model runs) and its generated properties hold exactly the shapes the port
+    made: anything a model added to them would be lost by the rebuild."""
+    pending = {index: (names, props) for index, _, names, props in getattr(sim, "_pending_coax", [])}
+    out = {}
+    for index, record in enumerate(sim.ports):
+        if record["type"] != "coaxial":
+            continue
+        number = record["number"]
+        if index not in pending or sim._port_objs[index] is not None:
+            raise ExampleConversionError(
+                f"coaxial port {number} was finalized before conversion; build the model without running it")
+        names, props = pending[index]
+        expected = (2, 1)       # conductor: inner cylinder + shield shell; filling: one shell
+        for name, prop, count in zip(names, props, expected):
+            live = sim.csx.GetPropertiesByName(name)
+            if len(live) != 1 or live[0].GetID() != prop.GetID() or prop.GetQtyPrimitives() != count:
+                raise ExampleConversionError(f"coaxial port {number} generated geometry {name!r} was changed")
+            out[name] = prop.GetID()
+    return out
 
 
 def _check_reconstructible_ports(sim):
@@ -239,8 +273,10 @@ def _check_reconstructible_ports(sim):
     if len(sim.ports) != len(native_ports):
         raise ExampleConversionError("port records do not match the native port objects")
     native_types = {"lumped": LumpedPort, "waveguide": RectWGPort}
-    recorded_properties = set()
+    recorded_properties = set(_coaxial_generated(sim).values())
     for record, port in zip(sim.ports, native_ports):
+        if record["type"] == "coaxial":
+            continue        # checked by _coaxial_generated: its geometry is still the port's own
         expected = native_types.get(record["type"])
         if "group" in record:
             expected = GroupedLumpedPort
@@ -298,6 +334,45 @@ def _check_reconstructible_ports(sim):
         raise ExampleConversionError(f"unrecorded {kind} {prop.GetName()!r} cannot be represented exactly")
 
 
+def _material_name(materials: list, item: dict, same) -> str:
+    """The name of ``item`` in ``materials``: an equal material of that name is shared, a different one
+    keeps its name and ``item`` gets a free one ("ptfe 2")."""
+    base, name, n = item["name"], item["name"], 2
+    while True:
+        existing = next((m for m in materials if m["name"] == name), None)
+        if existing is None:
+            materials.append({**item, "name": name})
+            return name
+        if same(existing):
+            return name
+        name, n = f"{base} {n}", n + 1
+
+
+def _coaxial_port(record: dict, materials: list) -> dict:
+    """A Design coaxial port from ``Simulation.coaxial_port``'s record.  Its conductor (always PEC) and
+    filling become design materials referenced by name, so the rebuild creates the same native port."""
+    conductor = _material_name(materials, {"name": record.get("conductor") or "PEC", "kind": "metal"},
+                               lambda m: m["kind"] == "metal" and m.get("conductivity") is None)
+    dielectric = None
+    if record.get("dielectric") is not None:
+        item = {"name": record["dielectric"], "kind": "dielectric", "eps_r": str(record["eps_r"]),
+                "tan_d": str(record.get("tan_d") or 0)}
+        if abs(record.get("mu_r", 1.0) - 1.0) > 1e-10:
+            item["mu_r"] = str(record["mu_r"])
+        if record.get("tan_d_freq") is not None:
+            item["tan_d_freq"] = str(record["tan_d_freq"] / 1e9)
+
+        def same(m):
+            return m["kind"] == "dielectric" and all(
+                _number(m.get(k)) == _number(item.get(k)) for k in ("eps_r", "tan_d", "mu_r", "tan_d_freq"))
+        dielectric = _material_name(materials, item, same)
+    return {"type": "coaxial", "number": record["number"], "mode": "TEM",
+            "start": list(record["start"]), "stop": list(record["stop"]), "direction": record["direction"],
+            **{key: float(record[key]) for key in _COAX_KEYS},
+            "conductor": conductor, "dielectric": dielectric,
+            "termination": record.get("termination", "open"), "excite": bool(record["excite"])}
+
+
 def _read_design(module, values: dict, source_path: Path):
     """Build the example at ``values`` and read it back as the parts of a design.
 
@@ -320,12 +395,15 @@ def _read_design(module, values: dict, source_path: Path):
         raise ExampleConversionError(f"excitation {excitation.get('type')!r} cannot be represented exactly")
 
     _check_reconstructible_ports(sim)
+    coax_generated = _coaxial_generated(sim)
     parts_read, _, nf2ff = read_structure(sim.csx, sim.materials, sim.unit)
     parts, materials, shared = [], [], {}
     used_part_names = set()
     part_sources, source_counts = {}, Counter()
     for entry in parts_read:
         typ = entry["type"]
+        if entry["name"] in coax_generated:
+            continue        # the Design coaxial port below creates this conductor/filling itself
         if typ in ("Metal", "ConductingSheet"):
             conductor = entry.get("conductor") or {}
             # a metal is a part of the source (its CSXCAD property): its own material, named like it
@@ -389,6 +467,8 @@ def _read_design(module, values: dict, source_path: Path):
             ports.append({"type": "waveguide", "number": p["number"], "mode": p["mode"],
                           "a": str(p["a"]), "b": str(p["b"]), "start": p["start"],
                           "stop": p["stop"], "direction": p["direction"], "excite": p["excite"]})
+        elif p["type"] == "coaxial":
+            ports.append(_coaxial_port(p, materials))
         else:
             raise ExampleConversionError(f"port type {p['type']!r} is not representable")
     resistors = [{"name": p["name"], **{k: str(p[k]) for k in ("R", "L", "C") if k in p},
@@ -482,7 +562,7 @@ def _slot_paths(core: dict) -> list:
         for j, prim in enumerate(part["primitives"]):
             scan(("parts", i, "primitives", j), prim, _GEOMETRY_KEYS)
     for i, p in enumerate(core["ports"]):
-        scan(("ports", i), p, ("start", "stop", "R", "a", "b", "reference_impedance"))
+        scan(("ports", i), p, ("start", "stop", "R", "a", "b", "reference_impedance") + _COAX_KEYS)
         for j, member in enumerate(p.get("group", {}).get("members", [])):
             scan(("ports", i, "group", "members", j), member, ("start", "stop"))
     for i, r in enumerate(core["resistors"]):
@@ -923,23 +1003,26 @@ def _convert_example(source_path: Path, model_id: str, name: str,
                 score += 10 + math.log(count / 40_000_000)
             if best is None or score < best[0]:
                 best = (score, count, candidate)
-        if best is None:
+        coaxial = any(p["type"] == "coaxial" for p in ports)
+        if best is None and not coaxial:
             raise ExampleConversionError("no valid Design automatic mesh candidate could be built")
-        fitted_mesh = {"mode": "design", "overrides": best[2],
-                       "refine_features": base.get("refine_features", False)}
-        mesh.clear(); mesh.update(fitted_mesh)
-        fitted = build_design(design, values)
-        fitted_cells = _cells(fitted)
         # a line that follows a parameter is an expression, the others stay numbers
         manual = {axis: [expressions.get(("mesh", axis, i), v) for i, v in enumerate(line)]
                   for axis, line in zip("xyz", source_lines)}
-        mesh.clear(); mesh.update({"mode": "manual", "lines": manual,
-                                   "automatic": fitted_mesh})
+        mesh.clear(); mesh.update({"mode": "manual", "lines": manual})
+        if best is not None:
+            mesh["automatic"] = {"mode": "design", "overrides": best[2],
+                                 "refine_features": base.get("refine_features", False)}
+        else:
+            # The automatic mesh does not refine a coaxial annulus; settings that cannot build the
+            # native port would only fail later, when the user switches to them.
+            notes.append(_note("coaxMesh", "No automatic mesh setting resolves the native coaxial port's cross-section, "
+                               "so this design keeps only the example's mesh lines. Refine the coaxial cross-section "
+                               "before switching to the automatic mesh."))
         built = build_design(design, values)
         design_cells = _cells(built)
         if design_cells > 40_000_000:
             raise ExampleConversionError("Design automatic mesh exceeds the 40 million cell run limit")
-        within_tolerance = 0.7 * source_cells <= fitted_cells <= 1.3 * source_cells
         if not built.ports and ports:
             raise ValueError("converted ports were not built")
     except Exception as exc:
