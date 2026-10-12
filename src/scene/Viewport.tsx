@@ -8,6 +8,7 @@ import { Aperture, Crosshair, Gem } from "lucide-solid";
 import { activeExportSurface, exportNotice, geometryAvailable, registerSurfaceExports } from "../components/exportContext";
 import { CAMERA_VIEWS, VIEW_DIRECTIONS, cameraShortcut, isViewCommand, nearestAxis, type ViewName, type ViewCommand } from "./cameraViews";
 import { CameraViewIcon } from "./CameraViewIcon";
+import { stackLabels } from "./labelStack";
 import { bundle, centerView, farfieldIndex, setFarfieldIndex, hiddenParts, hoverPart, layers, meshPlane, selectedPart, selectedShape, setHoverPart, setViewCursor, solidFade, theme } from "../state";
 import { keepCamera } from "../state";
 import { designStem } from "../lib/exportNames";
@@ -330,6 +331,19 @@ export default function Viewport() {
     };
     controls.addEventListener("change", onControlsChange);
 
+    // port and element labels a fraction of a millimetre apart would overprint: stack them upward (labelStack.ts)
+    const labelAt = new THREE.Vector3();
+    function stackGlyphLabels() {
+      const shown = glyphLabels.filter(({ label: l }) => l.element.isConnected && l.element.style.display !== "none");
+      if (shown.length < 2) return;
+      const boxes = shown.map(({ label: l }) => {
+        l.getWorldPosition(labelAt).project(camera);
+        return { x: (labelAt.x + 1) / 2 * size.w, y: (1 - labelAt.y) / 2 * size.h, w: l.element.offsetWidth, h: l.element.offsetHeight };
+      });
+      const lift = stackLabels(boxes);
+      shown.forEach(({ label: l }, i) => { if (lift[i] > 0) l.element.style.transform += ` translateY(${-lift[i]}px)`; });
+    }
+
     function render() {
       renderer.setScissorTest(false);
       renderer.setViewport(0, 0, size.w, size.h);
@@ -339,7 +353,7 @@ export default function Viewport() {
       // the rendered view (src/render/rendered.ts, loaded on first use) keeps its own lights and labels off
       rendered?.beforeRender(camera);
       renderScene(scene, camera);
-      if (!rendered?.active) labels.render(scene, camera);
+      if (!rendered?.active) { labels.render(scene, camera); stackGlyphLabels(); }
       // gizmo
       const g = 84;
       renderer.autoClear = false;

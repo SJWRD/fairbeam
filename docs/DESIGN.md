@@ -173,6 +173,7 @@ in a warning banner (`.banner-warn`) with a details list.
   - Metals use a PBR material with copper color (`--al-3d-metal`), high metalness and moderate roughness, lit by an environment map.
   - Dielectrics are see-through (`--al-3d-dielectric`, partial opacity, no depth write in x-ray mode) so the conductors inside stay visible.
   - Ports are `--al-3d-port` and the NF2FF box is `--al-3d-nf2ff`.
+  - Port and lumped-element labels (`P1 · 50 Ω`, `Cc`) never overprint: when they would overlap on screen (two feeds a fraction of a millimetre apart in a full-model view), they stack upward, away from their glyphs, like the chart markers (`stackLabels` in `src/scene/labelStack.ts`, after every label render).
   - The domain and the infinite PEC ground are recessive (`--al-3d-domain`, `--al-3d-ground`).
 - **Render on demand.** There is no continuous animation loop. A frame is requested only when something changes: camera movement, resize, theme, visibility toggles or data. An idle viewer must use no GPU, to save battery.
 
