@@ -34,6 +34,9 @@ export interface DesignMaterial {
   /** metal with a conductivity: mm, the thickness of its sheets drawn with zero thickness (0.035 if empty) */
   thickness?: Expr;
   color?: string;
+  /** see-through display opacity, OPACITY_MIN (nearly clear) to 1 (opaque); absent: the default look. Drawing
+   * only, like the color; a part's own wins (src/designer/colors.ts) */
+  opacity?: number;
   /** the material library entry the values were copied from (src/designer/materials.ts); informational */
   library?: string;
 }
@@ -81,6 +84,8 @@ export interface DesignPart {
   component?: string;
   material: string;
   color?: string;
+  /** see-through display opacity (wins over the material's); absent: the material's, else the default look */
+  opacity?: number;
   primitives: DesignPrimitive[];
   transforms?: DesignTransform[];
   /** rectangles (like a sheet brick: min = max on one axis), round holes and polygons cut out of the

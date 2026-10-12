@@ -43,6 +43,9 @@ export interface Part {
   primitives: Primitive[];
   bbox: [Vec3, Vec3];
   color?: string;
+  /** see-through display opacity, 0.05 (nearly clear) to 1 (opaque), from the design's Opacity; absent: the
+   * viewer's default look (docs/BUNDLE.md, parts). Drawing only */
+  opacity?: number;
   /** a vacuum carver (a Boolean Subtract of curved shapes): not material; drawn as a ghost and skipped by exporters */
   void?: true;
   material?: {

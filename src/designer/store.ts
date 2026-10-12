@@ -17,7 +17,7 @@ import { openParametersTab, setParameterRanges } from "./dockState";
 import { appMode, setAppMode } from "../workspace";
 import { designChecks, mergeChecks, type Check, type CheckFix } from "./checks";
 import { checkMessage } from "./checkText";
-import { validColor } from "./colors";
+import { validColor, validOpacity } from "./colors";
 import { designMaterial, type LibraryMaterial } from "./materials";
 import { designMaterialFromUser, type UserMaterial } from "./userMaterials";
 import { openTransform } from "./transforms";
@@ -993,6 +993,20 @@ export function setColors(kind: "parts" | "materials", indices: number[], color:
       if (c) o.color = c; else delete o.color;
     }
   }, `${kind}[${indices[0] ?? 0}].color`);
+}
+
+/** Set (or, with undefined, clear) the see-through display opacity of parts or materials: one undo step for all
+ *  (a slider drag merges into it, like typing). */
+export function setOpacity(kind: "parts" | "materials", indices: number[], opacity: number | undefined) {
+  const o = opacity === undefined ? undefined : validOpacity(Math.round(opacity * 100) / 100);
+  if (opacity !== undefined && o === undefined) return;
+  edit((d) => {
+    for (const i of indices) {
+      const item = d[kind][i];
+      if (!item) continue;
+      if (o !== undefined) item.opacity = o; else delete item.opacity;
+    }
+  }, `${kind}[${indices[0] ?? 0}].opacity`);
 }
 
 // ------------------------------------------------------------------ parameters: rename, delete, duplicate

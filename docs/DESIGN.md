@@ -172,6 +172,7 @@ in a warning banner (`.banner-warn`) with a details list.
 - **Materials.**
   - Metals use a PBR material with copper color (`--al-3d-metal`), high metalness and moderate roughness, lit by an environment map.
   - Dielectrics are see-through (`--al-3d-dielectric`, partial opacity, no depth write in x-ray mode) so the conductors inside stay visible.
+  - A design's own Opacity on a material or part wins (`solidLook` in `src/scene/geometry.ts`, `lookFor` in `src/render/materials.ts`): the part is drawn with that alpha and no depth write, in the modelling and the Rendered view alike; x-ray never makes it more opaque.
   - Ports are `--al-3d-port` and the NF2FF box is `--al-3d-nf2ff`.
   - The domain and the infinite PEC ground are recessive (`--al-3d-domain`, `--al-3d-ground`).
 - **Render on demand.** There is no continuous animation loop. A frame is requested only when something changes: camera movement, resize, theme, visibility toggles or data. An idle viewer must use no GPU, to save battery.

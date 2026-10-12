@@ -49,9 +49,11 @@ function labelForKey(key: string, after: Design): string | null {
     if (tr) return part?.transforms?.[Number(tr[1])]?.type === "move" ? t("history.move", { name }) : t("history.transform", { name });
     if (/\.cuts\[/.test(key)) return t("history.change", { field: fieldText("cut") });
     if (field === "color") return t("history.setColor", { name });
+    if (field === "opacity") return t("history.setOpacity", { name });
     if (field === "material" || field === "component") return t("history.setField", { field: fieldText(field), name });
   }
   if (kind === "materials" && field === "color") return t("history.setColor", { name: nameOf(after.materials?.[i], t("history.material")) });
+  if (kind === "materials" && field === "opacity") return t("history.setOpacity", { name: nameOf(after.materials?.[i], t("history.material")) });
   return t("history.change", { field: fieldText(field) });
 }
 
@@ -89,6 +91,7 @@ export function inferLabel(before: Design, after: Design, key: string): string {
     if (b.primitives.length < a.primitives.length) return t("history.removeFrom", { name });
     if (!same(a.transforms, b.transforms)) return b.transforms?.at(-1)?.type === "move" ? t("history.move", { name }) : t("history.transform", { name });
     if (a.color !== b.color) return t("history.setColor", { name });
+    if (a.opacity !== b.opacity) return t("history.setOpacity", { name });
     if (a.material !== b.material) return t("history.setField", { field: fieldText("material"), name });
     if (a.component !== b.component) return t("history.setField", { field: fieldText("component"), name });
     if (!same(a.primitives, b.primitives)) return t("history.moveVertex", { name });

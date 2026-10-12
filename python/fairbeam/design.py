@@ -440,6 +440,25 @@ def _check_color(obj: dict, where: str) -> None:
         raise DesignError("color is a hex colour such as '#c8a040'", f"{where}.color")
 
 
+#: the most see-through a part can be drawn (src/designer/colors.ts OPACITY_MIN): a fainter one is a hidden part
+OPACITY_MIN = 0.05
+
+
+def _check_opacity(obj: dict, where: str) -> None:
+    """An optional display opacity, a number from OPACITY_MIN (nearly clear) to 1 (opaque); drawing only, like
+    the colour (the solver ignores it). A part's own wins over its material's."""
+    o = obj.get("opacity")
+    if o is not None and (isinstance(o, bool) or not isinstance(o, (int, float)) or not math.isfinite(o)
+                          or not OPACITY_MIN <= o <= 1):
+        raise DesignError(f"opacity is a number from {OPACITY_MIN} (nearly clear) to 1 (opaque)", f"{where}.opacity")
+
+
+def display_opacity(part: dict, material: dict) -> float | None:
+    """The opacity a part is drawn with: its own, else its material's, else None (the viewer's default look)."""
+    o = part.get("opacity")
+    return float(o) if o is not None else (float(material["opacity"]) if material.get("opacity") is not None else None)
+
+
 def check_design(d: dict) -> None:
     """Structure and names only (values are checked when the design is built)."""
     if not isinstance(d, dict):
@@ -498,6 +517,7 @@ def check_design(d: dict) -> None:
         if mt.get("kind") not in ("metal", "dielectric"):
             raise DesignError("kind must be 'metal' or 'dielectric'", f"{w}.kind")
         _check_color(mt, w)
+        _check_opacity(mt, w)
     parts: set[str] = set()
     for i, pt in enumerate(d.get("parts", [])):
         w = f"parts[{i}]"
@@ -508,6 +528,7 @@ def check_design(d: dict) -> None:
         if pt.get("material") not in mats:
             raise DesignError(f"unknown material {pt.get('material')!r}", f"{w}.material")
         _check_color(pt, w)
+        _check_opacity(pt, w)
         if "component" in pt and not isinstance(pt["component"], str):
             raise DesignError("component is a folder path such as 'antenna/feed'", f"{w}.component")
         for j, pr in enumerate(_need(pt, "primitives", w, list)):
@@ -2780,10 +2801,10 @@ def build(d: dict, values: dict):
     flat = {(sh["part"], sh["prim"]): sh for sh in sheets}
     for i, (part, pt) in enumerate(zip(parts, d.get("parts", []))):
         mt = part["material"]
-        label, color = pt.get("label"), pt.get("color") or mt.get("color")
+        label, color, opacity = pt.get("label"), pt.get("color") or mt.get("color"), display_opacity(pt, mt)
         if part["metal"]:
             sigma, thick = metal_loss(mt, num)
-            prop = sim.metal(pt["name"], label=label, color=color, conductivity=sigma, thickness=thick)
+            prop = sim.metal(pt["name"], label=label, color=color, opacity=opacity, conductivity=sigma, thickness=thick)
             if isinstance(prop, LossyMetal):
                 prop.sheet_limit = thin_limit
         else:
@@ -2791,7 +2812,7 @@ def build(d: dict, values: dict):
             prop = sim.dielectric(pt["name"], num(mt.get("eps_r", 1), f"materials.{mt['name']}.eps_r"),
                                   tan_d=num(mt.get("tan_d", 0), f"materials.{mt['name']}.tan_d"),
                                   tan_d_freq=None if tan_f is None else num(tan_f, f"materials.{mt['name']}.tan_d_freq") * 1e9,
-                                  label=label, color=color,
+                                  label=label, color=color, opacity=opacity,
                                   mu_r=num(mt.get("mu_r", 1), f"materials.{mt['name']}.mu_r"))
         for j, p in enumerate(part["prims"]):
             sh = flat.get((i, j))
@@ -3375,6 +3396,8 @@ def to_python(d: dict) -> str:
         lbl = f", label={pt['label']!r}" if pt.get("label") else ""
         col = pt.get("color") or mt.get("color")
         col = f", color={col!r}" if col else ""
+        see = display_opacity(pt, mt)
+        col += f", opacity={see!r}" if see is not None else ""
         if mt["kind"] == "metal":
             loss = ""
             if _given(mt.get("conductivity")):

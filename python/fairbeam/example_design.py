@@ -451,6 +451,8 @@ def _read_design(module, values: dict, source_path: Path):
                 part["label"] = entry["label"] if index == 0 else f"{entry['label']} [{index + 1}]"
             if entry.get("color"):
                 part["color"] = entry["color"]
+            if entry.get("opacity") is not None:
+                part["opacity"] = entry["opacity"]
             if group["transforms"]:
                 part["transforms"] = group["transforms"]
             parts.append(part)

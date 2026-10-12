@@ -19,7 +19,7 @@ import { dims, freqText, num } from "../lib/format";
 import { fmt, t } from "../i18n";
 import type { Bundle, Part } from "../types";
 import {
-  boxLines, buildParts, lumpedObject, meshPlaneLines, type PartObject, portObject, type SceneColors, sceneRadius, waveguidePortObject, SceneGeometryCache, updatePortGlyphs,
+  boxLines, buildParts, lumpedObject, meshPlaneLines, type PartObject, portObject, type SceneColors, sceneRadius, solidLook, waveguidePortObject, SceneGeometryCache, updatePortGlyphs,
 } from "./geometry";
 import type { PortGlyph } from "./portGlyphs";
 import { patternMesh } from "./pattern";
@@ -694,12 +694,8 @@ export default function Viewport() {
         if (p.kind === "metal") continue;
         for (const m of p.meshes) {
           if (!(m.material instanceof THREE.MeshStandardMaterial)) continue;
-          const mat = m.material;
-          mat.userData.base = {
-            transparent: true,
-            opacity: layers.dielectricXray ? 0.38 : 0.9,
-            depthWrite: !layers.dielectricXray,
-          };
+          // the design's own Opacity of a part stays (x-ray only makes it fainter)
+          m.material.userData.base = solidLook(p.kind, layers.dielectricXray, p.part.opacity);
         }
       }
       applySolidFade();
