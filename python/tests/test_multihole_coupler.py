@@ -120,10 +120,15 @@ def acquire_serial(out, n, rate=10., **options):
             progress.update(status="failed", reason=f"owned port {port} returned {code}", qualified=False, active_launcher_pid=None)
             f.save(out/"progress.json", progress)
             raise RuntimeError(f"port {port} failed; preserve {log_path}")
-        report = json.loads((destination/"report.json").read_text(encoding="utf-8"))
-        report["native_header"] = audit_header(log_path.read_text(encoding="utf-8"), report)
-        f.save(destination/"report.json", report)
-        _, _, _, quality = f.read(destination)
+        try:
+            report = json.loads((destination/"report.json").read_text(encoding="utf-8"))
+            report["native_header"] = audit_header(log_path.read_text(encoding="utf-8"), report)
+            f.save(destination/"report.json", report)
+            _, _, _, quality = f.read(destination)
+        except BaseException as error:
+            progress.update(status="rejected", reason=repr(error), qualified=False, active_launcher_pid=None)
+            f.save(out/"progress.json", progress)
+            raise
         progress["ports"].append(dict(port=port, quality=quality))
         if not all(quality.values()):
             progress.update(status="rejected", reason="native source/grid/clock/energy audit failed", qualified=False, active_launcher_pid=None)
@@ -358,6 +363,39 @@ class MultiholeControls(unittest.TestCase):
             self.assertFalse(progress["qualified"])
             self.assertIsNone(progress["active_launcher_pid"])
             self.assertTrue((out/"port1.worker.json").is_file())
+
+    def test_malformed_completed_worker_records_rejection_and_stops(self):
+        class ReturnedWorker:
+            pid, win_job = 777, None
+            def wait(self, timeout=None):
+                return 0
+            def poll(self):
+                return 0
+        for failure in ("report", "header", "trace"):
+            with self.subTest(failure=failure), tempfile.TemporaryDirectory() as temp:
+                out = Path(temp)/"control"
+                def launch(command, **options):
+                    destination = Path(command[command.index("--out")+1])
+                    destination.mkdir()
+                    (destination/"report.json").write_text("{" if failure == "report" else "{}", encoding="utf-8")
+                    return ReturnedWorker()
+                with patch(__name__+".popen_group", side_effect=launch) as start, \
+                        patch(__name__+".release_group"), \
+                        patch(__name__+".audit_header", side_effect=ValueError("bad header") if failure == "header" else None,
+                              return_value={}), \
+                        patch.object(f, "read", side_effect=ValueError("changed trace")):
+                    with self.assertRaises(ValueError):
+                        acquire_serial(out, 24, 79.325356669)
+                    self.assertEqual(start.call_count, 1)
+                progress = json.loads((out/"progress.json").read_text())
+                self.assertEqual(progress["status"], "rejected")
+                self.assertFalse(progress["qualified"])
+                self.assertIsNone(progress["active_launcher_pid"])
+                self.assertTrue(progress["reason"])
+                self.assertEqual(progress["ports"], [])
+                self.assertTrue((out/"port1.worker.json").is_file())
+                self.assertTrue((out/"port1/report.json").is_file())
+                self.assertFalse((out/"port2").exists())
 
     def test_distance_control_rejects_the_old_capped_duration(self):
         def fake(path):
