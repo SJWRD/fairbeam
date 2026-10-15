@@ -17,6 +17,7 @@
   "contextExport.failed": "Dışa aktarma başarısız: {error}",
   "export.blender.download": "Blender render paketi",
   "export.blender.preparing": "Blender modeli hazırlanıyor…",
+  "export.mesh.idealWire": "İdeal tellerin dışa aktarılacak katı yüzeyi yoktur. Görsel için çizim alanını kullanın veya katı model için açıkça pozitif bir tel yarıçapı belirleyin. Yarıçapı değiştirmek simülasyon geometrisini de değiştirir.",
   "export.blender.hint": "Blender projesi ve PNG oluşturmak için ZIP dosyasını çıkarın ve Windows sisteminde Render.cmd dosyasına çift tıklayın. Yerel Blender gerekir. Katıları ve malzeme renklerini fiziksel birimlerle içerir.",
   "about.cadLibrary": "CAD geometri kütüphanesi:",
   "about.developedBy": "Geliştiren: İsmail Akdağ",

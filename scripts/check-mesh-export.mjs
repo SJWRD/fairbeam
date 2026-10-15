@@ -2,8 +2,11 @@ import assert from 'node:assert/strict';
 import { mkdir, writeFile, copyFile } from 'node:fs/promises';
 import * as THREE from 'three';
 import { readFile } from 'node:fs/promises';
-import { binaryStl, binaryStlParts, DEFAULT_SHEET_THICKNESS_UM } from '../src/export/mesh.ts';
-import { blenderScene, blenderGlb } from '../src/export/blender.ts';
+import { binaryStl, binaryStlParts, exportGeometry, DEFAULT_SHEET_THICKNESS_UM } from '../src/export/mesh.ts';
+import { blenderScene, blenderGlb, blenderPackage } from '../src/export/blender.ts';
+import { setLanguage, t } from '../src/i18n/index.ts';
+import { errorText } from '../src/lib/errorText.ts';
+import { downloadFailedMessage } from '../src/lib/download.ts';
 
 globalThis.FileReader = class { readAsArrayBuffer(blob) { blob.arrayBuffer().then(result => { this.result = result; this.onloadend?.(); }); } };
 const colors = Object.fromEntries(['metal','dielectric','port','edge','domain','nf2ff','ground','grid','gridMajor'].map(key => [key,'#888888']));
@@ -49,6 +52,28 @@ for (const primitive of [{...box,exact:false},{...box,start:[NaN,0,0]}, {...box,
 assert.throws(()=>binaryStl({...bundle,parts:[]}));
 assert.throws(()=>blenderScene({...bundle,parts:[]},colors));
 assert.throws(()=>binaryStl({...bundle,units:{length_m:0}}));
+// Native Curve and zero-radius Wire have no solid surface. Display-only tube thickness must
+// never escape as an apparently exact STL, glTF or Blender model, even inside a transform.
+const wire = {kind:'wire',points:[[0,0,0],[0,0,10]],radius:0.2,bbox:[[-0.2,-0.2,0],[0.2,0.2,10]],priority:1,exact:true};
+const ideal = [{...wire,kind:'curve',radius:undefined},{...wire,kind:'curve'}, {...wire,radius:0},{...wire,radius:undefined},{...wire,radius:-0.2}];
+for (const primitive of [...ideal,...ideal.map(primitive=>({...transform,primitive}))]) {
+  const source = {...bundle,parts:[bundle.parts[0],{...bundle.parts[0],name:'ideal wire',primitives:[primitive]}]};
+  const unchanged = structuredClone(source);
+  assert.throws(()=>exportGeometry(primitive),/Ideal wires have no solid surface/);
+  assert.throws(()=>binaryStl(source),/Ideal wires have no solid surface/);
+  assert.throws(()=>binaryStlParts(source,{sheetThicknessUm:35}),/Ideal wires have no solid surface/);
+  assert.throws(()=>blenderScene(source,colors),/Ideal wires have no solid surface/);
+  await assert.rejects(()=>blenderGlb(source,colors),/Ideal wires have no solid surface/);
+  await assert.rejects(()=>blenderPackage(source,colors),/Ideal wires have no solid surface/);
+  assert.deepEqual(source,unchanged,'a refused export never changes the simulation geometry');
+}
+const finiteWire = {...bundle,parts:[{...bundle.parts[0],primitives:[wire]}]};
+const finiteStl = parse(binaryStl(finiteWire));
+near(finiteStl.lo,[-0.2,-0.2,0]); near(finiteStl.hi,[0.2,0.2,10]);
+assert.ok((await blenderGlb(finiteWire,colors)).byteLength>0,'an explicit positive radius still exports');
+setLanguage('tr');
+assert.throws(()=>exportGeometry(ideal[0]),error=>errorText(error)===t('export.mesh.idealWire')&&downloadFailedMessage('wire.stl',error).includes('İdeal tellerin'));
+setLanguage('en');
 // Exercise the binary writer across its storage boundary without a large physical scene.
 const oneBox = binaryStl({...bundle,parts:[{...bundle.parts[0],primitives:[box]}]});
 const repeated = binaryStl({...bundle,parts:[{...bundle.parts[0],primitives:Array(5500).fill(box)}]});

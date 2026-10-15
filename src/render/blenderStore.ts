@@ -7,6 +7,7 @@ import type { Design } from "../designer/types";
 import { renderWithBlender, type BlenderQuality, type BlenderRenderProgress, type BlenderRenderRun } from "./blender.ts";
 import type { RenderOptions } from "./options.ts";
 import type { ViewState } from "./frame.ts";
+import { errorText } from "../lib/errorText.ts";
 
 const [progress, setProgress] = createSignal<BlenderRenderProgress | null>(null);
 const [failure, setFailure] = createSignal<string | null>(null);
@@ -32,7 +33,7 @@ export async function startBlenderRender(options: RenderOptions, design: Design 
   try {
     await run.result;
   } catch (e) {
-    setFailure(e instanceof Error ? e.message : String(e));
+    setFailure(errorText(e));
   } finally {
     setStarting(false);
     if (current === run) current = null;

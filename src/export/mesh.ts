@@ -7,6 +7,10 @@ export function validateMeshPrimitive(primitive: Primitive): void {
   if (primitive.kind === "bbox" || !primitive.exact) throw new Error("Approximate geometry cannot be exported as a mesh");
   const finite = (value: unknown): boolean => typeof value === "number" ? Number.isFinite(value) : Array.isArray(value) ? value.every(finite) : value && typeof value === "object" ? Object.values(value).every(finite) : true;
   if (!finite(primitive)) throw new Error("Mesh geometry contains non-finite coordinates");
+  // The viewport gives ideal wires a visible tube, but that display radius is not physical geometry.
+  if (primitive.kind === "curve" || (primitive.kind === "wire" && !(primitive.radius! > 0))) {
+    throw Object.assign(new Error("Ideal wires have no solid surface to export. Use the viewport for an illustration, or define an explicit positive wire radius for a solid model. Changing the radius also changes the simulation geometry."), { name: "IdealWireMeshError" });
+  }
   if (primitive.kind === "transformed") {
     validateMeshPrimitive(primitive.primitive);
     const matrix = primitive.matrix;

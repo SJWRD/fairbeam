@@ -17,6 +17,7 @@
   "contextExport.failed": "Export failed: {error}",
   "export.blender.download": "Blender render package",
   "export.blender.preparing": "Preparing Blender model…",
+  "export.mesh.idealWire": "Ideal wires have no solid surface to export. Use the viewport for an illustration, or define an explicit positive wire radius for a solid model. Changing the radius also changes the simulation geometry.",
   "export.blender.hint": "Extract the ZIP and double-click Render.cmd on Windows to create a Blender project and PNG. Requires local Blender. Includes solids and material colors in physical units.",
   "about.cadLibrary": "CAD geometry library:",
   "about.developedBy": "Developed by İsmail Akdağ",
