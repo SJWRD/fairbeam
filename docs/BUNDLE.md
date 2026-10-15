@@ -112,6 +112,7 @@ Physical CSXCAD properties with their primitives, in order of first appearance. 
 | `label` | string? | Display label from `sim.metal(..., label=)` or `sim.dielectric(..., label=)` |
 | `type` | string | CSXCAD property type: `"Metal"`, `"Material"`, `"ConductingSheet"`, … |
 | `color` | string? | Optional color recorded by the model |
+| `opacity` | number? | Optional see-through display opacity, 0.05 (nearly clear) to 1 (opaque): a design's Opacity on the part or its material, or `sim.metal(..., opacity=)` / `sim.dielectric(..., opacity=)`. Drawing only; absent means the viewer's default look |
 | `material` | object? | Present only for `type == "Material"`. See below |
 | `conductor` | object? | A metal of finite conductivity (a design material's `conductivity`, `sim.metal(..., conductivity=)`): `conductivity` in S/m and `thickness`, the modeled sheet thickness in mm of a `"ConductingSheet"` (openEMS `AddConductingSheet`), `null` for a volume, which is a `"Material"` of that conductivity and is still a metal. Absent for perfect conductors |
 | `void` | boolean? | `true` for a vacuum carver (a Boolean Subtract's cut-out): it erases lower-priority material inside it; viewers should draw it as a ghost or hide it; absent otherwise; older readers show it as an ordinary `eps_r` 1 part |

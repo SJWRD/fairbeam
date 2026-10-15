@@ -103,4 +103,9 @@ put=recovery.nextPut();pending=recovery.io.save();assert.equal(recovery.log.find
 put.reject(fault(409));assert.equal(await pending,false);assert.equal(recovery.core.dirty(),true);
 recovery.io.dispose();recovery.core.dispose();
 for(const x of [a,b,c,d,guarded]){x.io.dispose();x.core.dispose();}
-console.log('Designer IO: independent deferred loads/saves, conflict/errors, stale responses, file-owned scope, rename guards, newer edits and disposal pass');
+// An opened design is handed on once it is the draft (its opening view goes to the 3D view).
+{const core=createDesignerSession(),seen=[];let get=deferred();
+ const io=createDesignerIO(core,{transport:{design:()=>get.promise,saveDesign:()=>new Promise(()=>{})},rememberLastDesign(){},readBackup:()=>null,clearBackup(){},stopPreview(){},forgetPreviewFailure(){},resetParamAsks(){},schedulePreview(){},applyModelEntry(){},restoreModelSelection(){},openedDesign:f=>seen.push([f.id,JSON.parse(JSON.stringify(core.draft.view??null))])});
+ const view={camera:[12,-20,9],target:[0,0,1]},p=io.openDesign('viewed');get.resolve({...file('viewed'),design:{...design('viewed'),view}});await p;
+ assert.deepEqual(seen,[['viewed',view]]);io.dispose();core.dispose();}
+console.log('Designer IO: independent deferred loads/saves, conflict/errors, stale responses, file-owned scope, rename guards, newer edits, the opened-design hook and disposal pass');

@@ -48,6 +48,7 @@
 
 .dz-color-field .cluster-sm { align-items: center; }
 .dz-color-input { width: 34px; height: 24px; padding: 0; border: 1px solid var(--al-border, #888); border-radius: 4px; background: none; cursor: pointer; }
+.dz-opacity-input { width: 110px; }
 
 /* Deliberate RF setup is a compact form; the macro dialog grid does not apply. */
 .dialog.dz-feed-dialog { width: min(560px, 100%); height: auto; max-height: 100%; }

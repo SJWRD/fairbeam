@@ -112,6 +112,7 @@ Her Param, `dataclasses.asdict(Param)` ve çözülmüş değerden oluşur:
 | `label` | string? | `sim.metal(..., label=)` veya `sim.dielectric(..., label=)` ile verilen etiket |
 | `type` | string | CSXCAD özellik türü: `"Metal"`, `"Material"`, `"ConductingSheet"`, … |
 | `color` | string? | Modelin kaydettiği isteğe bağlı renk |
+| `opacity` | number? | İsteğe bağlı saydamlık (görüntü opaklığı), 0,05 (neredeyse saydam) ile 1 (opak) arası: tasarımda katının veya malzemesinin Opaklık değeri ya da `sim.metal(..., opacity=)` / `sim.dielectric(..., opacity=)`. Yalnızca çizim içindir; yoksa görüntüleyicinin varsayılan görünümü kullanılır |
 | `material` | object? | Yalnızca `type == "Material"` için bulunur. Aşağıya bakın |
 | `conductor` | object? | Sonlu iletkenlikli metal (tasarım malzemesinin `conductivity` alanı, `sim.metal(..., conductivity=)`): S/m cinsinden `conductivity`; `"ConductingSheet"` (openEMS `AddConductingSheet`) için mm cinsinden modellenmiş levha kalınlığı `thickness`. Hacimde `null`; hacim, aynı iletkenlikte `"Material"` olur ve hâlâ metaldir. Mükemmel iletkende bulunmaz |
 | `void` | boolean? | Vakum oyucu (Boolean Çıkar boşluğu) için `true`: içindeki düşük öncelikli malzemeyi siler. Görüntüleyici bunu hayalet görünümde çizmeli veya gizlemelidir; diğer durumlarda bulunmaz. Eski okuyucular sıradan `eps_r` 1 katısı olarak gösterir |

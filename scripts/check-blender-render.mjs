@@ -44,6 +44,14 @@ assert.equal(parts[0].library, "fr4");
 assert.equal(parts[0].eps_r, 3.38);
 assert.equal(parts[2].color, "#B87333", "the design's colour override wins");
 assert.equal(blenderParts(bundle, null)[2].color, "#ffd700");
+// the design's see-through Opacity: the part's own over its material's, else the bundle's; opaque is the default look
+{
+  const seeThrough = { ...design, materials: [{ ...design.materials[0], opacity: 0.4 }, design.materials[1]],
+    parts: [design.parts[0], { ...design.parts[1], opacity: 0.6 }, design.parts[2]] };
+  const withOpacity = { ...bundle, parts: bundle.parts.map((p) => (p.name === "patch" ? { ...p, opacity: 0.3 } : p)) };
+  assert.deepEqual(blenderParts(withOpacity, seeThrough).map((p) => p.opacity), [0.4, 0.6, 0.3, undefined]);
+  assert.equal(blenderParts({ ...bundle, parts: bundle.parts.map((p) => ({ ...p, opacity: 1 })) }, null)[0].opacity, undefined, "opacity 1 is not sent");
+}
 const { ports, lumped } = blenderPorts(bundle);
 assert.deepEqual(ports[0].start, [-0.006, 0, 0]);
 assert.ok(Math.abs(ports[0].stop[2] - 0.0015) < 1e-12);

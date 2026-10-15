@@ -71,7 +71,7 @@ def prepare(design, *, cell_mm=8., padding_mm=40., feed_width_mm=1., approximate
         metal = material["kind"] == "metal"
         if not metal and material["kind"] != "dielectric":
             raise ValueError("Only PEC and isotropic dielectric materials are supported")
-        allowed = {"name", "kind", "label", "color", "library", "description"}
+        allowed = {"name", "kind", "label", "color", "opacity", "library", "description"}
         if not metal:
             allowed |= {"eps_r", "mu_r", "tan_d", "tan_d_freq"}
         if set(material) - allowed:

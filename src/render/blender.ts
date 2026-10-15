@@ -15,6 +15,7 @@ import type { ViewState } from "./frame.ts";
 import type { BlenderEngine, EngineImage } from "./engine.ts";
 import type { Design, DesignPart } from "../designer/types";
 import { partKind } from "../scene/partKind.ts";
+import { resolveOpacity, validOpacity } from "../designer/colors.ts";
 import { withoutVoids } from "../lib/voidParts.ts";
 
 /** Blender's own quality names: "preview" (Cycles 32 samples + denoiser) and "final" (256 samples + denoiser). */
@@ -108,11 +109,13 @@ export function blenderParts(bundle: Bundle, design?: Pick<Design, "parts" | "ma
     const material = dp ? materials.get(dp.material) : undefined;
     const kind = part.void ? "void" : partKind(part) === "metal" ? "metal" : "dielectric";
     const color = dp?.color || part.color;
+    const opacity = resolveOpacity(dp, material) ?? part.opacity;
     return {
       name: part.name, label: part.label || part.name, kind,
       ...(dp?.material ? { material: dp.material } : {}),
       ...((material as { library?: string } | undefined)?.library ? { library: (material as { library?: string }).library } : {}),
       ...(color && /^#[0-9a-f]{3,8}$/i.test(color) ? { color } : {}),
+      ...(validOpacity(opacity) !== undefined && opacity! < 1 ? { opacity } : {}),
       ...(part.material && Number.isFinite(part.material.eps_r) ? { eps_r: part.material.eps_r } : {}),
     };
   });

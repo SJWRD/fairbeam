@@ -14,6 +14,7 @@ import {
 import { MARKER_MIN_PX, SMA_MM, buildPorts, markerBead, markerScale, placeSma, portMarker, smdElement, updateMarkerSizes, waveguideFlange, worldPerPixel } from "../src/render/ports.ts";
 import { FRAME_MARGIN, angleDirection, cameraFromFraming, frameBox, frameFromView } from "../src/render/frame.ts";
 import { buildModel, makeMaterial } from "../src/render/scene.ts";
+import { solidLook } from "../src/scene/geometry.ts";
 
 let n = 0;
 const ok = (cond, what) => { n++; assert.ok(cond, what); };
@@ -99,6 +100,28 @@ const vnear = (a, b, tol, what) => a.forEach((x, i) => near(x, b[i], tol, `${wha
   eq([p.kind, p.color], ["metal", "#aabbcc"], "partInfo: kind and lower-cased colour");
   eq(partInfo({ name: "x", type: "Material", primitives: [], bbox: [[0, 0, 0], [1, 1, 1]], color: "red" }).color, undefined, "an invalid colour is ignored");
   eq(partInfo({ name: "x", type: "Material", primitives: [], bbox: [[0, 0, 0], [1, 1, 1]], conductor: { conductivity: 5.8e7, thickness: null } }).kind, "metal", "a lossy metal volume is metal");
+  // a see-through opacity (the design's Opacity) replaces the table's translucency with plain alpha
+  const clear = lookFor({ ...diel({ materialName: "fr4" }), color: "#efe7d6", opacity: 0.35 });
+  eq([clear.opacity, clear.transmission, clear.attenuation, clear.baseColor], [0.35, 0, null, "#efe7d6"], "opacity: plain alpha, colour kept");
+  const glass = lookFor({ ...metal({ materialName: "gold" }), opacity: 0.5 });
+  eq([glass.id, glass.metallic, glass.opacity], ["gold", 1, 0.5], "a see-through metal keeps its finish");
+  eq(lookFor({ ...diel({ materialName: "fr4" }), opacity: 1 }), MATERIAL_LOOKS.fr4, "opacity 1 is the table's look");
+  eq(partInfo({ name: "x", type: "Material", primitives: [], bbox: [[0, 0, 0], [1, 1, 1]], opacity: 0.4 }).opacity, 0.4, "partInfo: the bundle's opacity");
+  for (const o of [0, 0.01, 1.5, "0.5", Number.NaN]) eq(partInfo({ name: "x", type: "Material", primitives: [], bbox: [[0, 0, 0], [1, 1, 1]], opacity: o }).opacity, undefined, `an invalid opacity (${o}) is ignored`);
+  const translucent = makeMaterial(clear, null);
+  eq([translucent.transparent, translucent.opacity, translucent.depthWrite], [true, 0.35, false], "a see-through part writes no depth");
+  ok(makeMaterial(MATERIAL_LOOKS.copper, null).depthWrite, "an opaque part writes depth");
+  translucent.dispose();
+  // the modelling view: metals opaque, dielectrics see-through; the design's opacity wins, x-ray only makes fainter
+  eq(solidLook("metal", false), { transparent: false, opacity: 1, depthWrite: true }, "metal: opaque");
+  eq(solidLook("dielectric", false), { transparent: true, opacity: 0.9, depthWrite: true }, "dielectric: 0.9");
+  eq(solidLook("dielectric", true), { transparent: true, opacity: 0.38, depthWrite: false }, "x-ray dielectric: 0.38, no depth");
+  eq(solidLook("metal", true), solidLook("metal", false), "x-ray leaves metal alone");
+  eq(solidLook("dielectric", false, 0.3), { transparent: true, opacity: 0.3, depthWrite: false }, "own opacity: see-through, no depth");
+  eq(solidLook("dielectric", true, 0.6).opacity, 0.38, "x-ray never makes a part more opaque");
+  eq(solidLook("dielectric", false, 1), { transparent: false, opacity: 1, depthWrite: true }, "own opacity 1: an opaque dielectric");
+  eq(solidLook("metal", false, 0.5), { transparent: true, opacity: 0.5, depthWrite: false }, "a see-through metal");
+  eq(solidLook("metal", false, 7), solidLook("metal", false), "an invalid opacity is the default look");
 }
 
 // ---------------------------------------------------------------- (b) the options
@@ -377,6 +400,25 @@ const solidsOf = (b) => b.parts.map((p) => {
   const mesh = cm.group.children[0].children[0];
   eq([mesh.material.color.getHexString(), mesh.material.metalness], ["3366ff", 1], "a colour override stays metallic");
   cm.dispose();
+  // a see-through opacity: material over the default, the part's own over the material's, also for a coaxial port's
+  // conductor and filling, which the preview draws from their materials
+  const seeThrough = design("o", [{ name: "copper", kind: "metal" }, { name: "enamel", kind: "dielectric", eps_r: 7.3, tan_d: 0, opacity: 0.4 }], [
+    { name: "tooth", material: "enamel", primitives: [box([0, 0, 0], [5, 5, 5])] },
+    { name: "cap", material: "enamel", opacity: 0.8, primitives: [box([0, 0, 5], [5, 5, 6])] },
+    { name: "pin", material: "copper", primitives: [box([2, 2, -1], [3, 3, 0])] },
+  ], []);
+  const ob = quickBundle(seeThrough, {}, null);
+  eq(ob.parts.map((q) => q.opacity), [0.4, 0.8, undefined], "the preview bundle carries each part's opacity");
+  const om = mk(ob);
+  const look = (name) => om.group.children.find((c) => c.name === name).children[0];
+  eq([look("tooth").material.opacity, look("tooth").material.depthWrite, look("tooth").castShadow], [0.4, false, false], "a mostly clear part: alpha, no depth, no shadow");
+  eq([look("cap").material.opacity, look("cap").castShadow], [0.8, true], "the part's own opacity wins");
+  eq([look("pin").material.opacity, look("pin").material.depthWrite], [1, true], "an opaque part is unchanged");
+  om.dispose();
+  const coax = design("cx", [{ name: "PEC", kind: "metal", opacity: 0.5 }, { name: "ptfe", kind: "dielectric", eps_r: 2.05, tan_d: 0, opacity: 0.3 }], [], []);
+  coax.ports = [{ type: "coaxial", number: 1, direction: "z", start: [0, 0, -10], stop: [0, 0, 0], r_i: 0.15, r_o: 0.47, r_os: 0.6,
+    conductor: "PEC", dielectric: "ptfe", feed_shift: 3.5, measurement_shift: 6, termination: "open", excite: true }];
+  eq(quickBundle(coax, {}, null).parts.map((q) => [q.name, q.opacity]), [["Coaxial port 1 conductor", 0.5], ["Coaxial port 1 dielectric", 0.3]], "a coaxial port's parts follow their materials");
 }
 
 // ---------------------------------------------------------------- (g) camera framing

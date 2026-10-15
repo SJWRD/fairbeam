@@ -153,7 +153,8 @@ directivity rather than its gain.
     - Parameters: Parameter.
   - Transform: Transform… opens the transform dialog for the selected solid or shape. Rotate,
     Scale, Mirror and Translate copies open it with that operation selected. See [Transforms](#transforms).
-  - View: camera presets, Fit and Screenshot, followed by geometry/overlay visibility controls.
+  - View: camera presets, Fit and Screenshot, the Opening view (Save, Go to, Clear), followed by
+    geometry/overlay visibility controls.
     Guide grid controls both the reference grid and active drawing-plane grid; it does not disable
     snapping. Ground plane controls only the model's PEC half-space geometry. Mesh view uses the
     same toggle as Simulation › Mesh. View preserves an
@@ -195,6 +196,11 @@ directivity rather than its gain.
   visible, except inside fields, editors, menus, dialogs, or an active drawing tool. With the 3D
   view focused, arrows orbit (Shift pans), +/− zoom, and Space or F fits the model. Orbiting away
   from a preset clears its pressed state. The number-row aliases are provided for laptop keyboards.
+  **Opening view**: View › Opening view › **Save** keeps the current camera in the design (as `view`:
+  the camera position and the point it looks at, in mm). The design then opens with that camera
+  instead of the fitted isometric view, so a small detail (a probe tip on a large tooth, a feed under
+  a board) is in sight from the start. **Go to** returns to it and **Clear** removes it. Saving and
+  clearing are undo steps, Python Apply keeps the view, and the solver and the exports ignore it.
 - **Properties** (right): the fields of the selected item.
 - **Dock** (bottom): **Checks** and **Parameters**, and for a run started here **Run** (its live
   progress), **Runs** (the design's runs side by side, with the parameters that differ) and
@@ -392,6 +398,16 @@ subfolder), or drag a part onto another part at the top level. Right-click a com
 **Rename component** (or F2 on the folder row; parts in its subfolders follow), **Ungroup
 component** (its parts and subfolders move up one level) and **Delete component and its parts**;
 **Show parts** and **Hide parts** act on everything inside. Each is one undo step.
+
+**Color and Opacity.** A material's Properties and a part's have a **Color** and an **Opacity** (a
+slider from 5 to 100 %; **Default** clears either). They only change how the solid is drawn: the solver,
+the mesh and the results ignore them. A part's own wins over its material's. Opacity makes a solid
+see-through in the 3D view, the Rendered view, Render image… and the Blender render, so a block that
+hides what lies inside or behind it (a substrate around a via, a tooth around a probe tip) can stay
+visible as a faint shell. Without it, metals are opaque and dielectrics nearly so; **See-through
+dielectrics** fades every dielectric further but never makes a part more opaque than its Opacity.
+The design file keeps them as `color` (`"#rrggbb"`) and `opacity` (0.05 to 1) on the material or the
+part.
 
 Right-click a solid or shape in the tree or the 3D view for Rename, Hide, Transform…, Color…,
 Round corners… (on a box), Boolean ›, Move to component ›, Add discrete port here (when the picked
@@ -1490,7 +1506,8 @@ fill and rim light, a soft ground shadow, and the ports. Copper, gold, silver, t
 aluminium, brass and steel are metallic with their own colour and roughness; a PEC or an unknown
 metal is copper. FR-4 is a translucent yellow-green laminate, Rogers, Taconic and PTFE laminates
 are cream, alumina is white, any other dielectric is a neutral beige; air, vacuum and cut-outs are
-not drawn. A part's own **Color** wins over these defaults and keeps the metallic finish. A
+not drawn. A part's own **Color** wins over these defaults and keeps the metallic finish, and an
+**Opacity** below 100 % draws it see-through (plain transparency instead of the laminate's tint). A
 material is recognised by its name or library entry in the designer, and by its conductivity,
 permittivity and loss in a result or an example (the bundle does not carry names). The table is
 `src/render/materials.ts`, plain data that the Blender renderer mirrors.

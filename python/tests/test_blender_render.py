@@ -437,6 +437,12 @@ class ScriptHelpers(unittest.TestCase):
         self.assertEqual(c({"kind": "dielectric", "material": "foam"})["look"], "dielectric")
         self.assertEqual(c({"kind": "dielectric", "material": "air", "eps_r": 1})["look"], "void")
         self.assertEqual(c({"kind": "dielectric", "void": True})["look"], "void")
+        # the design's see-through Opacity: an alpha below 1, nothing for an opaque or invalid one
+        self.assertEqual(c({"kind": "dielectric", "material": "enamel", "opacity": 0.4})["alpha"], 0.4)
+        self.assertEqual(c({"kind": "metal", "material": "copper", "opacity": 0.5})["alpha"], 0.5)
+        for opacity in (1, 0.0, 2, True, "0.5"):
+            self.assertNotIn("alpha", c({"kind": "dielectric", "material": "enamel", "opacity": opacity}))
+        self.assertNotIn("alpha", c({"kind": "dielectric", "void": True, "opacity": 0.4}))
 
     def test_colours(self):
         self.assertAlmostEqual(blender_render.linear_colour("#FFFFFF")[0], 1.0)

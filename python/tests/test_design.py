@@ -805,6 +805,26 @@ class Build(unittest.TestCase):
             module_for(d).build({p.key: p.default for p in module_for(d).PARAMS})
         self.assertEqual(cm.exception.where, "parts[2].cuts[0].stop")
 
+    def test_opening_view_is_drawing_only(self):
+        """The opening view (the 3D view's camera when the design opens) is checked and changes nothing built."""
+        d = blank_design("t", "T")
+        plain = build_preview(None, {}, design=d)["bundle"]
+        d["view"] = {"camera": [40.5, -60, 35.25], "target": [0, 0, 0.8]}
+        check_design(d)
+        viewed = build_preview(None, {}, design=d)["bundle"]
+        self.assertEqual(json.dumps(plain["parts"], sort_keys=True), json.dumps(viewed["parts"], sort_keys=True))
+        self.assertEqual(plain["mesh"], viewed["mesh"])
+        self.assertNotIn("view", to_python(d))
+        for bad, where in (([], "view"), ({"camera": [1, 2], "target": [0, 0, 0]}, "view.camera"),
+                           ({"camera": [1, 2, 3], "target": [0, 0, "z"]}, "view.target"),
+                           ({"camera": [1, 2, True], "target": [0, 0, 0]}, "view.camera"),
+                           ({"camera": [1, 2, float("inf")], "target": [0, 0, 0]}, "view.camera"),
+                           ({"camera": [1, 2, 3], "target": [1, 2, 3]}, "view.camera")):
+            d["view"] = bad
+            with self.subTest(view=bad), self.assertRaises(DesignError) as cm:
+                check_design(d)
+            self.assertEqual(cm.exception.where, where)
+
     def test_components_are_folders_only(self):
         """A part's component path groups it in the designer's tree; the build ignores it."""
         d = blank_design("t", "T")
@@ -819,6 +839,43 @@ class Build(unittest.TestCase):
         with self.assertRaises(DesignError) as cm:
             check_design(d)
         self.assertEqual(cm.exception.where, "parts[2].component")
+
+    def test_opacity_is_drawing_only(self):
+        """A material's or a part's see-through opacity reaches the bundle (the part's own wins) and the Python
+        export, and changes nothing the solver sees."""
+        d = blank_design("t", "T")
+        plain = build_preview(None, {}, design=d)["bundle"]
+        sub = next(m for m in d["materials"] if m["kind"] == "dielectric")
+        sub["opacity"] = 0.4
+        d["parts"][2]["opacity"] = 0.75
+        check_design(d)
+        seen = build_preview(None, {}, design=d)["bundle"]
+        by_name = {p["name"]: p for p in seen["parts"]}
+        substrate = next(p for p in d["parts"] if p["material"] == sub["name"])
+        self.assertEqual(by_name[substrate["name"]]["opacity"], 0.4)
+        self.assertEqual(by_name[d["parts"][2]["name"]]["opacity"], 0.75)
+        self.assertEqual(sum("opacity" in p for p in seen["parts"]), 2)
+        strip = lambda parts: json.dumps([{k: v for k, v in p.items() if k != "opacity"} for p in parts], sort_keys=True)
+        self.assertEqual(strip(plain["parts"]), strip(seen["parts"]))
+        self.assertEqual(plain["mesh"], seen["mesh"])
+        with tempfile.TemporaryDirectory() as tmp:
+            pp = Path(tmp) / "see_through.py"
+            pp.write_text(to_python(d))
+            self.assertIn("opacity=0.4", pp.read_text())
+            exported = build_preview(str(pp), {})["bundle"]
+            # and a Python model converted back to a design keeps it on the parts
+            from fairbeam.example_design import convert_example
+            back = convert_example(pp, "see-through", "See-through")
+        self.assertEqual(json.dumps(exported["parts"], sort_keys=True), json.dumps(seen["parts"], sort_keys=True))
+        self.assertEqual({p["name"]: p.get("opacity") for p in back["parts"]},
+                         {p["name"]: p.get("opacity") for p in seen["parts"]})
+        for bad in (0, 0.01, 1.5, True, "0.5", float("nan")):
+            d["parts"][2]["opacity"] = bad
+            with self.subTest(opacity=bad), self.assertRaises(DesignError) as cm:
+                check_design(d)
+            self.assertEqual(cm.exception.where, "parts[2].opacity")
+        d["parts"][2]["opacity"] = 1
+        check_design(d)
 
     def test_transform_and_shape_errors(self):
         cases = [

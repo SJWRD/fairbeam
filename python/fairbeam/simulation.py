@@ -74,6 +74,17 @@ def excite_only(port: int | None):
         _EXCITE_ONLY = old
 
 
+def _display_opacity(opacity) -> float | None:
+    """A part's display opacity for the bundle: None (the viewer's default look), else 0.05 (nearly clear) to 1
+    (opaque). Drawing only: the solver never sees it."""
+    if opacity is None:
+        return None
+    value = float(opacity)
+    if isinstance(opacity, bool) or not (np.isfinite(value) and 0.05 <= value <= 1):
+        raise ValueError(f"opacity must be a number from 0.05 (nearly clear) to 1 (opaque), got {opacity!r}")
+    return value
+
+
 class Simulation:
     """An openEMS FDTD setup plus the metadata required to describe and export it.
 
@@ -154,34 +165,37 @@ class Simulation:
     # ------------------------------------------------------------------ structure helpers
 
     def metal(self, name: str, label: str | None = None, color: str | None = None,
-              conductivity: float | None = None, thickness: float | None = None):
+              conductivity: float | None = None, thickness: float | None = None, opacity: float | None = None):
         """A metal: a perfect conductor (openEMS ``AddMetal``) unless ``conductivity`` (S/m) is
         given. A lossy metal (:class:`LossyMetal`) builds its sheets as openEMS conducting sheets
         of ``thickness`` (drawing units; default ``SHEET_THICKNESS_MM``) and its volumes as a
-        material of that conductivity."""
+        material of that conductivity. ``color`` ("#rrggbb") and ``opacity`` (0.05 nearly clear to
+        1 opaque) only change how viewers draw the part."""
+        opacity = _display_opacity(opacity)
         if conductivity is None:
-            self._record(name, label=label, color=color, kind="metal")
+            self._record(name, label=label, color=color, opacity=opacity, kind="metal")
             return self.csx.AddMetal(name)
-        return LossyMetal(self, name, float(conductivity), thickness, label=label, color=color)
+        return LossyMetal(self, name, float(conductivity), thickness, label=label, color=color, opacity=opacity)
 
     def dielectric(self, name: str, eps_r: float, tan_d: float = 0.0, tan_d_freq: float | None = None,
                    label: str | None = None, color: str | None = None, mu_r: float = 1.0,
-                   void: bool = False):
+                   void: bool = False, opacity: float | None = None):
         """Lossy dielectric. openEMS models loss as a constant conductivity, so tan δ is exact only
         at ``tan_d_freq`` (defaults to the band centre). ``mu_r`` is a loss-free relative
         permeability (openEMS ``mue``); it is recorded only when it is not 1. ``void`` marks a vacuum
-        carver (a Boolean Subtract's cut-out); it is recorded for the bundle and viewers."""
+        carver (a Boolean Subtract's cut-out); it is recorded for the bundle and viewers. ``color``
+        and ``opacity`` (0.05 nearly clear to 1 opaque) only change how viewers draw the part."""
         f_ref = tan_d_freq or (self.f_min + self.f_max) / 2
         kappa = tan_d * 2 * np.pi * f_ref * EPS0 * eps_r
         mu_r = float(mu_r)
-        self._record(name, label=label, color=color, kind="dielectric", tan_d=tan_d, tan_d_freq=f_ref,
+        self._record(name, label=label, color=color, opacity=_display_opacity(opacity), kind="dielectric", tan_d=tan_d, tan_d_freq=f_ref,
                      mu_r=None if mu_r == 1.0 else mu_r, void=True if void else None)
         if mu_r == 1.0:
             return self.csx.AddMaterial(name, epsilon=eps_r, kappa=kappa)
         return self.csx.AddMaterial(name, epsilon=eps_r, mue=mu_r, kappa=kappa)
 
     def dispersive(self, name: str, model, label: str | None = None, color: str | None = None,
-                   n_poles: int | None = None, dt: float | None = None):
+                   n_poles: int | None = None, dt: float | None = None, opacity: float | None = None):
         """A frequency-dependent dielectric (fairbeam.dispersion): a ``Dispersion`` of Lorentz and
         Drude poles (given to openEMS as they are), or one with Debye poles (any Lorentz and Drude
         poles next to them are kept), or a
@@ -217,7 +231,7 @@ class Simulation:
         # kappa is the conductivity that gives the whole loss there (kappa = tan_d 2 pi f eps0 eps_r),
         # so a consumer that takes the loss as a conductivity (the CST export) keeps it; the static
         # conductivity is in dispersion.kappa.
-        self._record(name, label=label, color=color, kind="dielectric", eps_r=eps.real, mu_r=mu.real,
+        self._record(name, label=label, color=color, opacity=_display_opacity(opacity), kind="dielectric", eps_r=eps.real, mu_r=mu.real,
                      kappa=float(-eps.imag * 2 * np.pi * f_c * EPS0),
                      tan_d=-eps.imag / eps.real if eps.real != 0 else None,
                      tan_d_freq=f_c, dispersion=disp.to_dict())
@@ -358,7 +372,8 @@ class Simulation:
 
     def coaxial_port(self, number, start, stop, direction, r_i, r_o, r_os, *,
                      conductor="PEC", dielectric=None, eps_r=1.0, mu_r=1.0, tan_d=0.0, tan_d_freq=None,
-                     feed_shift=0.0, measurement_shift=None, termination="open", excite=True):
+                     feed_shift=0.0, measurement_shift=None, termination="open", excite=True,
+                     conductor_color=None, conductor_opacity=None, dielectric_color=None, dielectric_opacity=None):
         """Cartesian native TEM port. Radii/offsets use drawing units, not meters.
 
         Geometry is created immediately for meshing; native probes are constructed only after
@@ -392,12 +407,14 @@ class Simulation:
         names = (f"Coaxial port {number} conductor", f"Coaxial port {number} dielectric")
         if any(self.csx.GetPropertiesByName(name) for name in names):
             raise ValueError("coaxial generated property name already exists")
-        pec = self.metal(names[0])
+        display = ({"color": conductor_color, "opacity": _display_opacity(conductor_opacity)},
+                   {"color": dielectric_color, "opacity": _display_opacity(dielectric_opacity)})
+        pec = self.metal(names[0], **display[0])
         pec.AddCylinder(start, stop, r_i, priority=5)
         pec.AddCylindricalShell(start, stop, (r_o + r_os) / 2, r_os - r_o, priority=5)
         props = [pec]
         if dielectric is not None:
-            mat = self.dielectric(names[1], eps_r, tan_d=tan_d, tan_d_freq=tan_d_freq, mu_r=mu_r)
+            mat = self.dielectric(names[1], eps_r, tan_d=tan_d, tan_d_freq=tan_d_freq, mu_r=mu_r, **display[1])
             mat.AddCylindricalShell(start, stop, (r_i + r_o) / 2, r_o - r_i, priority=4)
             props.append(mat)
         self._pending_coax.append((len(self.ports), record, names, props))
@@ -411,10 +428,12 @@ class Simulation:
         pending = getattr(self, "_pending_coax", [])
         planes = [validate_mesh(self, {k: v for k, v in record.items() if k != "R"}) for _, record, _, _ in pending]
         for (index, record, names, props), plane in zip(pending, planes):
+            # Recreating the native port geometry must retain its drawing-only material overrides.
+            display = [{key: self.materials.get(name, {}).get(key) for key in ("color", "opacity")} for name in names]
             for prop in props:
                 self.csx.DeleteProperty(prop)
-            pec = self.metal(names[0])
-            mat = self.dielectric(names[1], record["eps_r"], tan_d=record["tan_d"], tan_d_freq=record["tan_d_freq"], mu_r=record["mu_r"]) if record["dielectric"] is not None else None
+            pec = self.metal(names[0], **display[0])
+            mat = self.dielectric(names[1], record["eps_r"], tan_d=record["tan_d"], tan_d_freq=record["tan_d_freq"], mu_r=record["mu_r"], **display[1]) if record["dielectric"] is not None else None
             port = self.fdtd.AddCoaxialPort(record["number"], pec, mat, record["start"], record["stop"],
                          record["direction"], record["r_i"], record["r_o"], record["r_os"],
                          1.0 if record["excite"] else 0.0, priority=5, FeedShift=record["feed_shift"],
@@ -1023,14 +1042,14 @@ class LossyMetal:
     Printed copper is best drawn as sheets (the default thin-metal build does that)."""
 
     def __init__(self, sim: Simulation, name: str, conductivity: float, thickness: float | None = None,
-                 label: str | None = None, color: str | None = None):
+                 label: str | None = None, color: str | None = None, opacity: float | None = None):
         if not (np.isfinite(conductivity) and conductivity > 0):
             raise ValueError(f"metal {name!r}: the conductivity must be > 0 S/m (got {conductivity:g})")
         t = SHEET_THICKNESS_MM if thickness is None else float(thickness)
         if not (np.isfinite(t) and t > 0):
             raise ValueError(f"metal {name!r}: the sheet thickness must be > 0 (got {t:g})")
         self.sim, self.name, self.conductivity, self.thickness = sim, name, float(conductivity), t
-        self.label, self.color = label, color
+        self.label, self.color, self.opacity = label, color, _display_opacity(opacity)
         self.drawn_thickness: float | None = None
         #: extrusions (AddLinPoly) thinner than this (drawing units) become sheets; None: none do
         self.sheet_limit: float | None = None
@@ -1041,7 +1060,7 @@ class LossyMetal:
             suffix = f"sheet_{key[1]:g}".replace(".", "p") if key[0] == "sheet" else {"volume": "volume", "pec": "wire"}[key[0]]
             name = self.name if not self.props else f"{self.name}__{suffix}"
             sim = self.sim
-            meta = {"label": self.label, "color": self.color, "kind": "metal"}
+            meta = {"label": self.label, "color": self.color, "opacity": self.opacity, "kind": "metal"}
             if key[0] == "sheet":
                 sim._record(name, **meta, conductivity=self.conductivity, thickness=key[1])
                 prop = sim.csx.AddConductingSheet(name, conductivity=self.conductivity, thickness=key[1] * sim.unit)

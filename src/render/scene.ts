@@ -30,6 +30,8 @@ export function makeMaterial(look: MaterialLook, env: THREE.Texture | null, thic
     transmission: look.transmission,
     transparent: look.opacity < 1,
     opacity: look.opacity,
+    // a see-through part writes no depth: the parts inside or behind it stay visible
+    depthWrite: look.opacity >= 1,
     clearcoat: look.coat,
     clearcoatRoughness: look.coatRoughness,
     envMap: env,
@@ -99,7 +101,7 @@ export function buildModel(bundle: Bundle, infoOf: PartInfoLookup | undefined, o
     const sizes = box.getSize(new THREE.Vector3()).toArray().filter((s) => s > 1e-9);
     const thickness = sizes.length ? Math.min(...sizes) : 1;
     // a custom thickness only matters to translucent parts; opaque ones share one material per look
-    const material = look.transmission > 0 || look.baseColor !== MATERIAL_LOOKS[look.id].baseColor
+    const material = look.transmission > 0 || look.baseColor !== MATERIAL_LOOKS[look.id].baseColor || look.opacity !== MATERIAL_LOOKS[look.id].opacity
       ? (() => { const m = makeMaterial(look, env, thickness); owned.materials.push(m); return m; })()
       : shared(look.id);
     const holder = new THREE.Group();
@@ -108,7 +110,8 @@ export function buildModel(bundle: Bundle, infoOf: PartInfoLookup | undefined, o
     for (const g of geometries) {
       owned.geometries.push(g);
       const mesh = new THREE.Mesh(g, material);
-      mesh.castShadow = true;
+      // a mostly clear part (the design's Opacity) casts no shadow of a solid
+      mesh.castShadow = look.opacity >= 0.5;
       mesh.renderOrder = look.kind === "metal" ? 1 : 0;
       holder.add(mesh);
     }

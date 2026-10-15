@@ -91,6 +91,9 @@ export const [selectedShape, setSelectedShape] = createSignal<number | null>(nul
 export const [exportOpen, setExportOpen] = createSignal(false);
 /** When true, the viewport keeps its camera on the next bundle change (live geometry preview). */
 export const [keepCamera, setKeepCamera] = createSignal(false);
+/** The opening view of a design that was just opened (its saved `view`): the 3D view takes it, instead of the
+ * fitted isometric view, for the first picture of that model, and clears it. */
+export const [openingView, setOpeningView] = createSignal<{ modelId: string; camera: [number, number, number]; target: [number, number, number] } | null>(null);
 export type CenterView = "3d" | "drawing";
 export const [centerView, setCenterView] = createSignal<CenterView>("3d");
 export const [packageOpen, setPackageOpen] = createSignal(false);
