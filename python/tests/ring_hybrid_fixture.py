@@ -30,7 +30,7 @@ SPATIAL_CONTROLS = CONTROLS[:6]
 CAP_S, END_DB, DT_FACTOR = 9e-9, -100., .5
 PLANE_OFFSETS = (3., 4., 6., 8.)
 CALIBRATION_PAIRS = ((0, 2), (1, 3))
-PROTOCOL = 'ring-hybrid-v3'
+PROTOCOL = 'ring-hybrid-v4'
 NATIVE_STEP_RATIO_MAX = .97
 PROPAGATION_MARKER = 'FAIRBEAM-RING-HYBRID-PROPAGATION-BEGIN'
 LIMITS = dict(s_target_abs=.005, phase_target_deg=.5, s_mesh_abs=.0025,
@@ -94,18 +94,19 @@ def geometry():
 
 
 def pulse():
-    """Derivative of a modulated Gaussian: zero DC and suppressed outer band.
+    """Odd sine-modulated Gaussian: zero DC and suppressed outer band.
 
-    The unmodulated envelope spectrum is -24 dB at the comparison edges.
-    Differentiation contributes f/f0, keeping the lower edge above the frozen
-    incident spectral floor. This changes excitation, not the DUT or target.
+    The envelope spectrum is -24 dB at both comparison edges. Unlike cosine
+    modulation, this odd signal has exactly zero DC; unlike differentiation,
+    it does not reduce the lower edge by another f/f0 factor. This changes
+    excitation, not the DUT or target.
     """
     tau = np.sqrt(24*np.log(10)/20)/(np.pi*(FREQUENCIES[-1]-F0))
     omega, t0 = 2*np.pi*F0, 5*tau
     u = f'((t-{t0:.17g})/{tau:.17g})'
     argument = f'({omega:.17g}*(t-{t0:.17g}))'
-    expression = f'(-{2/(omega*tau):.17g}*{u}*cos{argument}-sin{argument})*exp(-{u}^2)'
-    return dict(type='ring-bandpass-derivative', f0_hz=F0, tau_s=float(tau),
+    expression = f'sin{argument}*exp(-{u}^2)'
+    return dict(type='ring-odd-gaussian', f0_hz=F0, tau_s=float(tau), dc_free=True,
                 duration_s=float(10*tau), envelope_edge_db=-24., expression=expression)
 
 
@@ -411,7 +412,14 @@ def source_trace_info(path, meta):
         raise ValueError('complete finite allocated source trace required')
     if not np.allclose(data[:, 0], np.arange(len(data))*dt, rtol=6e-6, atol=dt*1e-6):
         raise ValueError('source timestamps differ beyond native text precision')
-    return dict(sha256=sha(path), samples=len(data), last_s=float(data[-1, 0]), timestamp_print_rtol=6e-6)
+    p = meta['excitation'];time = np.arange(len(data))*dt
+    offset = time-5*p['tau_s']
+    expected = np.sin(2*np.pi*p['f0_hz']*offset)*np.exp(-(offset/p['tau_s'])**2)
+    error = float(abs(data[:, 1]-expected).max()/max(abs(expected).max(), np.finfo(float).tiny))
+    if not np.isfinite(error) or error > 6e-6:
+        raise ValueError('native source differs from the declared odd Gaussian')
+    return dict(sha256=sha(path), samples=len(data), last_s=float(data[-1, 0]),
+                timestamp_print_rtol=6e-6, waveform_relative_error_max=error, waveform_limit=6e-6)
 
 
 def quality(meta):

@@ -138,7 +138,7 @@ def synthetic_waves(s, n=4):
 
 
 class RingHybridTests(unittest.TestCase):
-    def test_bandpass_derivative_matches_independent_spectrum_and_zero_dc(self):
+    def test_odd_gaussian_matches_independent_spectrum_and_zero_dc(self):
         p = f.pulse();tau = p['tau_s']
         t = np.linspace(0., p['duration_s'], 40001)
         values = eval(p['expression'].replace('^', '**'), {'__builtins__': {}},
@@ -146,22 +146,48 @@ class RingHybridTests(unittest.TestCase):
         self.assertLess(abs(np.trapezoid(values, t))/tau, 1e-14)
         frequencies = np.array([1.5e9, 3e9, 4.5e9, 6e9])
         measured = np.array([abs(np.trapezoid(values*np.exp(-2j*np.pi*x*t), t)) for x in frequencies])
-        analytical = frequencies/f.F0*np.sqrt(np.pi)*tau/2*(
-            np.exp(-(np.pi*tau*(frequencies-f.F0))**2)+
+        analytical = np.sqrt(np.pi)*tau/2*(
+            np.exp(-(np.pi*tau*(frequencies-f.F0))**2)-
             np.exp(-(np.pi*tau*(frequencies+f.F0))**2))
         np.testing.assert_allclose(measured/tau, analytical/tau, rtol=0, atol=3e-11)
         self.assertGreater(measured[0]/measured[1], f.LIMITS['incident_floor'])
         self.assertLess(measured[3]/measured[1], 4e-5)
         self.assertLess(p['duration_s'], f.CAP_S)
 
+    def test_source_weighted_transfers_keep_the_frozen_spectral_floor(self):
+        tau = f.pulse()['tau_s'];freq = f.FREQUENCIES
+        envelope = np.exp(-(np.pi*tau*(freq-f.F0))**2)-np.exp(-(np.pi*tau*(freq+f.F0))**2)
+        envelope /= envelope.max()
+        v, i = synthetic_waves(f.reference())
+        actual, diagnostics = f.extract(v*envelope, i*envelope)
+        np.testing.assert_allclose(actual, f.reference(), rtol=0, atol=2e-14)
+        self.assertGreater(diagnostics['incident_floor'], f.LIMITS['incident_floor'])
+        self.assertGreater(diagnostics['transfer_floor'], f.LIMITS['transfer_floor'])
+        # A differentiated narrow-band pulse loses the required lower-edge rank.
+        with self.assertRaisesRegex(ValueError, 'feed transfer'):
+            f.extract(v*envelope*freq/f.F0, i*envelope*freq/f.F0)
+
     def test_native_source_expression_and_duration_are_recorded(self):
         sim, meta = f.build(2, 1)
         self.assertEqual(meta['excitation'], f.pulse())
         self.assertEqual(meta['source_duration_s'], f.pulse()['duration_s'])
-        self.assertEqual(sim.excitation['type'], 'ring-bandpass-derivative')
+        self.assertEqual(sim.excitation['type'], 'ring-odd-gaussian')
         with tempfile.TemporaryDirectory() as temp:
             path = Path(temp)/'input.xml';sim.fdtd.Write2XML(str(path));tree = ET.parse(path)
         self.assertEqual(tree.find('.//Excitation').get('Function'), f.pulse()['expression'])
+
+    def test_actual_native_source_trace_must_match_the_declared_waveform(self):
+        p = f.pulse();dt = 1e-12;steps = 9000;t = np.arange(steps+1)*dt
+        offset = t-5*p['tau_s']
+        expected = np.sin(2*np.pi*p['f0_hz']*offset)*np.exp(-(offset/p['tau_s'])**2)
+        meta = dict(native=dict(dt_s=dt), max_timesteps=steps, excitation=p)
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp)/'et'
+            np.savetxt(path, np.column_stack((t, expected)), fmt='%.6e')
+            self.assertLess(f.source_trace_info(path, meta)['waveform_relative_error_max'], 6e-6)
+            np.savetxt(path, np.column_stack((t, expected*1.01)), fmt='%.6e')
+            with self.assertRaisesRegex(ValueError, 'declared odd Gaussian'):
+                f.source_trace_info(path, meta)
 
     def test_wave_reference_against_independent_line_current_network(self):
         frequencies = np.r_[f.FREQUENCIES, 2e9, 4e9]
