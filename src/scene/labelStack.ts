@@ -16,7 +16,7 @@ export function stackLabels(labels: readonly ScreenLabel[], gap = 2): number[] {
   const order = labels.map((l, i) => ({ ...l, i, dy: 0 })).sort((a, b) => b.y - a.y || a.i - b.i);
   const placed: typeof order = [];
   for (const item of order) {
-    for (let guard = 0; guard < 64; guard++) {
+    for (let guard = 0; guard <= placed.length; guard++) {
       const y = item.y - item.dy;
       const hit = placed.find((p) => {
         const py = p.y - p.dy;

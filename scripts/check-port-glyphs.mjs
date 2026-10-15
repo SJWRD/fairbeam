@@ -93,5 +93,8 @@ assert.ok(size(r).z >= 0.3 - 1e-9, "flat resistor thickened");
   }
   assert.ok(lift.every((d) => d >= 0) && lift.filter((d) => d === 0).length === 1, "only upward, and the lowest stays");
   assert.deepEqual(stackLabels([P(100, 100), P(100, 140)]), [0, 0], "labels a row apart do not move");
+  const dense = stackLabels(Array.from({ length: 100 }, () => P(100, 100)));
+  assert.equal(new Set(dense).size, dense.length, "dense port arrays keep all labels separate beyond 64 rows");
+  assert.ok(dense.every((d, i) => i === 0 || d - dense[i - 1] >= 20), "dense labels retain the full height and gap");
 }
 console.log("port glyph checks passed");
