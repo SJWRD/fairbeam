@@ -607,7 +607,9 @@ export function designChecks(d: Design): Check[] {
     }
     (d.ports ?? []).flatMap((port, i) => portFeedEntries(port, `ports[${i}]`)).forEach(([w, port]) => { for (const end of ["start", "stop"] as const) {
       const coords = port[end].map((v) => { try { return evaluate(v, names); } catch { return NaN; } });
-      AXES.forEach((axis, k) => { const lines = resolved[axis]; if (lines && Number.isFinite(coords[k]) && !lines.some((line) => Math.abs(line-coords[k]) <= 1e-6)) error(`${w}.${end}[${k}]`, "expr", `port ${end} coordinate must lie on a manual ${axis} mesh line (within 1e-6 mm)`); });
+      // a coaxial port's centerline needs no transverse line (design.py build): only its ends along the axis
+      const checked = (axis: Axis) => port.type !== "coaxial" || axis === port.direction;
+      AXES.forEach((axis, k) => { const lines = resolved[axis]; if (checked(axis) && lines && Number.isFinite(coords[k]) && !lines.some((line) => Math.abs(line-coords[k]) <= 1e-6)) error(`${w}.${end}[${k}]`, "expr", `port ${end} coordinate must lie on a manual ${axis} mesh line (within 1e-6 mm)`); });
     }});
   }
   if (rawMesh.refine_features !== undefined && typeof rawMesh.refine_features !== "boolean")
