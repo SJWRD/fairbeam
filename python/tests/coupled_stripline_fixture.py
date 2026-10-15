@@ -1,6 +1,6 @@
-"""Own homogeneous thin-PEC baseline for Example 7.7 (p. 355).
+"""Own homogeneous thin-PEC cases for Example 7.7 (p. 355).
 
-The finite copper/lossy realization is a separate, as yet unqualified case.
+Constant electric conductivity is opt-in; finite copper is outside scope.
 No gallery model, material implementation or saved-project format is changed.
 Cohn's thin centered-strip conformal map is described in the primary note:
 https://www.rogerscorp.cn/-/media/project/rogerscorp/documents/advanced-electronics-solutions/english/electrical-design-data/design-equations-for-broadside-and-edgewise-stripline.pdf
@@ -15,6 +15,7 @@ import sys
 import numpy as np
 import CSXCAD
 from openEMS import ports as native_ports
+from openEMS import physical_constants
 from openEMS.physical_constants import Z0 as ETA0
 
 from fairbeam import Simulation, excitation, multiport
@@ -26,7 +27,7 @@ FREQUENCIES = np.linspace(1e9, 5e9, 201)
 MESHES, PILOT_MESHES, CONTROL_MESH, THREADS = (6, 8, 10), (4,), 6, 4
 CONTROLS = ("ordinary", "boundary", "sidewall", "guard", "time", "dt")
 CAP_S, END_DB, DT_FACTOR = 9e-9, -100., .5
-PROTOCOL = "coupled-stripline-v4-strict-window"
+PROTOCOL = "coupled-stripline-v5-constant-kappa"
 NATIVE_STEP_RATIO_MAX = .97
 PROPAGATION_MARKER = "FAIRBEAM-COUPLED-STRIPLINE-PROPAGATION-BEGIN"
 LIMITS = dict(s_target_abs=.005, phase_target_deg=.5, beta_target_rel=.005,
@@ -35,10 +36,15 @@ LIMITS = dict(s_target_abs=.005, phase_target_deg=.5, beta_target_rel=.005,
               recurrence_residual=.001, incident_condition=30., incident_floor=.02,
               reciprocity_abs=.001, singular_power_max=1.005,
               transfer_det_abs=.001, transfer_symmetry_abs=.001, transfer_fit_rel=.001,
-              transfer_condition_max=30., transfer_floor_min=.02)
+              transfer_condition_max=30., transfer_floor_min=.02,
+              alpha_target_rel=.01, alpha_mesh_rel=.005, alpha_control_rel=.002)
 SCOPE = ("Homogeneous centered thin PEC coupled strips; internal TEM planes, "
          "two ground halves, four-source inverse; finite sidewalls explicitly controlled. "
          "No finite-copper or broadband dielectric-loss certificate.")
+LOSS_SCOPE = ("Homogeneous centered thin PEC coupled strips with constant electric "
+              "conductivity; tan(delta) is specified at 3 GHz and varies as 1/f. "
+              "Internal-plane S/phase and attenuation checks only; no finite copper, "
+              "flat broadband loss tangent, fabricated launch or infinite-directivity certificate.")
 
 
 def identity():
@@ -52,7 +58,8 @@ def identity():
 def runtime_identity():
     value=base_runtime()
     value.update(python=sys.version,executable=sys.executable,numpy=np.__version__,
-                 port_helpers_sha256=sha(native_ports.__file__))
+                 port_helpers_sha256=sha(native_ports.__file__),
+                 physical_constants_sha256=sha(physical_constants.__file__))
     folder=Path(CSXCAD.__file__).parent
     value['csxcad_bindings']={str(p.resolve()):sha(p) for p in
         sorted(folder.glob('*.pyd'))+sorted(folder.glob('*.so'))+[Path(CSXCAD.__file__)]}
@@ -107,7 +114,28 @@ def geometry():
                 requested_loss_tangent=.05,scope=SCOPE)
 
 
-def reference(freq=FREQUENCIES):
+def loss_parameters(loss_tangent=0., freq=FREQUENCIES):
+    """Actual constant-kappa material, not a frequency-flat loss tangent."""
+    if (isinstance(loss_tangent,(bool,np.bool_)) or np.ndim(loss_tangent)!=0
+            or np.iscomplexobj(loss_tangent) or np.iscomplexobj(freq)):
+        raise ValueError('real loss tangent in 0..0.1 and real frequencies required')
+    try:
+        loss_tangent=float(loss_tangent)
+    except (TypeError,ValueError):
+        raise ValueError('real loss tangent in 0..0.1 required') from None
+    freq=np.asarray(freq,float)
+    if (not np.isfinite(loss_tangent) or not 0<=loss_tangent<=.1 or freq.ndim!=1
+            or not freq.size or not np.isfinite(freq).all() or np.any((freq<1e9)|(freq>5e9))):
+        raise ValueError('loss tangent in 0..0.1 and frequencies in 1..5 GHz required')
+    kappa=loss_tangent*2*np.pi*F0*physical_constants.EPS0*ER
+    z=np.array(geometry()['modal_impedances_ohm'])[:,None]
+    if kappa==0:
+        return kappa,2j*np.pi*freq*np.sqrt(ER)/C0,np.broadcast_to(z,(2,len(freq)))
+    epsilon=ER-1j*kappa/(2*np.pi*freq*physical_constants.EPS0)
+    return kappa,2j*np.pi*freq/C0*np.sqrt(epsilon),z*np.sqrt(ER/epsilon)
+
+
+def reference(freq=FREQUENCIES, *, loss_tangent=0.):
     """Stamp separate even/odd lines, then transform back to conductor ports.
 
     Port order is left A, right A, right B, left B. The coupled port is 4;
@@ -116,16 +144,22 @@ def reference(freq=FREQUENCIES):
     freq=np.asarray(freq,float)
     if freq.ndim!=1 or not freq.size or not np.isfinite(freq).all() or np.any((freq<1e9)|(freq>5e9)):
         raise ValueError("finite frequencies in the declared 1..5 GHz band required")
+    kappa,gamma,impedances=loss_parameters(loss_tangent,freq)
     theta=np.pi*freq/(2*F0)
     q=np.array([[1,1],[1,-1]])/np.sqrt(2)
     y=np.zeros((len(freq),4,4),complex)
-    for mode,z in enumerate(geometry()["modal_impedances_ohm"]):
+    for mode,z in enumerate(impedances if kappa else geometry()["modal_impedances_ohm"]):
         outer=np.outer(q[:,mode],q[:,mode])
+        if kappa:
+            gl=gamma*geometry()['length_mm']*1e-3
+            diagonal,offdiagonal=np.cosh(gl)/np.sinh(gl)/z,-1/np.sinh(gl)/z
+        else:
+            diagonal,offdiagonal=-1j/np.tan(theta)/z,1j/np.sin(theta)/z
         for side,other in (((0,3),(1,2)),((1,2),(0,3))):
             for a in range(2):
                 for b in range(2):
-                    y[:,side[a],side[b]] += -1j/np.tan(theta)/z*outer[a,b]
-                    y[:,side[a],other[b]] += 1j/np.sin(theta)/z*outer[a,b]
+                    y[:,side[a],side[b]] += diagonal*outer[a,b]
+                    y[:,side[a],other[b]] += offdiagonal*outer[a,b]
     return 2*np.linalg.inv(np.eye(4)+Z0*y)-np.eye(4)
 
 
@@ -157,12 +191,17 @@ def transverse_mesh(n, g):
     return y,z,delta
 
 
-def build(n, port, *, control="ordinary"):
+def build(n, port, *, control="ordinary", loss_tangent=0.):
     if (isinstance(n,bool) or n not in MESHES+PILOT_MESHES or not isinstance(n,int)
             or isinstance(port,bool) or not isinstance(port,int) or port not in range(1,5)
             or control not in CONTROLS):
         raise ValueError("declared integer mesh, source and independent control required")
-    g=geometry();length=g["length_mm"];dx=length/(8*n)
+    kappa,_,_=loss_parameters(loss_tangent)
+    loss_tangent=float(loss_tangent)
+    g=geometry()
+    if loss_tangent:
+        g.update(loss_tangent=loss_tangent,tan_d_freq_hz=F0,kappa_s_m=kappa,scope=LOSS_SCOPE)
+    length=g["length_mm"];dx=length/(8*n)
     extent=20*n if control in ("guard","boundary") else 16*n
     ticks=np.arange(-extent,extent+1)
     x=ticks*dx
@@ -181,7 +220,9 @@ def build(n, port, *, control="ordinary"):
     axes=dict(x=x,y=y,z=z)
     for a,lines in axes.items():
         sim.mesh.AddLine(a,lines)
-    sim.dielectric("homogeneous",ER).AddBox([x[0],y[0],z[0]],[x[-1],y[-1],z[-1]],priority=0)
+    material=(sim.dielectric("homogeneous",ER,tan_d=loss_tangent,tan_d_freq=F0)
+              if loss_tangent else sim.dielectric("homogeneous",ER))
+    material.AddBox([x[0],y[0],z[0]],[x[-1],y[-1],z[-1]],priority=0)
     ground=sim.metal("grounds")
     for height in (-B/2,B/2):
         ground.AddBox([x[0],y[0],height],[x[-1],y[-1],height],priority=10)
@@ -226,7 +267,7 @@ def build(n, port, *, control="ordinary"):
               max_timesteps=steps,cap_s=cap,end_db=end_db,dt_factor=factor,dx_mm=dx,
               voltage_planes_mm=[-length/2,length/2],ampere_heights_mm=contours,
               source_distance_mm=source_length-length/2,source_duration_s=excitation.dgauss_duration_s(FREQUENCIES[-1]),
-              threads=THREADS,scope=SCOPE)
+              threads=THREADS,scope=g['scope'],loss_tangent=loss_tangent)
     return sim,meta
 
 
@@ -359,8 +400,8 @@ def native_bound_ok(meta):
         and run.get('converged') is False and run.get('energy_trace')==[] and 'timesteps' not in run)
 
 
-def operator_preflight(out,n,port,control='ordinary'):
-    out=Path(out);sim,meta=build(n,port,control=control)
+def operator_preflight(out,n,port,control='ordinary',loss_tangent=0.):
+    out=Path(out);sim,meta=build(n,port,control=control,loss_tangent=loss_tangent)
     sim.fdtd.SetTimeStep(0.)
     sim.fdtd.Write2XML(str(out/'operator-input.xml'))
     run=sim.run(str(out/'operator'),threads=THREADS,exact=True,echo=True,setup_only=True)
@@ -424,15 +465,15 @@ def probe_spectra(raw):
     return v,current
 
 
-def acquire(out,n,port,control='ordinary'):
+def acquire(out,n,port,control='ordinary',loss_tangent=0.):
     out=Path(out);out.mkdir(parents=True,exist_ok=False)
-    sim,meta=build(n,port,control=control)
+    sim,meta=build(n,port,control=control,loss_tangent=loss_tangent)
     source,runtime=identity(),runtime_identity()
     sim.fdtd.Write2XML(str(out/'input.xml'))
     meta.update(source_sha256=source,runtime=runtime,limits=LIMITS,input_sha256=sha(out/'input.xml'),
                 started_utc=datetime.now(timezone.utc).isoformat())
     save(out/'declared.json',meta)
-    meta['operator_preflight']=operator_preflight(out,n,port,control)
+    meta['operator_preflight']=operator_preflight(out,n,port,control,loss_tangent)
     meta['operator_sha256']=sha(out/'operator.json')
     if source!=identity() or runtime!=runtime_identity():
         raise RuntimeError('source/runtime changed during native setup')
@@ -465,7 +506,7 @@ def read(out):
     record=json.loads((out/'operator.json').read_text())
     if record!=meta['operator_preflight'] or sha(out/'operator-input.xml')!=record['input_sha256'] or not native_bound_ok(meta):
         raise ValueError('invalid native stability admission')
-    _,expected=build(meta['n'],meta['excited_port'],control=meta['control'])
+    _,expected=build(meta['n'],meta['excited_port'],control=meta['control'],loss_tangent=meta['loss_tangent'])
     if any(meta[k]!=value for k,value in json.loads(json.dumps(expected)).items()):
         raise ValueError('changed geometry, measurement planes or acquisition settings')
     vn,cn=probe_names()
@@ -491,18 +532,22 @@ def read(out):
 def matrix(root):
     root=Path(root);records=[read(root/f'port{p}') for p in range(1,5)]
     first=records[0][0]
-    keys=('n','control','geometry','mesh_mm','cap_s','end_db','dt_factor','dx_mm')
+    keys=('n','control','geometry','mesh_mm','cap_s','end_db','dt_factor','dx_mm','loss_tangent')
     if any(r[0]['excited_port']!=p or any(r[0][k]!=first[k] for k in keys) for p,r in enumerate(records,1)):
         raise ValueError('mixed acquisition cohort')
     s,d=extract(np.array([r[1] for r in records]),np.array([r[2] for r in records]),first['dx_mm']*1e-3)
-    target=reference();beta=2*np.pi*FREQUENCIES*np.sqrt(ER)/C0
-    zm=np.array(first['geometry']['modal_impedances_ohm'])[None,None,:,None]
+    loss=first['loss_tangent']
+    target=reference(loss_tangent=loss)
+    _,gamma,zm=loss_parameters(loss)
+    zm=zm[None,None]
     result={k:first[k] for k in keys if k!='mesh_mm'}
     result.update(all_native_complete=all(all(r[3].values()) for r in records),
         native_quality=[r[3] for r in records],qualified=False,directivity_qualified=False,
         s_target_abs=float(abs(s-target).max()),phase_target_deg=phase_change(s,target),
-        beta_target_rel=float(abs(d['gamma_transfer_per_m'].imag/beta-1).max()),
-        local_beta_diagnostic_rel=float(abs(d['gamma_per_m'].imag/beta-1).max()),
+        beta_target_rel=float(abs(d['gamma_transfer_per_m'].imag/gamma.imag-1).max()),
+        local_beta_diagnostic_rel=float(abs(d['gamma_per_m'].imag/gamma.imag-1).max()),
+        alpha_target_rel=float(abs(d['gamma_transfer_per_m'].real/gamma.real-1).max()) if loss else None,
+        alpha_np_m=d['gamma_transfer_per_m'].real.tolist() if loss else None,
         impedance_target_rel=max(float(abs(d['modal_z_ohm']/zm-1).max()),
             float(abs(d['transfer_z_ohm']/zm[0]-1).max())),
         contour_s_abs=d['contour_s_abs'],staggering_s_abs=d['staggering_s_abs'],
@@ -516,7 +561,9 @@ def matrix(root):
         ('s_target_abs','phase_target_deg','beta_target_rel','impedance_target_rel',
          'contour_s_abs','recurrence_residual','reciprocity_abs','singular_power_max',
          'transfer_det_abs','transfer_symmetry_abs','transfer_fit_rel'))
-    result['directivity_note']='Ideal isolation is zero; finite numerical directivity is diagnostic, not an infinite-directivity certificate.'
+    if loss:
+        result['target_passes'] &= result['alpha_target_rel']<=LIMITS['alpha_target_rel']
+    result['directivity_note']='Directivity is diagnostic; the declared gates cover linear S and phase, not a separate directivity certificate.'
     np.savez_compressed(root/'matrix.npz',frequency_hz=FREQUENCIES,s=s,
                         gamma_per_m=d['gamma_per_m'],modal_z_ohm=d['modal_z_ohm'],
                         gamma_transfer_per_m=d['gamma_transfer_per_m'],transfer_z_ohm=d['transfer_z_ohm'])
@@ -526,26 +573,37 @@ def matrix(root):
 
 def study(root):
     root=Path(root);ordinary=[matrix(root/f'n{n}') for n in MESHES]
-    if any((r['n'],r['control'])!=(n,'ordinary') for n,(_,r) in zip(MESHES,ordinary)):
+    loss=ordinary[0][1]['loss_tangent']
+    _,gamma,_=loss_parameters(loss)
+    if any((r['n'],r['control'],r['loss_tangent'])!=(n,'ordinary',loss) for n,(_,r) in zip(MESHES,ordinary)):
         raise ValueError('incorrect ordinary cohort identity')
     mesh=[dict(s_abs=float(abs(b[0]-a[0]).max()),phase_deg=phase_change(b[0],a[0]))
           for a,b in zip(ordinary,ordinary[1:])]
+    if loss:
+        for row,(a,b) in zip(mesh,zip(ordinary,ordinary[1:])):
+            row['alpha_rel']=float((abs(np.array(b[1]['alpha_np_m'])-a[1]['alpha_np_m'])/gamma.real).max())
     nominal=ordinary[MESHES.index(CONTROL_MESH)][0]
+    nominal_row=ordinary[MESHES.index(CONTROL_MESH)][1]
     controls={}
     for kind in CONTROLS[1:]:
         s,row=matrix(root/f'n{CONTROL_MESH}_{kind}')
-        if (row['n'],row['control'])!=(CONTROL_MESH,kind):
+        if (row['n'],row['control'],row['loss_tangent'])!=(CONTROL_MESH,kind,loss):
             raise ValueError('incorrect independent control identity')
         change,pchange=float(abs(s-nominal).max()),phase_change(s,nominal)
         controls[kind]=dict(s_abs=change,phase_deg=pchange,native=row,
             passes=change<=LIMITS['s_control_abs'] and pchange<=LIMITS['phase_control_deg'])
+        if loss:
+            controls[kind]['alpha_rel']=float((abs(np.array(row['alpha_np_m'])-nominal_row['alpha_np_m'])/gamma.real).max())
+            controls[kind]['passes'] &= controls[kind]['alpha_rel']<=LIMITS['alpha_control_rel']
     qualified=bool(all(r['all_native_complete'] and r['target_passes'] for _,r in ordinary)
         and all(r['s_abs']<=LIMITS['s_mesh_abs'] and r['phase_deg']<=LIMITS['phase_mesh_deg'] for r in mesh)
         and all(r['passes'] and r['native']['all_native_complete'] and r['native']['target_passes'] and
                 r['native']['contour_s_abs']<=LIMITS['contour_s_abs'] and
                 r['native']['recurrence_residual']<=LIMITS['recurrence_residual'] for r in controls.values()))
-    result=dict(protocol=PROTOCOL,scope=SCOPE,limits=LIMITS,meshes=[r for _,r in ordinary],
+    if loss:
+        qualified &= all(r['alpha_rel']<=LIMITS['alpha_mesh_rel'] for r in mesh)
+    result=dict(protocol=PROTOCOL,scope=LOSS_SCOPE if loss else SCOPE,limits=LIMITS,loss_tangent=loss,meshes=[r for _,r in ordinary],
                 mesh_changes=mesh,controls=controls,qualified=qualified,directivity_qualified=False,
-                finite_copper_loss_qualified=False)
+                finite_copper_loss_qualified=False,constant_kappa_qualified=bool(loss and qualified))
     save(root/'comparison.json',result)
     return result

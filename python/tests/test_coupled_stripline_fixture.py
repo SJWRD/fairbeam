@@ -14,6 +14,7 @@ import tempfile
 import time
 import unittest
 from unittest.mock import patch
+import xml.etree.ElementTree as ET
 
 import numpy as np
 
@@ -47,25 +48,25 @@ def audit_header(text,meta):
                 excitation_timesteps=int(pulse[1]))
 
 
-def acquire_serial(out,n,rate=40.,control='ordinary'):
+def acquire_serial(out,n,rate=40.,control='ordinary',loss_tangent=0.):
     out=Path(out).resolve()
     if out.exists():
         raise ValueError('fresh output directory required')
-    _,meta=f.build(n,1,control=control)
+    _,meta=f.build(n,1,control=control,loss_tangent=loss_tangent)
     estimate=forecast(meta,rate)
     if estimate>1800:
         raise ValueError(f'forecast {estimate/60:.2f} min per port exceeds 30; defer before launch')
     out.mkdir(parents=True)
     source,runtime=f.identity(),f.runtime_identity()
     progress=dict(status='prepared',n=n,control=control,source_sha256=source,runtime=runtime,
-                  limits=f.LIMITS,estimated_seconds_per_port=estimate,rate_assumption_mcps=rate,ports=[])
+                  limits=f.LIMITS,loss_tangent=meta['loss_tangent'],estimated_seconds_per_port=estimate,rate_assumption_mcps=rate,ports=[])
     f.save(out/'progress.json',progress)
     for port in range(1,5):
         if source!=f.identity() or runtime!=f.runtime_identity():
             raise RuntimeError('source/runtime changed between excitations')
         destination=out/f'port{port}'
         command=[sys.executable,'-m','tests.test_coupled_stripline_fixture','--fdtd','--worker-case',
-                 '--mesh',str(n),'--port',str(port),'--control',control,'--out',str(destination)]
+                 '--mesh',str(n),'--port',str(port),'--control',control,'--loss-tangent',str(meta['loss_tangent']),'--out',str(destination)]
         start,wall=time.monotonic(),time.time()
         code,failure=None,None
         with (out/f'port{port}.log').open('w',encoding='utf-8') as log:
@@ -137,11 +138,13 @@ def synthetic():
     return v,current,dx,target
 
 
-def synthetic_modes(scale=1.,alpha=0.):
+def synthetic_modes(scale=1.,alpha=0.,*,gamma=None,z=None):
     """Four independent modal waves; phase velocity is deliberately variable."""
     freq=f.FREQUENCIES;length=f.geometry()['length_mm']*1e-3;dx=length/80
-    gamma=alpha+2j*np.pi*freq*np.sqrt(f.ER)/f.C0*scale
-    z=np.array(f.geometry()['modal_impedances_ohm'])[:,None]
+    if gamma is None:
+        gamma=alpha+2j*np.pi*freq*np.sqrt(f.ER)/f.C0*scale
+    if z is None:
+        z=np.array(f.geometry()['modal_impedances_ohm'])[:,None]
     q=np.array([[1,1],[1,-1]])/np.sqrt(2)
     forward=np.zeros((4,2,len(freq)),complex);backward=forward.copy()
     forward[0,0]=1;backward[1,0]=1;forward[2,1]=1;backward[3,1]=1
@@ -159,6 +162,100 @@ def synthetic_modes(scale=1.,alpha=0.):
 
 
 class CoupledStriplineControls(unittest.TestCase):
+    def test_constant_conductivity_is_not_a_flat_loss_tangent(self):
+        kappa,gamma,z=f.loss_parameters(.05)
+        actual=kappa/(2*np.pi*f.FREQUENCIES*f.physical_constants.EPS0*f.ER)
+        np.testing.assert_allclose(actual,.05*f.F0/f.FREQUENCIES,rtol=8*np.finfo(float).eps)
+        np.testing.assert_allclose(actual[[0,100,-1]],[.15,.05,.03],rtol=8*np.finfo(float).eps)
+        self.assertTrue(np.all(gamma.real>0))
+        self.assertTrue(np.all(z.real>0))
+        self.assertTrue(np.all(z.imag>0))
+        for bad in (True,False,None,-.01,.11,np.nan,np.inf,1j,[],[.05]):
+            with self.assertRaises(ValueError):f.loss_parameters(bad)
+
+    def test_lossy_reference_matches_independent_modal_abcd(self):
+        _,gamma,z=f.loss_parameters(.05)
+        gl=gamma*f.geometry()['length_mm']*1e-3
+        c,h=np.cosh(gl),np.sinh(gl)
+        denominator=2*c+(z/f.Z0+f.Z0/z)*h
+        reflected=(z/f.Z0-f.Z0/z)*h/denominator
+        transmitted=2/denominator
+        modal=np.zeros((201,4,4),complex)
+        for mode,ids in enumerate(((0,2),(1,3))):
+            modal[:,ids[0],ids[0]]=modal[:,ids[1],ids[1]]=reflected[mode]
+            modal[:,ids[0],ids[1]]=modal[:,ids[1],ids[0]]=transmitted[mode]
+        q=np.array([[1.,1.],[1.,-1.]])/np.sqrt(2)
+        p=np.zeros((4,4));p[0,:2]=q[0];p[3,:2]=q[1];p[1,2:]=q[0];p[2,2:]=q[1]
+        expected=p@modal@p.T;actual=f.reference(loss_tangent=.05)
+        np.testing.assert_allclose(actual,expected,atol=1.6e-15,rtol=0)
+        self.assertLess(float((np.linalg.svd(actual,compute_uv=False)[:,0]**2).max()),1.)
+        self.assertGreater(abs(actual[:,0,0]).max(),.01)
+        self.assertGreater(abs(actual[:,2,0]).max(),.001)
+        np.testing.assert_allclose(actual,actual.transpose(0,2,1),atol=5e-16,rtol=0)
+        np.testing.assert_array_equal(f.reference(loss_tangent=0.),f.reference())
+
+    def test_complex_propagation_and_impedance_are_measured_without_normalization(self):
+        _,gamma,z=f.loss_parameters(.05)
+        v,i,dx,_=synthetic_modes(gamma=gamma,z=z)
+        actual,row=f.extract(v,i,dx)
+        np.testing.assert_allclose(actual,f.reference(loss_tangent=.05),atol=3e-14,rtol=0)
+        np.testing.assert_allclose(row['gamma_transfer_per_m'],np.broadcast_to(gamma,(2,2,201)),atol=1e-11,rtol=2e-13)
+        np.testing.assert_allclose(row['modal_z_ohm'],np.broadcast_to(z,(2,2,2,201)),atol=1e-11,rtol=3e-13)
+
+    def test_wrong_attenuation_cannot_hide_behind_a_passing_s_target(self):
+        _,gamma,z=f.loss_parameters(.05)
+        wrong=1.02*gamma.real+1j*gamma.imag
+        v,i,dx,_=synthetic_modes(gamma=wrong,z=z)
+        def fake(path):
+            p=int(path.name.removeprefix('port'))
+            meta=dict(n=6,control='ordinary',excited_port=p,geometry=f.geometry(),mesh_mm={},
+                cap_s=f.CAP_S,end_db=f.END_DB,dt_factor=f.DT_FACTOR,dx_mm=dx*1e3,loss_tangent=.05)
+            return meta,v[p-1],i[p-1],dict(synthetic_native=True)
+        with tempfile.TemporaryDirectory() as temp,patch.object(f,'read',side_effect=fake):
+            _,result=f.matrix(temp)
+        self.assertLess(result['s_target_abs'],f.LIMITS['s_target_abs'])
+        self.assertGreater(result['alpha_target_rel'],f.LIMITS['alpha_target_rel'])
+        self.assertFalse(result['target_passes'])
+
+    def test_attenuation_mesh_and_control_gates_are_independent_of_s_agreement(self):
+        reference=f.reference(loss_tangent=.05);_,gamma,_=f.loss_parameters(.05)
+        for failure in ('none','mesh','control'):
+            def fake(path):
+                name=path.name;n=int(name[1:].split('_')[0])
+                control=name.split('_')[1] if '_' in name else 'ordinary'
+                offset=(.006 if failure=='mesh' and n==6 else
+                        .003 if failure=='control' and control=='dt' else 0.)
+                alpha=np.broadcast_to(gamma.real*(1+offset),(2,2,201)).tolist()
+                return reference.copy(),dict(n=n,control=control,loss_tangent=.05,
+                    all_native_complete=True,target_passes=True,contour_s_abs=0.,
+                    recurrence_residual=0.,alpha_np_m=alpha)
+            with tempfile.TemporaryDirectory() as temp,patch.object(f,'matrix',side_effect=fake):
+                row=f.study(temp)
+            self.assertEqual(row['qualified'],failure=='none')
+            self.assertEqual(row['constant_kappa_qualified'],failure=='none')
+            if failure=='mesh':self.assertGreater(row['mesh_changes'][0]['alpha_rel'],f.LIMITS['alpha_mesh_rel'])
+            if failure=='control':
+                self.assertEqual(row['controls']['dt']['s_abs'],0.)
+                self.assertFalse(row['controls']['dt']['passes'])
+
+    def test_native_material_serialization_changes_only_the_opt_in_loss(self):
+        ordinary,a=f.build(6,1);lossy,b=f.build(6,1,loss_tangent=.05)
+        self.assertEqual(a['geometry'],f.geometry())
+        for key in ('mesh_mm','voltage_planes_mm','ampere_heights_mm','ports','declared_dt_s'):
+            self.assertEqual(a[key],b[key])
+        for key in ('width_mm','gap_mm','b_mm','length_mm','modal_impedances_ohm'):
+            self.assertEqual(a['geometry'][key],b['geometry'][key])
+        with tempfile.TemporaryDirectory() as temp:
+            for sim,expected in ((ordinary,0.),(lossy,f.loss_parameters(.05)[0])):
+                path=Path(temp)/'input.xml';sim.fdtd.Write2XML(str(path))
+                material=next(n for n in ET.parse(path).iter('Material') if n.get('Name')=='homogeneous')
+                # Isotropy=1 selects component zero for every direction. XML
+                # keeps the unused components and uses seven significant digits.
+                self.assertEqual(material.get('Isotropy'),'1')
+                kappa=np.fromstring(material.find('Property').get('Kappa'),sep=',')
+                self.assertEqual(kappa.shape,(3,))
+                np.testing.assert_allclose(kappa[0],expected,rtol=5e-7,atol=0.)
+
     def test_conformal_map_inverse_and_isolated_strip_limit(self):
         g=f.geometry()
         np.testing.assert_allclose(f.impedances(g['width_mm'],g['gap_mm']),
@@ -236,7 +333,7 @@ class CoupledStriplineControls(unittest.TestCase):
         def fake(path):
             p=int(path.name.removeprefix('port'))
             meta=dict(n=6,control='ordinary',excited_port=p,geometry=f.geometry(),mesh_mm={},
-                      cap_s=f.CAP_S,end_db=f.END_DB,dt_factor=f.DT_FACTOR,dx_mm=dx*1e3)
+                      cap_s=f.CAP_S,end_db=f.END_DB,dt_factor=f.DT_FACTOR,dx_mm=dx*1e3,loss_tangent=0.)
             return meta,v[p-1],i[p-1],dict(synthetic_native=True)
         with tempfile.TemporaryDirectory() as temp,patch.object(f,'read',side_effect=fake):
             _,result=f.matrix(temp)
@@ -358,7 +455,7 @@ class CoupledStriplineControls(unittest.TestCase):
             s=ref.copy()
             if n==f.MESHES[0]:
                 s[:,0,0]+=.01
-            return s,dict(n=n,control=control,all_native_complete=True,target_passes=True,
+            return s,dict(n=n,control=control,loss_tangent=0.,all_native_complete=True,target_passes=True,
                           contour_s_abs=0.,recurrence_residual=0.)
         with tempfile.TemporaryDirectory() as temp,patch.object(f,'matrix',side_effect=fake):
             row=f.study(temp)
@@ -372,7 +469,7 @@ class CoupledStriplineControls(unittest.TestCase):
         def fake(path):
             name=path.name;n=int(name[1:].split('_')[0])
             control=name.split('_')[1] if '_' in name else 'ordinary'
-            return reference.copy(),dict(n=n,control=control,all_native_complete=True,
+            return reference.copy(),dict(n=n,control=control,loss_tangent=0.,all_native_complete=True,
                 target_passes=control!='dt',contour_s_abs=0.,recurrence_residual=0.)
         with tempfile.TemporaryDirectory() as temp,patch.object(f,'matrix',side_effect=fake):
             row=f.study(temp)
@@ -442,6 +539,8 @@ def main():
     parser.add_argument('--mesh',type=int,choices=f.MESHES+f.PILOT_MESHES,default=f.MESHES[0])
     parser.add_argument('--control',choices=f.CONTROLS,default='ordinary')
     parser.add_argument('--rate-mcps',type=float,default=40.)
+    parser.add_argument('--loss-tangent',type=float,default=0.,
+                        help='test-only constant conductivity: tan(delta) at 3 GHz, range 0..0.1')
     parser.add_argument('--worker-case',action='store_true',help=argparse.SUPPRESS)
     parser.add_argument('--port',type=int,choices=(1,2,3,4),default=1,help=argparse.SUPPRESS)
     args=parser.parse_args()
@@ -449,7 +548,7 @@ def main():
         args.out.mkdir(parents=True,exist_ok=False);rows=[]
         for n in f.MESHES:
             for control in f.CONTROLS if n==f.CONTROL_MESH else ('ordinary',):
-                sim,meta=f.build(n,1,control=control)
+                sim,meta=f.build(n,1,control=control,loss_tangent=args.loss_tangent)
                 path=args.out/f'n{n}_{control}.xml';sim.fdtd.Write2XML(str(path))
                 seconds=forecast(meta,args.rate_mcps)
                 rows.append(dict(meta=meta,input_sha256=f.sha(path),forecast_seconds=seconds,deferred=seconds>1800))
@@ -461,10 +560,10 @@ def main():
     elif args.study:
         print(json.dumps(f.study(args.out),indent=2))
     elif args.worker_case:
-        meta=f.acquire(args.out,args.mesh,args.port,args.control)
+        meta=f.acquire(args.out,args.mesh,args.port,args.control,args.loss_tangent)
         print(json.dumps(dict(n=args.mesh,port=args.port,native=meta['native']),indent=2))
     else:
-        print(json.dumps(acquire_serial(args.out,args.mesh,args.rate_mcps,args.control),indent=2))
+        print(json.dumps(acquire_serial(args.out,args.mesh,args.rate_mcps,args.control,args.loss_tangent),indent=2))
 
 
 if __name__=='__main__':
