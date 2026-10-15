@@ -197,6 +197,9 @@ export interface Design {
   };
   far_field: { enabled: boolean; frequencies?: Expr[]; phase_center?: [Expr, Expr, Expr]; /** which NF2FF box faces record (x-, x+, y-, y+, z-, z+); omitted: all */ faces?: boolean[] };
   parameter_sweep?: ParameterSweepDefinition;
+  /** The opening view: where the 3D view's camera is and the point it looks at when the design opens (mm).
+   * Drawing only; absent: the isometric view fitted to the model. */
+  view?: DesignView;
   /** The work coordinate system (WCS) the drawing tools use; absent: the global one. w points
    * along `normal` (negative with `flip`), `origin` is in global coordinates, `angle` turns u and v
    * about `normal`. Geometry never depends on it: shapes drawn in a local WCS store their own transforms. */
@@ -207,6 +210,9 @@ export interface Design {
  * and the conversion notes. A note's `code` names its text (exampleCopy.note.<code>, filled in with
  * `values`); `text` is the English sentence, for a code this version does not know. */
 export interface DesignConversion { source?: string; notes: { code: string; text: string; values?: Record<string, string | number> }[] }
+
+/** A camera pose in design coordinates (mm): the camera's position and the orbit target it looks at. */
+export interface DesignView { camera: [number, number, number]; target: [number, number, number] }
 
 export interface DesignWcs { normal: Axis; origin: [Expr, Expr, Expr]; angle: 0 | 90 | 180 | 270; flip?: boolean }
 

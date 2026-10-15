@@ -430,6 +430,22 @@ def _need(obj, key, where, kind=None):
     return v
 
 
+def _check_view(v) -> None:
+    """The opening view (``view``): the 3D view's camera position and the point it looks at, in mm. Drawing only:
+    the build and the exports ignore it."""
+    if not isinstance(v, dict):
+        raise DesignError("view is {camera: [x, y, z], target: [x, y, z]} in mm", "view")
+    points = []
+    for key in ("camera", "target"):
+        p = v.get(key)
+        if not (isinstance(p, list) and len(p) == 3 and all(
+                isinstance(x, (int, float)) and not isinstance(x, bool) and math.isfinite(x) for x in p)):
+            raise DesignError(f"{key} is three numbers: x, y and z in mm", f"view.{key}")
+        points.append(p)
+    if math.dist(*points) < 1e-9:
+        raise DesignError("the camera must not sit on the point it looks at", "view.camera")
+
+
 _HEX_COLOR = re.compile(r"#[0-9a-fA-F]{6}")
 
 
@@ -488,6 +504,8 @@ def check_design(d: dict) -> None:
             raise DesignError("must be the source model's SHA-256 hash", "python_source_hash")
     elif "python_source_hash" in d:
         raise DesignError("needs python_source_model", "python_source_hash")
+    if "view" in d:
+        _check_view(d["view"])
     keys: set[str] = set()
     for i, p in enumerate(d.get("params", [])):
         w = f"params[{i}]"

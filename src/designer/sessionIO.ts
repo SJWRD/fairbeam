@@ -17,6 +17,8 @@ export interface DesignerIODependencies {
   schedulePreview: () => void;
   applyModelEntry: (model: NonNullable<Validation["model"]>) => void;
   restoreModelSelection: (file: DesignFile | null) => void;
+  /** a design was opened (and its backup, if any, restored): the 3D view takes the draft's opening view */
+  openedDesign?: (file: DesignFile) => void;
 }
 /** IO owns no global registration or viewport: dependencies belong to its captured session. */
 export function createDesignerIO(core: Core, deps: DesignerIODependencies) {
@@ -55,6 +57,7 @@ export function createDesignerIO(core: Core, deps: DesignerIODependencies) {
       const at = new Date(b.at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
       setMessage({ tone: "warn", text: t("store.restored", { at }), sticky: true });
     }
+    deps.openedDesign?.(f);
   }
 
   async function openDesign(id: string, expectedScope?: string) {

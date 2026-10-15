@@ -31,7 +31,8 @@ const fails = (message, data) => async () => { throw Object.assign(new Error(mes
 
 // success: one undo step, model kept, everything else from the script (the old sweep is gone)
 {
-  const s = store(design(32, { parameter_sweep: { axes: [] } }));
+  const view = { camera: [12, -20, 9], target: [0, 0, 1] };
+  const s = store(design(32, { parameter_sweep: { axes: [] }, view }));
   const before = JSON.stringify(s.draft);
   const r = await applyPythonScript("src", { convert: ok(40), current: () => true, replace: (next) => s.edit((d) => replaceDesignContent(d, next)) });
   assert.equal(r.ok, true);
@@ -40,6 +41,7 @@ const fails = (message, data) => async () => { throw Object.assign(new Error(mes
   assert.equal(s.draft.parts[0].name, "part 40", "the parts come from the script");
   assert.deepEqual(s.draft.model, { id: "keep-me", name: "Kept", description: "d" }, "the design keeps its own name and id");
   assert.equal("parameter_sweep" in s.draft, false, "what the script does not define is dropped");
+  assert.deepEqual(s.draft.view, view, "the opening view stays (a script has no camera)");
   s.undoOnce();
   assert.equal(JSON.stringify(s.draft), before, "one Undo brings the previous design back");
 }

@@ -153,7 +153,8 @@ directivity rather than its gain.
     - Parameters: Parameter.
   - Transform: Transform… opens the transform dialog for the selected solid or shape. Rotate,
     Scale, Mirror and Translate copies open it with that operation selected. See [Transforms](#transforms).
-  - View: camera presets, Fit and Screenshot, followed by geometry/overlay visibility controls.
+  - View: camera presets, Fit and Screenshot, the Opening view (Save, Go to, Clear), followed by
+    geometry/overlay visibility controls.
     Guide grid controls both the reference grid and active drawing-plane grid; it does not disable
     snapping. Ground plane controls only the model's PEC half-space geometry. Mesh view uses the
     same toggle as Simulation › Mesh. View preserves an
@@ -195,6 +196,11 @@ directivity rather than its gain.
   visible, except inside fields, editors, menus, dialogs, or an active drawing tool. With the 3D
   view focused, arrows orbit (Shift pans), +/− zoom, and Space or F fits the model. Orbiting away
   from a preset clears its pressed state. The number-row aliases are provided for laptop keyboards.
+  **Opening view**: View › Opening view › **Save** keeps the current camera in the design (as `view`:
+  the camera position and the point it looks at, in mm). The design then opens with that camera
+  instead of the fitted isometric view, so a small detail (a probe tip on a large tooth, a feed under
+  a board) is in sight from the start. **Go to** returns to it and **Clear** removes it. Saving and
+  clearing are undo steps, Python Apply keeps the view, and the solver and the exports ignore it.
 - **Properties** (right): the fields of the selected item.
 - **Dock** (bottom): **Checks** and **Parameters**, and for a run started here **Run** (its live
   progress), **Runs** (the design's runs side by side, with the parameters that differ) and

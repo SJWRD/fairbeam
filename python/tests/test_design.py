@@ -805,6 +805,26 @@ class Build(unittest.TestCase):
             module_for(d).build({p.key: p.default for p in module_for(d).PARAMS})
         self.assertEqual(cm.exception.where, "parts[2].cuts[0].stop")
 
+    def test_opening_view_is_drawing_only(self):
+        """The opening view (the 3D view's camera when the design opens) is checked and changes nothing built."""
+        d = blank_design("t", "T")
+        plain = build_preview(None, {}, design=d)["bundle"]
+        d["view"] = {"camera": [40.5, -60, 35.25], "target": [0, 0, 0.8]}
+        check_design(d)
+        viewed = build_preview(None, {}, design=d)["bundle"]
+        self.assertEqual(json.dumps(plain["parts"], sort_keys=True), json.dumps(viewed["parts"], sort_keys=True))
+        self.assertEqual(plain["mesh"], viewed["mesh"])
+        self.assertNotIn("view", to_python(d))
+        for bad, where in (([], "view"), ({"camera": [1, 2], "target": [0, 0, 0]}, "view.camera"),
+                           ({"camera": [1, 2, 3], "target": [0, 0, "z"]}, "view.target"),
+                           ({"camera": [1, 2, True], "target": [0, 0, 0]}, "view.camera"),
+                           ({"camera": [1, 2, float("inf")], "target": [0, 0, 0]}, "view.camera"),
+                           ({"camera": [1, 2, 3], "target": [1, 2, 3]}, "view.camera")):
+            d["view"] = bad
+            with self.subTest(view=bad), self.assertRaises(DesignError) as cm:
+                check_design(d)
+            self.assertEqual(cm.exception.where, where)
+
     def test_components_are_folders_only(self):
         """A part's component path groups it in the designer's tree; the build ignores it."""
         d = blank_design("t", "T")

@@ -6,10 +6,10 @@ import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
 import { CSS2DObject, CSS2DRenderer } from "three/addons/renderers/CSS2DRenderer.js";
 import { Aperture, Crosshair, Gem } from "lucide-solid";
 import { activeExportSurface, exportNotice, geometryAvailable, registerSurfaceExports } from "../components/exportContext";
-import { CAMERA_VIEWS, VIEW_DIRECTIONS, cameraShortcut, isViewCommand, nearestAxis, type ViewName, type ViewCommand } from "./cameraViews";
+import { CAMERA_VIEWS, VIEW_DIRECTIONS, cameraShortcut, isViewCommand, nearestAxis, poseToSave, validPose, type CameraPose, type ViewName, type ViewCommand } from "./cameraViews";
 import { CameraViewIcon } from "./CameraViewIcon";
 import { bundle, centerView, farfieldIndex, setFarfieldIndex, hiddenParts, hoverPart, layers, meshPlane, selectedPart, selectedShape, setHoverPart, setViewCursor, solidFade, theme } from "../state";
-import { keepCamera } from "../state";
+import { keepCamera, openingView, setOpeningView } from "../state";
 import { designStem } from "../lib/exportNames";
 import { previewGeometry } from "../designer/transforms";
 import { cssVar } from "../lib/cssvar";
@@ -461,6 +461,29 @@ export default function Viewport() {
       requestRender();
     }
     function frameView(v: ViewName) { orientView(v); fitCurrentView(); }
+    /** Put the camera at a saved pose (a design's opening view), with the near and far planes of a fit at that distance. */
+    function applyPose(pose: CameraPose) {
+      controls.target.set(...pose.target);
+      camera.position.set(...pose.camera);
+      const dist = camera.position.distanceTo(controls.target);
+      camera.near = dist / 500;
+      camera.far = dist * 200;
+      camera.updateProjectionMatrix();
+      controls.update();
+      const b = bundle();
+      if (b) { const { center, radius } = sceneRadius(b); framed = { center: center.clone(), radius }; }
+      requestRender();
+    }
+    // the designer's Opening view group: go to a pose (detail: the pose), or tell the current one (detail: a callback)
+    const onCameraPose = (e: Event) => {
+      const detail = (e as CustomEvent<unknown>).detail;
+      if (typeof detail === "function") { (detail as (pose: CameraPose) => void)(poseToSave(camera.position, controls.target)); return; }
+      const pose = validPose(detail);
+      if (!pose) return;
+      applyPose(pose);
+      say(t("viewport.say.openingView"));
+    };
+    host.addEventListener("fairbeam:camera-pose", onCameraPose);
     function applyView(command: ViewCommand) {
       if (!bundle()) return;
       if (command === "fit") { fitCurrentView(); say(t("viewport.say.fitted")); return; }
@@ -663,7 +686,12 @@ export default function Viewport() {
 
       if (fitted !== b) {
         fitted = b;
-        if (!keepCamera()) frameView("iso");
+        // a design that was just opened with a saved opening view starts there, instead of the fitted isometric view
+        const opening = untrack(openingView);
+        const pose = opening && opening.modelId === b.model.id ? validPose(opening) : null;
+        if (opening && opening.modelId === b.model.id) untrack(() => setOpeningView(null));
+        if (pose) applyPose(pose);
+        else if (!keepCamera()) frameView("iso");
         else untrack(() => { if (appMode() === "design") refitWhenSceneChanged(b); }); // untracked: the refit reads signals (the preview, the mode) that must not rebuild the scene
       }
       applyVisibility();
@@ -1282,6 +1310,7 @@ export default function Viewport() {
       unregisterExport();
       window.removeEventListener("fairbeam:capture", onCapture);
       host.removeEventListener("fairbeam:view", onViewEvent);
+      host.removeEventListener("fairbeam:camera-pose", onCameraPose);
       host.removeEventListener("fairbeam:zoom", onMenuZoom);
       window.removeEventListener("fairbeam:frame-added", onFrameAdded);
       host.removeEventListener("keydown", onKey);

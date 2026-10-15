@@ -141,7 +141,7 @@ async function checkUniqueIcons(page, translations, language) {
     ['hud', VIEWS.map((view) => translations[view.label])],
   ]) {
     const items = await page.evaluate(({ scope, labels, viewGroup }) => {
-      if (scope === 'hud') return [...document.querySelectorAll('.vp-hud-tl .seg-btn')].map((button) => ({
+      if (scope === 'hud') return [...document.querySelectorAll('.vp-hud-tl .seg-btn')].filter((button) => labels.includes(button.textContent.trim())).map((button) => ({
         label: button.textContent.trim(), title: button.title, svg: button.querySelector('svg')?.outerHTML,
       }));
       const group = [...document.querySelectorAll('.rb-group[role="group"]')].find((e) => e.getAttribute('aria-label') === viewGroup);
@@ -192,7 +192,7 @@ try {
     await page.waitForSelector('.viewport canvas.vp-canvas');
     await createBox(page, translations);
 
-    await selectRibbonTab(page, 'home');
+    await selectRibbonTab(page, 'view');
     await checkUniqueIcons(page, translations, language);
     const previewItem = await groupButton(page, translations['ribbon.home.view'], translations['viewport.btn.iso']);
     await previewItem.handle.dispose();
@@ -263,7 +263,7 @@ try {
     assert.equal(await activeView(page), translations['viewport.view.left'], `${language}: Digit4 works while HUD button has focus`);
     await hudTop.handle.dispose();
 
-    await selectRibbonTab(page, 'home');
+    await selectRibbonTab(page, 'view');
     const ribbonFront = await groupButton(page, translations['ribbon.home.view'], translations['viewport.view.front']);
     await ribbonFront.element.click();
     assert.equal(await activeView(page), translations['viewport.view.front'], `${language}: ribbon Front button selects its view`);
@@ -347,9 +347,46 @@ try {
     assert.equal(await activeView(page), null, `${language}: Fit does not select a camera preset`);
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, `${language}: camera controls fit the workspace`);
 
+    // The opening view: View › Opening view › Save keeps this camera in the design, Go to returns to it, and the
+    // saved design opens there (not at the fitted isometric view).
+    const samePose = (a, b, message) => {
+      for (let i = 0; i < 3; i++) {
+        assert.ok(Math.abs(a.position[i] - b.position[i]) < 2e-4, `${message}: camera[${i}] ${a.position[i]} vs ${b.position[i]}`);
+        assert.ok(Math.abs(a.target[i] - b.target[i]) < 2e-4, `${message}: target[${i}] ${a.target[i]} vs ${b.target[i]}`);
+      }
+    };
+    await seedCamera(page, [1.5, -2.5, 0.75], [0.6, -0.5, 0.62], 23.5);
+    const opening = await cameraSnapshot(page);
+    await selectRibbonTab(page, 'view');
+    await clickRibbonItem(page, translations, 'ribbon.openingView.group', 'ribbon.openingView.save');
+    await page.focus('.viewport');
+    await page.keyboard.press('8');
+    assert.equal(await activeView(page), translations['viewport.view.top'], `${language}: the camera moved away`);
+    await clickRibbonItem(page, translations, 'ribbon.openingView.group', 'ribbon.openingView.go');
+    samePose(await cameraSnapshot(page), opening, `${language}: Go to returns to the opening view`);
+    await page.focus('.viewport');
+    await page.keyboard.press('0');
+    await selectRibbonTab(page, 'home');
+    await clickButton(page, translations['common.save'], '.rb');
+    await page.waitForFunction((label) => [...document.querySelectorAll('.rb button')].some((e) =>
+      (e.getAttribute('aria-label') === label || e.textContent.trim() === label) && e.disabled), {}, translations['common.save']);
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await page.waitForFunction(() => !!document.querySelector('.rb, .home'));
+    if (!(await page.$('.rb'))) {
+      // from the Start screen: the design's row in Your designs
+      await page.waitForFunction((name) => [...document.querySelectorAll('.home button.home-item')].some((e) => e.querySelector('.home-item-name')?.textContent.trim() === name), {}, `Camera views ${language}`);
+      await page.evaluate((name) => [...document.querySelectorAll('.home button.home-item')].find((e) => e.querySelector('.home-item-name')?.textContent.trim() === name).click(), `Camera views ${language}`);
+    }
+    await page.waitForFunction(() => !!window.__fairbeam?.camera && document.querySelector('.viewport canvas.vp-canvas'));
+    await page.waitForFunction(({ position }) => {
+      const p = window.__fairbeam?.camera?.position;
+      return !!p && Math.hypot(p.x - position[0], p.y - position[1], p.z - position[2]) < 1e-3;
+    }, { timeout: 20000 }, { position: opening.position });
+    samePose(await cameraSnapshot(page), opening, `${language}: the saved design opens at its opening view`);
+
       await context.close();
       context = undefined;
-      console.log(`PASS ${language}: unique ribbon/HUD glyphs, Digit and Num Lock off views, focus, input/drawing guards, free orbit and Fit`);
+      console.log(`PASS ${language}: unique ribbon/HUD glyphs, Digit and Num Lock off views, focus, input/drawing guards, free orbit, Fit and the opening view`);
     } finally {
       await context?.close();
     }
