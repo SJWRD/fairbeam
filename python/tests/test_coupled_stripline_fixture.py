@@ -289,7 +289,8 @@ class CoupledStriplineControls(unittest.TestCase):
             else:
                 self.assertEqual(b['source_distance_mm'],a['source_distance_mm'])
         _,time=f.build(f.CONTROL_MESH,1,control='time')
-        self.assertEqual(time['end_db'],-90.)
+        self.assertEqual(a['end_db'],-100.)
+        self.assertEqual(time['end_db'],-110.)
         self.assertGreater(time['cap_s'],a['cap_s'])
         _,dt=f.build(f.CONTROL_MESH,1,control='dt')
         self.assertLess(dt['declared_dt_s'],a['declared_dt_s'])

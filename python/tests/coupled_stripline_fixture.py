@@ -25,8 +25,8 @@ C0, B, ER, F0, Z0, COUPLING = 299792458., 3.2, 2.2, 3e9, 50., .1
 FREQUENCIES = np.linspace(1e9, 5e9, 201)
 MESHES, PILOT_MESHES, CONTROL_MESH, THREADS = (6, 8, 10), (4,), 6, 4
 CONTROLS = ("ordinary", "boundary", "sidewall", "guard", "time", "dt")
-CAP_S, END_DB, DT_FACTOR = 6e-9, -80., .5
-PROTOCOL = "coupled-stripline-v3-transfer-postprocessing"
+CAP_S, END_DB, DT_FACTOR = 9e-9, -100., .5
+PROTOCOL = "coupled-stripline-v4-strict-window"
 NATIVE_STEP_RATIO_MAX = .97
 PROPAGATION_MARKER = "FAIRBEAM-COUPLED-STRIPLINE-PROPAGATION-BEGIN"
 LIMITS = dict(s_target_abs=.005, phase_target_deg=.5, beta_target_rel=.005,
@@ -173,8 +173,8 @@ def build(n, port, *, control="ordinary"):
         step=y[-1]-y[-2]
         count=math.ceil(2*B/step)
         y=np.r_[y[0]-step*np.arange(count,0,-1),y,y[-1]+step*np.arange(1,count+1)]
-    end_db=-90. if control=="time" else END_DB
-    cap=9e-9 if control=="time" else CAP_S
+    end_db=END_DB-10. if control=="time" else END_DB
+    cap=1.5*CAP_S if control=="time" else CAP_S
     factor=.35 if control=="dt" else DT_FACTOR
     sim=Simulation(FREQUENCIES[0],FREQUENCIES[-1],excitation="dgauss",end_criteria_db=end_db,
                    boundaries=["PML_8","PML_8","PEC","PEC","PEC","PEC"])
