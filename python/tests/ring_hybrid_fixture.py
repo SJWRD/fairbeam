@@ -30,7 +30,7 @@ SPATIAL_CONTROLS = CONTROLS[:6]
 CAP_S, END_DB, DT_FACTOR = 9e-9, -100., .5
 PLANE_OFFSETS = (3., 4., 6., 8.)
 CALIBRATION_PAIRS = ((0, 2), (1, 3))
-PROTOCOL = 'ring-hybrid-v1'
+PROTOCOL = 'ring-hybrid-v2'
 NATIVE_STEP_RATIO_MAX = .97
 PROPAGATION_MARKER = 'FAIRBEAM-RING-HYBRID-PROPAGATION-BEGIN'
 LIMITS = dict(s_target_abs=.005, phase_target_deg=.5, s_mesh_abs=.0025,
@@ -241,6 +241,10 @@ def build(n, port, *, control='ordinary'):
     dt = factor*bound;cap = CAP_S*(2 if control == 'time' else 1)
     steps = math.ceil(cap/dt);sim.max_timesteps = steps
     sim.fdtd.SetTimeStep(float(dt));sim.fdtd.SetNumberOfTimeSteps(steps);sim.fdtd.SetOverSampling(4)
+    # Refresh coordinate input on primitives added after the cylindrical CSX
+    # constructor. Update alone leaves new Cartesian polygons reading r/phi as
+    # x/y in the bundled CSXCAD; the resulting feeds are absent from the mesh.
+    csx.SetMeshType(1)
     if csx.Update():
         raise ValueError('invalid native geometry')
     native_lines = [len(radial), len(phi)+1, len(z)]
@@ -343,8 +347,17 @@ def native_bound_ok(meta):
         and record.get('planned_dt_s') == meta['declared_dt_s']
         and meta['declared_dt_s']/bound <= NATIVE_STEP_RATIO_MAX
         and run.get('grid') == meta['reported_grid_lines'] and run.get('threads') == THREADS
+        and record.get('required_conductors_used') == [True]*5
         and run.get('engine') == 'cpu' and run.get('exact_endcriteria') is True
         and run.get('converged') is False and run.get('energy_trace') == [] and 'timesteps' not in run)
+
+
+def conductor_usage(sim):
+    metal = next(p for p in sim.csx.GetAllProperties() if p.GetName() == 'ring_and_feeds')
+    primitives = metal.GetAllPrimitives()
+    if len(primitives) != 5:
+        raise ValueError('one ring and four feed primitives required')
+    return [bool(p.GetPrimitiveUsed()) for p in primitives]
 
 
 def operator_preflight(out, n, port, control='ordinary'):
@@ -352,11 +365,12 @@ def operator_preflight(out, n, port, control='ordinary'):
     sim.fdtd.SetTimeStep(0.);sim.fdtd.Write2XML(str(out/'operator-input.xml'))
     run = sim.run(str(out/'operator'), threads=THREADS, exact=True, echo=True, setup_only=True)
     record = dict(setup_only=True, ratio_limit=NATIVE_STEP_RATIO_MAX, planned_dt_s=meta['declared_dt_s'],
+                  required_conductors_used=conductor_usage(sim),
                   input_sha256=sha(out/'operator-input.xml'), run=run)
     record['passes'] = native_bound_ok({**meta, 'operator_preflight': record})
     save(out/'operator.json', record)
     if not record['passes']:
-        raise ValueError('planned step exceeds the unforced native stability bound')
+        raise ValueError('native stability or required conductor admission failed')
     return record
 
 
@@ -387,6 +401,7 @@ def quality(meta):
         grid=native['cells'] == meta['native_cells'] and run.get('grid') == meta['reported_grid_lines'],
         clock=abs(native['dt_s']/meta['declared_dt_s']-1) < 1e-8,
         operator=native_bound_ok(meta),
+        geometry=meta.get('required_conductors_used') == [True]*5,
         time=native['timesteps'] > 0 and abs(native['numerical_time_s']/(native['dt_s']*native['timesteps'])-1) < 1e-8,
         header=header.get('version') == 'v0.37.0-rc3' and header.get('threads') == THREADS
             and header.get('nyquist_interval') == int(1/(2*FREQUENCIES[-1]*native['dt_s']))
@@ -422,7 +437,8 @@ def acquire(out, n, port, control='ordinary'):
     save(out/'declared.json', meta);print(PROPAGATION_MARKER, flush=True)
     sim.run(str(out/'raw'), threads=THREADS, exact=True, echo=True, dump_statistics=True)
     stats = np.loadtxt(out/'raw/openEMS_stats.txt', comments='%')
-    meta.update(native=dict(cells=int(stats[0]), dt_s=float(stats[1]), timesteps=int(stats[2]),
+    meta.update(required_conductors_used=conductor_usage(sim),
+                native=dict(cells=int(stats[0]), dt_s=float(stats[1]), timesteps=int(stats[2]),
                 numerical_time_s=float(stats[3]), iteration_wall_s=float(stats[4])), run=sim.run_stats)
     vn, cn = probe_names();v, current = probe_spectra(out/'raw')
     traces = {name: dict(sha256=sha(out/'raw'/name), **trace_clock(

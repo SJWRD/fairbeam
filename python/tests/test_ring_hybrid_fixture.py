@@ -38,7 +38,8 @@ def audit_header(text, meta):
     if ('openEMS 64bit -- version v0.37.0-rc3' not in text or not grid or not interval or not pulse
             or f'fixed number of threads: {f.THREADS}' not in text
             or 'Create cylindrical FDTD operator' not in text
-            or 'Alpha is a full 2*PI => closed Cylinder' not in text or 'r=0 included...' in text):
+            or 'r=0 included...' in text
+            or re.search(r'Unused primitive.*property: ring_and_feeds', text)):
         raise ValueError('complete annular native runtime/grid/clock/source header required')
     reported = list(map(int, grid.groups()[:3]))
     # rc3 displays the active angular count but allocates two periodic lines.
@@ -199,6 +200,28 @@ class RingHybridTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'Cartesian bundle'):
             sim.to_bundle()
 
+    def test_new_cartesian_feeds_receive_cylindrical_coordinate_input(self):
+        sim, _ = f.build(2, 1);g = f.geometry()
+        self.assertEqual(sim.csx.GetCoordInputType(), 1)
+        for angle in g['port_angles_rad']:
+            for offset in (3., 6., 12.):
+                prop = sim.csx.GetPropertyByCoordPriority([g['ring_radius_mm']+offset*f.B, angle, 0.])
+                self.assertEqual(prop.GetName(), 'ring_and_feeds')
+            prop = sim.csx.GetPropertyByCoordPriority([g['ring_radius_mm']+6*f.B, angle+.1, 0.])
+            self.assertEqual(prop.GetName(), 'homogeneous')
+        self.assertEqual(f.conductor_usage(sim), [False]*5)
+
+    def test_missing_native_conductor_usage_rejects_admission(self):
+        _, meta = f.build(2, 1)
+        run = dict(timestep_s=meta['declared_dt_s']*2, grid=meta['reported_grid_lines'],
+                   threads=4, engine='cpu', exact_endcriteria=True, converged=False, energy_trace=[])
+        record = dict(setup_only=True, ratio_limit=f.NATIVE_STEP_RATIO_MAX,
+                      planned_dt_s=meta['declared_dt_s'], run=run, required_conductors_used=[True]*5)
+        self.assertTrue(f.native_bound_ok({**meta, 'operator_preflight': record}))
+        for usage in (None, [], [True]*4, [True, False, True, True, True]):
+            self.assertFalse(f.native_bound_ok({**meta, 'operator_preflight':
+                {**record, 'required_conductors_used': usage}}))
+
     def test_spatial_controls_keep_the_same_prospective_clock(self):
         _, nominal = f.build(4, 1)
         for control in f.SPATIAL_CONTROLS:
@@ -248,8 +271,11 @@ class RingHybridTests(unittest.TestCase):
                 'Excitation signal length is: 100000 timesteps\n')
         for count in ('2123121', '2.12312e+06'):
             self.assertEqual(audit_header(header(count), meta)['threads'], 4)
+            quiet = header(count).replace('Alpha is a full 2*PI => closed Cylinder\n', '')
+            self.assertEqual(audit_header(quiet, meta)['threads'], 4)
         for text in (header('2.12313e+06'), header('NaN'), header('2123121').replace('101x999x21', '101x1001x21'),
-                     header('2123121')+'r=0 included...'):
+                     header('2123121')+'r=0 included...', header('2123121')+
+                     'Warning: Unused primitive (type: Polygon) detected in property: ring_and_feeds!'):
             with self.assertRaises(ValueError):
                 audit_header(text, meta)
         with self.assertRaises(ValueError):
