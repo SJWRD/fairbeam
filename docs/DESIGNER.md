@@ -434,7 +434,8 @@ A part's properties also add more shapes to it. The kinds:
   a sheet. The build makes it a regular polygon with vertices on the circle, an even number of
   sides that keeps every edge within 0.01 mm of the arc and is never below 64 (a ring is two half
   rings, since CSXCAD polygons have no holes). The VBA macro exports a full circle as a Circle
-  with a cover, a ring as polygons.
+  with a cover, a ring as polygons. A cylinder or tube on a tilted axis (from a Python model, for
+  example a tilted tooth) has **Axis start** and **Axis stop** points instead of an axis, a center and a range.
 - **Sphere**: center and radius.
 - **Polygon**: a flat sheet with corners in a plane (normal and elevation).
 - **Extrude**: a polygon extruded by a length along its normal. In the shape dialog, a polygon with
@@ -1199,8 +1200,9 @@ and the search goes on. Sweeps run every point as it is.
   builds the geometry without running the solver and replaces the design's solids, materials, ports,
   parameters, mesh, simulation and far field with the result, in **one undo step**. The design keeps
   its name and id. The script is read back with the same converter as the bundled Python examples, so
-  its rules apply: exact primitives only, coordinates that are linear in the parameters become
-  expressions, the other numbers stay numbers, and a parameter that drives nothing is dropped. After
+  its rules apply: exact primitives only (a cylinder or tube on a tilted axis keeps its two end points),
+  coordinates that are linear in the parameters become expressions, the other numbers stay numbers,
+  and a parameter that drives nothing is dropped. After
   Apply the panel writes the script again from the new design; when that script builds the same
   design your text stays, otherwise it is replaced and the panel says the script was normalized.
   A failure (a Python exception, a syntax error, an unsupported feature, a time-out) comes back with

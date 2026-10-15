@@ -54,27 +54,29 @@ def _primitive(p):
         q.update(normal="xyz"[p["normal"]], elevation=p["elevation"], points=p["points"])
         if kind == "linpoly":
             q["length"] = p["length"]
-    elif kind == "cylinder":
+    elif kind in ("cylinder", "cylindricalshell"):
         a, b = p["start"], p["stop"]
+        shell = kind == "cylindricalshell"
+        if shell:
+            outer = p["radius"] + p["shell_width"] / 2
+            inner = p["radius"] - p["shell_width"] / 2
+            if inner < 0:
+                raise ExampleConversionError("cylindrical shell has a negative inner radius")
+        else:
+            outer, inner = p["radius"], 0.0
         axes = [i for i in range(3) if abs(a[i] - b[i]) > 1e-9]
-        if len(axes) != 1:
-            raise ExampleConversionError("cylinder axis is not a single coordinate axis")
-        axis = axes[0]
-        q.update(axis="xyz"[axis], center=[a[i] for i in range(3) if i != axis],
-                 range=[min(a[axis], b[axis]), max(a[axis], b[axis])], radius=p["radius"])
-    elif kind == "cylindricalshell":
-        a, b = p["start"], p["stop"]
-        axes = [i for i in range(3) if abs(a[i] - b[i]) > 1e-9]
-        if len(axes) != 1:
-            raise ExampleConversionError("cylindrical shell axis is not a single coordinate axis")
-        axis = axes[0]
-        outer = p["radius"] + p["shell_width"] / 2
-        inner = p["radius"] - p["shell_width"] / 2
-        if inner < 0:
-            raise ExampleConversionError("cylindrical shell has a negative inner radius")
-        q.update(kind="cylinder", axis="xyz"[axis], center=[a[i] for i in range(3) if i != axis],
-                 range=[min(a[axis], b[axis]), max(a[axis], b[axis])], radius=outer,
-                 inner_radius=inner)
+        if not axes:
+            raise ExampleConversionError(f"{'cylindrical shell' if shell else 'cylinder'} has no length")
+        if len(axes) == 1:
+            axis = axes[0]
+            q.update(kind="cylinder", axis="xyz"[axis], center=[a[i] for i in range(3) if i != axis],
+                     range=[min(a[axis], b[axis]), max(a[axis], b[axis])], radius=outer)
+        else:
+            # a tilted axis (a tilted tooth, a slanted via): the design's end-point form, which builds the
+            # same CSXCAD cylinder from the same start and stop
+            q.update(kind="cylinder", start=list(a), stop=list(b), radius=outer)
+        if shell:
+            q["inner_radius"] = inner
     elif kind == "sphere":
         q.update(center=p["center"], radius=p["radius"])
     elif kind == "wire":
@@ -633,7 +635,7 @@ def _slot_axis(core: dict, path):
             return in_plane("xyz".index(prim["normal"]))[rest[1]]
     if key == "elevation":
         return "xyz".index(prim["normal"])
-    if prim["kind"] == "cylinder":
+    if prim["kind"] == "cylinder" and "axis" in prim:
         axis = "xyz".index(prim["axis"])
         if key == "range":
             return axis
