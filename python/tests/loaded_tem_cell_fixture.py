@@ -15,7 +15,7 @@ import numpy as np
 import CSXCAD
 from openEMS import ports as native_ports
 from openEMS.ports import UI_data
-from openEMS.physical_constants import Z0 as ETA0
+from openEMS.physical_constants import EPS0, Z0 as ETA0
 
 from fairbeam import Simulation, excitation, multiport
 from tests.coax_resonator_fixture import save, sha, runtime_identity as base_runtime
@@ -27,7 +27,7 @@ FREQUENCIES=np.linspace(2.4e9,3.2e9,81)
 MESHES, COUNTS, THREADS, CONTROL_MESH = (4,6,8), (1,2,3), 4, 4
 CONTROLS=('ordinary','boundary','guard','backing','transverse','element','time','dt')
 CAP_S, END_DB, NATIVE_STEP_RATIO_MAX = 6e-9, -100., .97
-PROTOCOL='loaded-tem-cell-v1'
+PROTOCOL='loaded-tem-cell-v2'
 PROPAGATION_MARKER='FAIRBEAM-LOADED-TEM-PROPAGATION-BEGIN'
 SCOPE=('Finite PEC/PMC parallel-plate TEM circuit dual, nominal separate native '
        'capacitors and midpoint voltage/current planes. No printed-stub, '
@@ -131,7 +131,10 @@ def build(n,count,port,kind='loaded',control='ordinary'):
     dx=HEIGHT/n;ny=(8 if control=='transverse' else 4)*n
     extent=(10*count+(40 if control=='boundary' else 30))*n
     x=np.arange(-extent,extent+1)*dx
-    y=np.linspace(0.,WIDTH,ny+1)
+    # PMC walls sit on the first/last H dual planes, not the end E nodes.
+    # Keep their physical separation WIDTH at every mesh; E rows 1..ny-1
+    # each represent one full dual strip. The end rows are outside the TEM.
+    y=(np.arange(ny+1)-.5)*(WIDTH/(ny-1))
     z=np.r_[np.linspace(0.,HEIGHT,n+1),HEIGHT+np.arange(1,3 if control=='backing' else 2)*dx]
     # Every spatial control at a mesh shares its prospective worst clock.
     dt=(.35 if control=='dt' else .5)/(C0*np.sqrt(2/dx**2+(8*n/WIDTH)**2))
@@ -142,21 +145,31 @@ def build(n,count,port,kind='loaded',control='ordinary'):
     for axis,values in zip('xyz',(x,y,z)):sim.mesh.AddLine(axis,values/sim.unit)
     sim.fdtd.SetTimeStep(float(dt));sim.fdtd.SetOverSampling(4)
     metal=sim.metal('upper_conductor')
-    metal.AddBox([x[0]/sim.unit,0.,HEIGHT/sim.unit],[x[-1]/sim.unit,WIDTH/sim.unit,z[-1]/sim.unit],priority=10)
+    metal.AddBox([x[0]/sim.unit,y[0]/sim.unit,HEIGHT/sim.unit],[x[-1]/sim.unit,y[-1]/sim.unit,z[-1]/sim.unit],priority=10)
     mesh_x=np.asarray(sim.mesh.GetLines('x'))
     sources=[]
     guard=(25 if control=='guard' else 20)*n
     for number,sign in ((1,-1),(2,1)):
         ix=extent+sign*(10*count*n+guard);sx=float(mesh_x[ix]);sources.append(sx*sim.unit)
-        sim.lumped_port(number,Z0,[sx,0.,0.],[sx,WIDTH/sim.unit,HEIGHT/sim.unit],'z',excite=number==port)
+        sim.lumped_port(number,Z0,[sx,y[1]/sim.unit,0.],
+            [sx,y[-2]/sim.unit,HEIGHT/sim.unit],'z',excite=number==port)
     native_c=[]
     if kind=='loaded':
         for j in range(count):
             ix=extent+(2*j-count+1)*10*n
             radius=1 if control=='element' else 0
             a,b=float(mesh_x[ix-radius]),float(mesh_x[ix+radius])
-            sim.lumped_capacitor(f'cell_C{j+1}',CAPACITANCE,[a,0.,0.],[b,WIDTH/sim.unit,HEIGHT/sim.unit],'z')
-            native_c.append(dict(capacitance_f=CAPACITANCE,start_x_m=a*sim.unit,stop_x_m=b*sim.unit))
+            # The native parallel RC operator REPLACES each included edge C.
+            # Include the known vacuum capacitance of its (2r+1) dual columns
+            # so the incremental physical load is CAPACITANCE. Only active E
+            # rows are included: no response fit or ghost-row renormalization.
+            air=EPS0*WIDTH*(2*radius+1)*dx/HEIGHT
+            native=CAPACITANCE+air
+            sim.lumped_capacitor(f'cell_C{j+1}',native,[a,y[1]/sim.unit,0.],
+                [b,y[-2]/sim.unit,HEIGHT/sim.unit],'z')
+            native_c.append(dict(capacitance_f=CAPACITANCE,native_capacitance_f=float(native),
+                replaced_air_capacitance_f=float(air),active_voltage_rows=ny-1,
+                longitudinal_voltage_columns=2*radius+1,start_x_m=a*sim.unit,stop_x_m=b*sim.unit))
     dual_y=(y[:-1]+y[1:])/2;margin=.01*(y[1]-y[0])
     contours={label:dict(a=a,b=b,lo=float(dual_y[a]+margin),hi=float(dual_y[b]-margin),
         enclosed_span_m=float(dual_y[b]-dual_y[a]),weight=float(WIDTH/(dual_y[b]-dual_y[a])))
@@ -182,6 +195,7 @@ def build(n,count,port,kind='loaded',control='ordinary'):
         native_cells=int(len(x)*len(y)*len(z)),declared_dt_s=float(dt),max_timesteps=steps,
         cap_s=cap,end_db=end,threads=THREADS,planes_m=planes,source_planes_m=sources,
         period_m=PERIOD,height_m=HEIGHT,width_m=float(WIDTH),reference_ohm=Z0,
+        physical_pmc_planes_m=[float(dual_y[0]),float(dual_y[-1])],
         native_capacitors=native_c,current_contours=contours,expected_current_indices=indices,
         source_duration_s=excitation.dgauss_duration_s(FREQUENCIES[-1]),scope=SCOPE)
 

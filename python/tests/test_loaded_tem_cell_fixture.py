@@ -200,7 +200,9 @@ class LoadedTEMAdmissionTests(unittest.TestCase):
             self.assertTrue(all(c['capacitance_f']==f.CAPACITANCE for c in meta['native_capacitors']))
             capacitors=[p for p in sim.csx.GetAllProperties() if p.GetName().startswith('cell_C')]
             self.assertEqual(len(capacitors),3)
-            self.assertTrue(all(p.GetCapacity()==f.CAPACITANCE and p.GetLEtype()==0 for p in capacitors))
+            for p,c in zip(capacitors,meta['native_capacitors']):
+                self.assertEqual(p.GetCapacity(),c['native_capacitance_f'])
+                self.assertEqual(p.GetLEtype(),0)
             self.assertNotEqual(meta['current_contours']['outer'],meta['current_contours']['inner'])
             for c in meta['current_contours'].values():
                 self.assertAlmostEqual(c['weight']*c['enclosed_span_m'],f.WIDTH,places=14)
@@ -214,6 +216,27 @@ class LoadedTEMAdmissionTests(unittest.TestCase):
             if control!='dt':self.assertEqual(meta['declared_dt_s'],base['declared_dt_s'])
             else:self.assertAlmostEqual(meta['declared_dt_s']/base['declared_dt_s'],.7)
         self.assertEqual(len(f.configurations()),19)
+
+    def test_fixed_physical_pmc_width_and_incremental_capacitance(self):
+        # Count actual included E nodes, including a three-column element.
+        # This catches both ghost-row dilution and forgetting replaced air.
+        for n in f.MESHES:
+            for control in ('ordinary','transverse','element'):
+                sim,meta=f.build(n,1,1,control=control)
+                y=np.asarray(sim.mesh.GetLines('y'))*sim.unit
+                np.testing.assert_allclose(meta['physical_pmc_planes_m'],[0.,f.WIDTH],rtol=0,atol=1e-17)
+                self.assertAlmostEqual(meta['current_contours']['outer']['weight'],1.,places=14)
+                prop=next(p for p in sim.csx.GetAllProperties() if p.GetName()=='cell_C1')
+                box=prop.GetAllPrimitives()[0]
+                start=np.asarray(box.GetStart())*sim.unit;stop=np.asarray(box.GetStop())*sim.unit
+                live=(y>=start[1]-1e-15)&(y<=stop[1]+1e-15)
+                self.assertEqual(np.flatnonzero(live).tolist(),list(range(1,len(y)-1)))
+                c=meta['native_capacitors'][0];columns=c['longitudinal_voltage_columns']
+                self.assertEqual(columns,3 if control=='element' else 1)
+                self.assertEqual(c['active_voltage_rows'],int(live.sum()))
+                air=f.EPS0*f.WIDTH*(f.HEIGHT/n)*columns/f.HEIGHT
+                self.assertAlmostEqual(c['replaced_air_capacitance_f']/air,1.,places=14)
+                self.assertAlmostEqual((prop.GetCapacity()-air)/f.CAPACITANCE,1.,places=14)
 
     def test_invalid_model_choices_and_forecast_never_launch(self):
         for args in ((True,1,1),(4,0,1),(4,1,3),(5,1,1),(4,1.0,1)):
