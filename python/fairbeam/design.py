@@ -2859,7 +2859,14 @@ def build(d: dict, values: dict):
             from .coax import resolved_coax
             try:
                 cp = resolved_coax(po, d.get("materials", []), num)
+                display = {}
+                for role in ("conductor", "dielectric"):
+                    material = next((m for m in d.get("materials", []) if m.get("name") == cp.get(role)), {})
+                    for key in ("color", "opacity"):
+                        if material.get(key) is not None:
+                            display[f"{role}_{key}"] = material[key]
                 sim.coaxial_port(cp["number"], a, c, cp["direction"], cp["r_i"], cp["r_o"], cp["r_os"],
+                                 **display,
                                  **{key: cp[key] for key in ("conductor", "dielectric", "eps_r", "mu_r", "tan_d", "tan_d_freq", "feed_shift", "measurement_shift", "termination", "excite") if key in cp})
             except ValueError as error:
                 raise DesignError(str(error), w) from error
@@ -3612,11 +3619,17 @@ def to_python(d: dict) -> str:
         exc = "" if po.get("excite", True) else ", excite=False"
         if po.get("type") == "coaxial":
             mt = next((m for m in d.get("materials", []) if m.get("name") == po.get("dielectric")), {})
+            display = ""
+            for role in ("conductor", "dielectric"):
+                material = next((m for m in d.get("materials", []) if m.get("name") == po.get(role)), {})
+                for key in ("color", "opacity"):
+                    if material.get(key) is not None:
+                        display += f", {role}_{key}={material[key]!r}"
             out.append(f"    sim.coaxial_port({po['number']}, {vec(po['start'])}, {vec(po['stop'])}, {po['direction']!r}, "
                        f"{e(po['r_i'])}, {e(po['r_o'])}, {e(po['r_os'])}, conductor={po['conductor']!r}, "
                        f"dielectric={po.get('dielectric')!r}, eps_r={e(mt.get('eps_r', 1))}, mu_r={e(mt.get('mu_r', 1))}, "
                        f"tan_d={e(mt.get('tan_d', 0))}, tan_d_freq={('(' + e(mt['tan_d_freq']) + ') * 1e9') if mt.get('tan_d_freq') is not None else 'None'}, feed_shift={e(po.get('feed_shift', 0))}, "
-                       f"measurement_shift={e(po['measurement_shift'])}, termination={po.get('termination', 'open')!r}{exc})")
+                       f"measurement_shift={e(po['measurement_shift'])}, termination={po.get('termination', 'open')!r}{exc}{display})")
             continue
         if po.get("type") == "waveguide":
             out.append(f"    sim.waveguide_port({po['number']}, {vec(po['start'])}, {vec(po['stop'])}, {po['direction']!r}, "

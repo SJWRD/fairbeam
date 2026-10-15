@@ -372,7 +372,8 @@ class Simulation:
 
     def coaxial_port(self, number, start, stop, direction, r_i, r_o, r_os, *,
                      conductor="PEC", dielectric=None, eps_r=1.0, mu_r=1.0, tan_d=0.0, tan_d_freq=None,
-                     feed_shift=0.0, measurement_shift=None, termination="open", excite=True):
+                     feed_shift=0.0, measurement_shift=None, termination="open", excite=True,
+                     conductor_color=None, conductor_opacity=None, dielectric_color=None, dielectric_opacity=None):
         """Cartesian native TEM port. Radii/offsets use drawing units, not meters.
 
         Geometry is created immediately for meshing; native probes are constructed only after
@@ -406,12 +407,14 @@ class Simulation:
         names = (f"Coaxial port {number} conductor", f"Coaxial port {number} dielectric")
         if any(self.csx.GetPropertiesByName(name) for name in names):
             raise ValueError("coaxial generated property name already exists")
-        pec = self.metal(names[0])
+        display = ({"color": conductor_color, "opacity": _display_opacity(conductor_opacity)},
+                   {"color": dielectric_color, "opacity": _display_opacity(dielectric_opacity)})
+        pec = self.metal(names[0], **display[0])
         pec.AddCylinder(start, stop, r_i, priority=5)
         pec.AddCylindricalShell(start, stop, (r_o + r_os) / 2, r_os - r_o, priority=5)
         props = [pec]
         if dielectric is not None:
-            mat = self.dielectric(names[1], eps_r, tan_d=tan_d, tan_d_freq=tan_d_freq, mu_r=mu_r)
+            mat = self.dielectric(names[1], eps_r, tan_d=tan_d, tan_d_freq=tan_d_freq, mu_r=mu_r, **display[1])
             mat.AddCylindricalShell(start, stop, (r_i + r_o) / 2, r_o - r_i, priority=4)
             props.append(mat)
         self._pending_coax.append((len(self.ports), record, names, props))
@@ -425,10 +428,12 @@ class Simulation:
         pending = getattr(self, "_pending_coax", [])
         planes = [validate_mesh(self, {k: v for k, v in record.items() if k != "R"}) for _, record, _, _ in pending]
         for (index, record, names, props), plane in zip(pending, planes):
+            # Recreating the native port geometry must retain its drawing-only material overrides.
+            display = [{key: self.materials.get(name, {}).get(key) for key in ("color", "opacity")} for name in names]
             for prop in props:
                 self.csx.DeleteProperty(prop)
-            pec = self.metal(names[0])
-            mat = self.dielectric(names[1], record["eps_r"], tan_d=record["tan_d"], tan_d_freq=record["tan_d_freq"], mu_r=record["mu_r"]) if record["dielectric"] is not None else None
+            pec = self.metal(names[0], **display[0])
+            mat = self.dielectric(names[1], record["eps_r"], tan_d=record["tan_d"], tan_d_freq=record["tan_d_freq"], mu_r=record["mu_r"], **display[1]) if record["dielectric"] is not None else None
             port = self.fdtd.AddCoaxialPort(record["number"], pec, mat, record["start"], record["stop"],
                          record["direction"], record["r_i"], record["r_o"], record["r_os"],
                          1.0 if record["excite"] else 0.0, priority=5, FeedShift=record["feed_shift"],

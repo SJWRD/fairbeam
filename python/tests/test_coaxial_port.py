@@ -24,6 +24,31 @@ def design():
 
 
 class CoaxialPortTests(unittest.TestCase):
+    def test_material_display_survives_native_finalization_and_python_export(self):
+        d = design()
+        d["materials"].append(dict(name="PTFE", kind="dielectric", eps_r=2.1))
+        d["ports"][0]["dielectric"] = "PTFE"
+        original = build(d, {}).to_bundle(d["model"], [])
+        d["materials"][0].update(color="#123456", opacity=0.3)
+        d["materials"][1].update(color="#abcdef", opacity=0.6)
+        bundle = build(d, {}).to_bundle(d["model"], [])
+        self.assertEqual([(p.get("color"), p.get("opacity")) for p in bundle["parts"]],
+                         [("#123456", 0.3), ("#abcdef", 0.6)])
+        self.assertEqual(bundle["mesh"], original["mesh"])
+        self.assertEqual(bundle["ports"], original["ports"])
+        self.assertEqual([{k: v for k, v in p.items() if k not in ("color", "opacity")} for p in bundle["parts"]], original["parts"])
+        namespace = {}
+        exec(to_python(d), namespace)
+        generated = namespace["build"]({})
+        generated.finalize_coaxial_ports()
+        self.assertEqual(generated.to_bundle(d["model"], [])["parts"], bundle["parts"])
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "coax_display.py"
+            path.write_text(to_python(d), encoding="utf-8")
+            converted = convert_example(path, "coax_display", "Coax display")
+        rebuilt = build(converted, {p["key"]: p["default"] for p in converted["params"]})
+        self.assertEqual(rebuilt.to_bundle(d["model"], [])["parts"], bundle["parts"])
+
     def test_native_build_after_mesh_and_bundle(self):
         d = design()
         sim = build(d, {})
