@@ -26,14 +26,16 @@ FREQUENCIES = np.linspace(1e9, 5e9, 201)
 MESHES, PILOT_MESHES, CONTROL_MESH, THREADS = (6, 8, 10), (4,), 6, 4
 CONTROLS = ("ordinary", "boundary", "sidewall", "guard", "time", "dt")
 CAP_S, END_DB, DT_FACTOR = 6e-9, -80., .5
-PROTOCOL = "coupled-stripline-v2-refined-thin-pec"
+PROTOCOL = "coupled-stripline-v3-transfer-postprocessing"
 NATIVE_STEP_RATIO_MAX = .97
 PROPAGATION_MARKER = "FAIRBEAM-COUPLED-STRIPLINE-PROPAGATION-BEGIN"
 LIMITS = dict(s_target_abs=.005, phase_target_deg=.5, beta_target_rel=.005,
               impedance_target_rel=.01, s_mesh_abs=.0025, phase_mesh_deg=.2,
               s_control_abs=.001, phase_control_deg=.1, contour_s_abs=.001,
               recurrence_residual=.001, incident_condition=30., incident_floor=.02,
-              reciprocity_abs=.001, singular_power_max=1.005)
+              reciprocity_abs=.001, singular_power_max=1.005,
+              transfer_det_abs=.001, transfer_symmetry_abs=.001, transfer_fit_rel=.001,
+              transfer_condition_max=30., transfer_floor_min=.02)
 SCOPE = ("Homogeneous centered thin PEC coupled strips; internal TEM planes, "
          "two ground halves, four-source inverse; finite sidewalls explicitly controlled. "
          "No finite-copper or broadband dielectric-loss certificate.")
@@ -241,57 +243,96 @@ def assemble(v, i):
     return result,dict(incident_condition=condition,incident_floor=floor)
 
 
-def extract(v, i, dx_m):
-    """Infer each uniform mode's spatial staggering from all four excitations.
+def extract(v,i,dx_m):
+    """Infer gamma from both measured end states, not a tiny local difference.
 
-    V[-]+V[+]=2*cosh(gamma*dx)*V[0]. Averaged half-cell I is divided by
-    cosh(gamma*dx/2). Neither gamma nor Z from the analytical target is used.
-    Two independently sized closed H contours must agree separately.
+    The same unknown spatial I-average factor at both ends is a similarity
+    transform: it leaves the transfer trace unchanged. No analytical gamma
+    is substituted. Determinant, symmetry and four-source fit are checked;
+    signed attenuation is retained. Local gamma remains diagnostic only.
     """
     v,i=np.asarray(v,complex),np.asarray(i,complex)
     if (v.shape!=(4,4,3,len(FREQUENCIES)) or i.shape!=(4,4,2,2,len(FREQUENCIES))
             or not np.isfinite(v).all() or not np.isfinite(i).all()
             or not np.isfinite(dx_m) or dx_m<=0):
-        raise ValueError("complete finite four-source voltage/current arrays and positive spacing required")
+        raise ValueError('complete finite four-source waves and positive spacing required')
+    length=geometry()['length_mm']*1e-3
     q=np.array([[1,1],[1,-1]])/np.sqrt(2)
+    idsides=((0,3),(1,2))
+    vm=[np.einsum('mc,ecjf->emjf',q,np.take(v,ids,axis=1)) for ids in idsides]
+    local_gamma=[]
+    for field in vm:
+        center=field[:,:,1];denom=2*np.sum(abs(center)**2,axis=0)
+        scale=np.max(np.sum(abs(field)**2,axis=0),axis=1)
+        if np.any(denom<.01*scale) or np.any(scale<=0):
+            raise ValueError('standing-wave node or missing modal excitation')
+        r=np.sum(np.conj(center)*(field[:,:,0]+field[:,:,2]),axis=0)/denom
+        gd=np.arccosh(r);local_gamma.append(np.where(gd.imag<0,-gd,gd)/dx_m)
     corrected=np.zeros((2,4,4,len(FREQUENCIES)),complex)
     raw=np.zeros_like(corrected)
-    rows=[]
-    for ids,sign in (((0,3),1),((1,2),-1)):
-        vm=np.einsum('mc,ecjf->emjf',q,v[:,ids])
-        center=vm[:,:,1]
-        denom=2*np.sum(abs(center)**2,axis=0)
-        scale=np.max(np.sum(abs(vm)**2,axis=0),axis=1)
-        if np.any(denom<.01*scale) or np.any(scale<=0):
-            raise ValueError("standing-wave node or missing modal excitation")
-        r=np.sum(np.conj(center)*(vm[:,:,0]+vm[:,:,2]),axis=0)/denom
-        residual=float(np.max(abs(vm[:,:,0]+vm[:,:,2]-2*r*center))/np.max(abs(vm)))
-        half=np.sqrt((r+1)/2)
-        gdx=np.arccosh(r);gdx=np.where(gdx.imag<0,-gdx,gdx)
-        if not np.isfinite(half).all() or np.any(abs(half)<.5) or np.any(abs(np.sinh(gdx))<1e-5):
-            raise ValueError("singular local uniform-mode inversion")
-        modal_z=[]
-        for loop in (0,1):
-            im=np.einsum('mc,ecjf->emjf',q,np.take(i,ids,axis=1)[:,:,:,loop,:]).mean(axis=2)
-            central_i=im/half
-            raw[loop][:,ids]=sign*np.einsum('cm,emf->ecf',q.T,im)
+    gamma_all=[];transfer_z=[];local_z=np.zeros((2,2,2,len(FREQUENCIES)),complex)
+    maxdet,maxsym,maxres,maxcond,minfloor,recurrence=0.,0.,0.,0.,1.,0.
+    for loop in (0,1):
+        im=[np.einsum('mc,ecjf->emjf',q,np.take(i,ids,axis=1)[:,:,:,loop,:]).mean(axis=2)
+            for ids in idsides]
+        gamma,zchar=[],[]
+        for mode in (0,1):
+            states=[np.stack((vv[:,mode,1]/np.sqrt(Z0),ii[:,mode]*np.sqrt(Z0))).transpose(2,0,1)
+                    for vv,ii in zip(vm,im)]
+            left,right=states
+            for state in states:
+                singular=np.linalg.svd(state,compute_uv=False)
+                floor=float(singular[:,-1].min()/max(singular[:,0].max(),np.finfo(float).tiny))
+                condition=float(np.max(singular[:,0]/np.maximum(singular[:,-1],np.finfo(float).tiny)))
+                if condition>LIMITS['transfer_condition_max'] or floor<LIMITS['transfer_floor_min']:
+                    raise ValueError('node or unexcited/ill-conditioned transfer state')
+                maxcond=max(maxcond,condition);minfloor=min(minfloor,floor)
+            adjoint=right.conj().transpose(0,2,1)
+            transfer=(left@adjoint)@np.linalg.inv(right@adjoint)
+            residual=np.linalg.norm(left-transfer@right,axis=(1,2))/np.linalg.norm(left,axis=(1,2))
+            maxres=max(maxres,float(residual.max()))
+            maxdet=max(maxdet,float(abs(np.linalg.det(transfer)-1).max()))
+            maxsym=max(maxsym,float(abs(transfer[:,0,0]-transfer[:,1,1]).max()))
+            # No determinant normalization or attenuation clipping. Uniform
+            # reciprocal/symmetric-line assumptions have independent gates.
+            gl=np.arccosh((transfer[:,0,0]+transfer[:,1,1])/2)
+            gl=np.where(gl.imag<0,-gl,gl)
+            if np.any(abs(np.sinh(gl))<1e-5):
+                raise ValueError('singular propagation branch')
+            g=gl/length;half=np.cosh(g*dx_m/2)
+            if not np.isfinite(g).all() or np.any(abs(half)<.5):
+                raise ValueError('invalid spatial current interpolation')
+            z=Z0*np.sqrt(transfer[:,0,1]/transfer[:,1,0])*half
+            z=np.where(z.real<0,-z,z)
+            if not np.isfinite(z).all():
+                raise ValueError('singular modal impedance')
+            gamma.append(g);zchar.append(z)
+        gamma=np.array(gamma);half=np.cosh(gamma*dx_m/2)
+        gamma_all.append(gamma);transfer_z.append(zchar)
+        for side,(ids,sign) in enumerate(((idsides[0],1),(idsides[1],-1))):
+            central_i=im[side]/half
+            raw[loop][:,ids]=sign*np.einsum('cm,emf->ecf',q.T,im[side])
             corrected[loop][:,ids]=sign*np.einsum('cm,emf->ecf',q.T,central_i)
-            implied=-(vm[:,:,2]-vm[:,:,0])/(2*np.sinh(gdx))
+            field=vm[side]
+            predicted=2*np.cosh(gamma*dx_m)*field[:,:,1]
+            recurrence=max(recurrence,float(abs(field[:,:,0]+field[:,:,2]-predicted).max()/abs(field).max()))
+            implied=-(field[:,:,2]-field[:,:,0])/(2*np.sinh(gamma*dx_m))
             power=np.sum(abs(central_i)**2,axis=0)
             if np.any(power<=0):
-                raise ValueError("zero modal current")
-            modal_z.append(np.sum(np.conj(central_i)*implied,axis=0)/power)
-        rows.append(dict(recurrence_residual=residual,gamma_per_m=gdx/dx_m,
-                         modal_z_ohm=np.array(modal_z)))
+                raise ValueError('zero modal current')
+            local_z[side,loop]=np.sum(np.conj(central_i)*implied,axis=0)/power
     spectra,quality=[],[]
     for loop in (0,1):
         s,row=assemble(v[:,:,1],corrected[loop]);spectra.append(s);quality.append(row)
     raw_s,_=assemble(v[:,:,1],raw[0])
+    transfer_z=np.asarray(transfer_z)
     diagnostics=dict(contour_s_abs=float(abs(spectra[0]-spectra[1]).max()),
-                     staggering_s_abs=float(abs(spectra[0]-raw_s).max()),wave_quality=quality,
-                     recurrence_residual=max(r['recurrence_residual'] for r in rows),
-                     gamma_per_m=np.array([r['gamma_per_m'] for r in rows]),
-                     modal_z_ohm=np.array([r['modal_z_ohm'] for r in rows]))
+        staggering_s_abs=float(abs(spectra[0]-raw_s).max()),wave_quality=quality,
+        recurrence_residual=recurrence,gamma_per_m=np.array(local_gamma),
+        gamma_transfer_per_m=np.array(gamma_all),modal_z_ohm=local_z,transfer_z_ohm=transfer_z,
+        transfer_det_abs=maxdet,transfer_symmetry_abs=maxsym,transfer_fit_rel=maxres,
+        transfer_condition_max=maxcond,transfer_floor_min=minfloor,
+        local_vs_transfer_z_rel=float(abs(local_z/transfer_z[None]-1).max()))
     return spectra[0],diagnostics
 
 
@@ -460,18 +501,25 @@ def matrix(root):
     result.update(all_native_complete=all(all(r[3].values()) for r in records),
         native_quality=[r[3] for r in records],qualified=False,directivity_qualified=False,
         s_target_abs=float(abs(s-target).max()),phase_target_deg=phase_change(s,target),
-        beta_target_rel=float(abs(d['gamma_per_m'].imag/beta-1).max()),
-        impedance_target_rel=float(abs(d['modal_z_ohm']/zm-1).max()),
+        beta_target_rel=float(abs(d['gamma_transfer_per_m'].imag/beta-1).max()),
+        local_beta_diagnostic_rel=float(abs(d['gamma_per_m'].imag/beta-1).max()),
+        impedance_target_rel=max(float(abs(d['modal_z_ohm']/zm-1).max()),
+            float(abs(d['transfer_z_ohm']/zm[0]-1).max())),
         contour_s_abs=d['contour_s_abs'],staggering_s_abs=d['staggering_s_abs'],
         recurrence_residual=d['recurrence_residual'],wave_quality=d['wave_quality'],
+        transfer_det_abs=d['transfer_det_abs'],transfer_symmetry_abs=d['transfer_symmetry_abs'],
+        transfer_fit_rel=d['transfer_fit_rel'],transfer_condition_max=d['transfer_condition_max'],
+        transfer_floor_min=d['transfer_floor_min'],local_vs_transfer_z_rel=d['local_vs_transfer_z_rel'],
         reciprocity_abs=float(abs(s-s.transpose(0,2,1)).max()),
         singular_power_max=float((np.linalg.svd(s,compute_uv=False)[:,0]**2).max()))
     result['target_passes']=all(result[k]<=LIMITS[k] for k in
         ('s_target_abs','phase_target_deg','beta_target_rel','impedance_target_rel',
-         'contour_s_abs','recurrence_residual','reciprocity_abs','singular_power_max'))
+         'contour_s_abs','recurrence_residual','reciprocity_abs','singular_power_max',
+         'transfer_det_abs','transfer_symmetry_abs','transfer_fit_rel'))
     result['directivity_note']='Ideal isolation is zero; finite numerical directivity is diagnostic, not an infinite-directivity certificate.'
     np.savez_compressed(root/'matrix.npz',frequency_hz=FREQUENCIES,s=s,
-                        gamma_per_m=d['gamma_per_m'],modal_z_ohm=d['modal_z_ohm'])
+                        gamma_per_m=d['gamma_per_m'],modal_z_ohm=d['modal_z_ohm'],
+                        gamma_transfer_per_m=d['gamma_transfer_per_m'],transfer_z_ohm=d['transfer_z_ohm'])
     save(root/'comparison.json',result)
     return s,result
 
@@ -493,7 +541,7 @@ def study(root):
             passes=change<=LIMITS['s_control_abs'] and pchange<=LIMITS['phase_control_deg'])
     qualified=bool(all(r['all_native_complete'] and r['target_passes'] for _,r in ordinary)
         and all(r['s_abs']<=LIMITS['s_mesh_abs'] and r['phase_deg']<=LIMITS['phase_mesh_deg'] for r in mesh)
-        and all(r['passes'] and r['native']['all_native_complete'] and
+        and all(r['passes'] and r['native']['all_native_complete'] and r['native']['target_passes'] and
                 r['native']['contour_s_abs']<=LIMITS['contour_s_abs'] and
                 r['native']['recurrence_residual']<=LIMITS['recurrence_residual'] for r in controls.values()))
     result=dict(protocol=PROTOCOL,scope=SCOPE,limits=LIMITS,meshes=[r for _,r in ordinary],

@@ -137,6 +137,27 @@ def synthetic():
     return v,current,dx,target
 
 
+def synthetic_modes(scale=1.,alpha=0.):
+    """Four independent modal waves; phase velocity is deliberately variable."""
+    freq=f.FREQUENCIES;length=f.geometry()['length_mm']*1e-3;dx=length/80
+    gamma=alpha+2j*np.pi*freq*np.sqrt(f.ER)/f.C0*scale
+    z=np.array(f.geometry()['modal_impedances_ohm'])[:,None]
+    q=np.array([[1,1],[1,-1]])/np.sqrt(2)
+    forward=np.zeros((4,2,len(freq)),complex);backward=forward.copy()
+    forward[0,0]=1;backward[1,0]=1;forward[2,1]=1;backward[3,1]=1
+    v=np.zeros((4,4,3,len(freq)),complex);current=np.zeros((4,4,2,2,len(freq)),complex)
+    for ids,x0 in (((0,3),-length/2),((1,2),length/2)):
+        for j,off in enumerate((-dx,0.,dx)):
+            x=x0+off
+            value=np.sqrt(z)*(forward*np.exp(-gamma*x)+backward*np.exp(gamma*x))
+            v[:,ids,j]=np.einsum('cm,emf->ecf',q.T,value)
+        for j,off in enumerate((-dx/2,dx/2)):
+            x=x0+off
+            value=(forward*np.exp(-gamma*x)-backward*np.exp(gamma*x))/np.sqrt(z)
+            for loop in (0,1):current[:,ids,j,loop]=np.einsum('cm,emf->ecf',q.T,value)
+    return v,current,dx,gamma
+
+
 class CoupledStriplineControls(unittest.TestCase):
     def test_conformal_map_inverse_and_isolated_strip_limit(self):
         g=f.geometry()
@@ -187,6 +208,40 @@ class CoupledStriplineControls(unittest.TestCase):
         i[:,:,:,1]*=1.01
         _,row=f.extract(v,i,dx)
         self.assertGreater(row['contour_s_abs'],f.LIMITS['contour_s_abs'])
+
+    def test_long_transfer_retains_wrong_phase_velocity_and_signed_attenuation(self):
+        for scale,alpha in ((1.,.02),(1.1,.02),(1.,-.02)):
+            v,i,dx,gamma=synthetic_modes(scale,alpha);s,row=f.extract(v,i,dx)
+            np.testing.assert_allclose(row['gamma_transfer_per_m'],np.broadcast_to(gamma,(2,2,201)),rtol=2e-13,atol=1e-11)
+            gl=gamma*f.geometry()['length_mm']*1e-3;t=np.sqrt(.99)
+            denominator=t*np.cosh(gl)+np.sinh(gl)
+            np.testing.assert_allclose(s[:,1,0],t/denominator,atol=3e-14,rtol=0)
+            np.testing.assert_allclose(s[:,3,0],.1*np.sinh(gl)/denominator,atol=3e-14,rtol=0)
+            if scale!=1.:self.assertGreater(abs(s-f.reference()).max(),.1)
+            if alpha<0:self.assertTrue(np.all(row['gamma_transfer_per_m'].real<0))
+
+    def test_short_difference_noise_is_diagnostic_not_a_forced_propagation_fit(self):
+        v,i,dx,gamma=synthetic_modes()
+        v[:,:,0]+=1e-6*v[:,:,1];v[:,:,2]+=1e-6*v[:,:,1]
+        _,row=f.extract(v,i,dx)
+        self.assertGreater(abs(row['gamma_per_m'].imag/gamma.imag-1).max(),.01)
+        np.testing.assert_allclose(row['gamma_transfer_per_m'],np.broadcast_to(gamma,(2,2,201)),rtol=2e-13,atol=1e-11)
+        self.assertLess(row['recurrence_residual'],f.LIMITS['recurrence_residual'])
+
+    def test_asymmetric_transfer_is_visible_and_fails_the_target_comparison(self):
+        v,i,dx,_=synthetic_modes()
+        v[:,1]*=1.05;v[:,2]*=1.05
+        _,row=f.extract(v,i,dx)
+        self.assertGreater(row['transfer_det_abs'],f.LIMITS['transfer_det_abs'])
+        def fake(path):
+            p=int(path.name.removeprefix('port'))
+            meta=dict(n=6,control='ordinary',excited_port=p,geometry=f.geometry(),mesh_mm={},
+                      cap_s=f.CAP_S,end_db=f.END_DB,dt_factor=f.DT_FACTOR,dx_mm=dx*1e3)
+            return meta,v[p-1],i[p-1],dict(synthetic_native=True)
+        with tempfile.TemporaryDirectory() as temp,patch.object(f,'read',side_effect=fake):
+            _,result=f.matrix(temp)
+        self.assertFalse(result['target_passes'])
+        self.assertFalse(result['qualified'])
 
     def test_missing_modes_nodes_and_invalid_arrays_are_refused(self):
         v,i,dx,_=synthetic()
@@ -310,6 +365,19 @@ class CoupledStriplineControls(unittest.TestCase):
         self.assertFalse(row['directivity_qualified'])
         self.assertGreater(row['mesh_changes'][0]['s_abs'],f.LIMITS['s_mesh_abs'])
         self.assertEqual(row['mesh_changes'][1]['s_abs'],0.)
+
+    def test_a_failed_control_target_cannot_hide_behind_a_small_control_change(self):
+        reference=f.reference()
+        def fake(path):
+            name=path.name;n=int(name[1:].split('_')[0])
+            control=name.split('_')[1] if '_' in name else 'ordinary'
+            return reference.copy(),dict(n=n,control=control,all_native_complete=True,
+                target_passes=control!='dt',contour_s_abs=0.,recurrence_residual=0.)
+        with tempfile.TemporaryDirectory() as temp,patch.object(f,'matrix',side_effect=fake):
+            row=f.study(temp)
+        self.assertFalse(row['qualified'])
+        self.assertEqual(row['controls']['dt']['s_abs'],0.)
+        self.assertFalse(row['controls']['dt']['native']['target_passes'])
 
     def test_energy_cap_and_missing_source_completion_prevent_native_acceptance(self):
         _,meta=f.build(4,1)
