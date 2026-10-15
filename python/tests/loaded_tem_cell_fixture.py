@@ -26,8 +26,8 @@ WIDTH=ETA0*HEIGHT/Z0
 FREQUENCIES=np.linspace(2.4e9,3.2e9,81)
 MESHES, COUNTS, THREADS, CONTROL_MESH = (4,6,8), (1,2,3), 4, 4
 CONTROLS=('ordinary','boundary','guard','backing','transverse','element','time','dt')
-CAP_S, END_DB, NATIVE_STEP_RATIO_MAX = 6e-9, -100., .97
-PROTOCOL='loaded-tem-cell-v2'
+CAP_S, END_DB, NATIVE_STEP_RATIO_MAX = 12e-9, -100., .97
+PROTOCOL='loaded-tem-cell-v3'
 PROPAGATION_MARKER='FAIRBEAM-LOADED-TEM-PROPAGATION-BEGIN'
 SCOPE=('Finite PEC/PMC parallel-plate TEM circuit dual, nominal separate native '
        'capacitors and midpoint voltage/current planes. No printed-stub, '
@@ -273,14 +273,25 @@ def probe_spectra(raw):
     return v,i
 
 
-def trace_clock(data,meta):
-    native=meta['native'];dt=native['dt_s'];stride=int(1/(2*FREQUENCIES[-1]*dt))//4
-    if (data.ndim!=2 or len(data)<3 or data.shape[1]!=2 or not np.isfinite(data).all() or stride<1
-            or np.any(np.diff(data[:,0])<=0)
-            or not np.allclose(np.diff(data[:,0]),stride*dt,rtol=2e-5,atol=dt*1e-5)
-            or not 0<=native['numerical_time_s']-data[-1,0]<stride*dt+2*dt):
+def trace_clock(data,meta,*,magnetic=False):
+    data=np.asarray(data,float)
+    if data.ndim!=2 or len(data)<3 or data.shape[1]!=2 or not np.isfinite(data).all():
         raise ValueError('finite complete native probe clock required')
-    return dict(samples=len(data),first_s=float(data[0,0]),last_s=float(data[-1,0]),stride_steps=stride)
+    native=meta['native'];dt=native['dt_s'];stride=int(1/(2*FREQUENCIES[-1]*dt))//4
+    if stride<1:raise ValueError('finite complete native probe clock required')
+    # Native H probes are timestamped dt/2 after E probes. At an exact
+    # scheduled stop their last stamp can therefore exceed the E stop time.
+    offset=.5 if magnetic else 0.
+    expected=(np.arange(len(data))*stride+offset)*dt
+    tolerance=dt*1e-5
+    gap=native['numerical_time_s']-(data[-1,0]-offset*dt)
+    count=round(native['numerical_time_s']/dt)//stride+1
+    if (len(data)!=count
+            or np.any(np.diff(data[:,0])<=0)
+            or not np.allclose(data[:,0],expected,rtol=2e-10,atol=tolerance)
+            or not -tolerance<=gap<stride*dt+tolerance):
+        raise ValueError('finite complete native probe clock required')
+    return dict(samples=len(data),first_s=float(data[0,0]),last_s=float(data[-1,0]),stride_steps=stride,offset_steps=offset)
 
 
 def source_trace_info(path,meta):
@@ -326,7 +337,7 @@ def acquire(out,n,count,port,kind='loaded',control='ordinary'):
         numerical_time_s=float(stats[3]),iteration_wall_s=float(stats[4])),run=sim.run_stats,required_usage=required_usage(sim))
     v,i=probe_spectra(out/'raw');vn,cn=probe_names()
     np.savez_compressed(out/'waves.npz',frequency_hz=FREQUENCIES,v=v,i=i)
-    raw={name:dict(sha256=sha(out/'raw'/name),**trace_clock(np.loadtxt(out/'raw'/name,comments='%',ndmin=2),meta)) for name in vn+cn}
+    raw={name:dict(sha256=sha(out/'raw'/name),**trace_clock(np.loadtxt(out/'raw'/name,comments='%',ndmin=2),meta,magnetic=name in cn)) for name in vn+cn}
     actual={}
     for name in cn:
         header='\n'.join((out/'raw'/name).read_text().splitlines()[:3])
@@ -353,7 +364,7 @@ def read(out):
     if set(meta['raw_traces'])!=set(vn+cn) or source_trace_info(out/'raw/et',meta)!=meta['source_trace']:
         raise ValueError('changed or missing native source/probes')
     for name,record in meta['raw_traces'].items():
-        if dict(sha256=sha(out/'raw'/name),**trace_clock(np.loadtxt(out/'raw'/name,comments='%',ndmin=2),meta))!=record:
+        if dict(sha256=sha(out/'raw'/name),**trace_clock(np.loadtxt(out/'raw'/name,comments='%',ndmin=2),meta,magnetic=name in cn))!=record:
             raise ValueError('changed native probe trace or clock')
     with np.load(out/'waves.npz') as data:
         np.testing.assert_array_equal(data['frequency_hz'],FREQUENCIES);v,i=data['v'].copy(),data['i'].copy()

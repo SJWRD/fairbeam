@@ -302,9 +302,9 @@ class LoadedTEMAdmissionTests(unittest.TestCase):
     def test_native_probe_clock_rejects_truncation_and_wrong_stride(self):
         dt=1e-13;stride=int(1/(2*f.FREQUENCIES[-1]*dt))//4
         data=np.column_stack((np.arange(100)*stride*dt,np.sin(np.arange(100))))
-        meta=dict(native=dict(dt_s=dt,numerical_time_s=100*stride*dt))
+        meta=dict(native=dict(dt_s=dt,numerical_time_s=(99*stride+stride//2)*dt))
         self.assertEqual(f.trace_clock(data,meta)['stride_steps'],stride)
-        for changed in (data[:-2],data[::2],np.full_like(data,np.nan)):
+        for changed in (data[:-2],data[::2],np.full_like(data,np.nan),data[:,0],data[:,:1]):
             with self.assertRaises(ValueError):f.trace_clock(changed,meta)
 
     def test_native_source_formula_checks_allocated_length_and_waveform(self):
@@ -320,6 +320,20 @@ class LoadedTEMAdmissionTests(unittest.TestCase):
             with self.assertRaises(ValueError):f.source_trace_info(path,meta)
             np.savetxt(path,np.column_stack((time[:-2],expected[:-2])))
             with self.assertRaises(ValueError):f.source_trace_info(path,meta)
+
+    def test_native_magnetic_clock_keeps_yee_half_step_at_exact_stop(self):
+        dt=7.859226349050691e-14;stride=int(1/(2*f.FREQUENCIES[-1]*dt))//4
+        steps=76*stride;meta=dict(native=dict(dt_s=dt,numerical_time_s=steps*dt))
+        for magnetic,offset in ((False,0.),(True,.5)):
+            stamps=(np.arange(77)*stride+offset)*dt
+            # The native text export stores twelve significant digits.
+            stamps=np.array([float(f'{t:.12g}') for t in stamps])
+            data=np.column_stack((stamps,np.ones(77)))
+            self.assertEqual(f.trace_clock(data,meta,magnetic=magnetic)['offset_steps'],offset)
+            if magnetic:self.assertGreater(stamps[-1],meta['native']['numerical_time_s'])
+            for bad in (data[:-1],data[1:],data+np.array([dt,0.])):
+                with self.assertRaises(ValueError):f.trace_clock(bad,meta,magnetic=magnetic)
+            with self.assertRaises(ValueError):f.trace_clock(data,meta,magnetic=not magnetic)
 
     def test_expired_owned_worker_preserves_failure_and_never_starts_second_source(self):
         proc=Mock(pid=1234,win_job=object());proc.poll.return_value=1
