@@ -48,6 +48,12 @@ pack. It holds release files and the issue tracker for app users, and no source.
 Build only from a tag on `main` of the source repository (`git tag v<version>`), after the checks in
 [CONTRIBUTING.md](../CONTRIBUTING.md) pass.
 
+When example conversion changes, also run `python scripts/check-gallery-designs.py --out gallery-check.json`
+with an openEMS/CSXCAD Python environment. This opt-in check copies every actual gallery selection
+into a temporary workspace and verifies preview, editable Design creation and native geometry
+admission. It runs no field propagation and does not establish numerical convergence. Keep the
+receipt outside the checkout or remove the generated receipt before building the tagged release.
+
 1. Bump the version in `package.json`, `src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml` and
    `python/fairbeam/_meta.py`. The runtime refreshes its copy of the Python package when the bundled
    version changes.
