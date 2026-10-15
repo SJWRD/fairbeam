@@ -120,8 +120,10 @@ Build only from a tag on `main` of the source repository (`git tag v<version>`),
 
    The mark is a property of the release, so a later publish to the same version leaves it as it
    is. Never mark an older release as the latest again: the updater does not downgrade.
-5. Update the download links on the website (`landing/index.html`, section `#download`: file
-   names, sizes and minimum OS versions) and push. Vercel deploys the site from `main`.
+5. Once both platforms are verified and the release is promoted, update the website download
+   links (`landing/index.html`, section `#download`: file names, sizes and minimum OS versions)
+   through the repository workflow. Git-triggered website deployments are disabled. Publish one
+   locally built, reviewed batch using the prebuilt workflow in [CI.md](CI.md).
 
 ## Issues and feedback
 
@@ -168,6 +170,16 @@ editing them, or the prefill stops working.
 
 One entry per release, newest first. The installers are on the
 [release page](https://github.com/ismailakdag/fairbeam-releases/releases) of each version.
+
+### 0.7.6, 2026-10-15
+
+- **Editable examples:** convert tilted cylinders and tubes, native coaxial ports and ideal curve wires into Design without replacing their geometry. The helix example can now open as an editable design; ideal wires retain zero radius. Conversion still reports parameters whose expressions cannot be preserved.
+- **Geometry export:** ideal zero-radius wires have no solid surface, so STL, GLB and Blender solid exports now explain that limitation instead of exporting their display-only thickness as physical geometry.
+- **Design appearance:** save material/part opacity and the opening camera view. Coaxial display metadata survives native previews and Python round trips. Overlapping port labels are stacked, including dense arrays.
+- **Larger designs:** preview and save design documents up to 32 MiB; Python source and unrelated request limits remain unchanged. Manual coaxial mesh checks require axial endpoints, without incorrectly requiring a transverse centerline mesh line.
+- **Coaxial workflow:** Python model conversion, native time-axis evaluation and compatible waveguide-port macro export include the fixes merged since 0.7.5. CPU-only support and curved-conductor mesh qualification warnings remain.
+- **Runtime and setup:** macOS upgrades remove the obsolete runtime libs distribution and use the renamed r2 pack. Missing-Elmer guidance points to its setup controls; openEMS remains the default and Elmer is not installed automatically.
+- **Known limits:** Elmer patch S11/mesh qualification, general periodic/Floquet support and curved-PEC coaxial accuracy remain research work. This release does not establish new solver accuracy or convergence claims.
 
 ### 0.7.5, 2026-10-11
 
