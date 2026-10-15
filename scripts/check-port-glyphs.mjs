@@ -3,6 +3,7 @@
 import assert from "node:assert/strict";
 import * as THREE from "three";
 import { lumpedObject, portObject, updatePortGlyphs, waveguidePortObject } from "../src/scene/portGlyphs.ts";
+import { stackLabels } from "../src/scene/labelStack.ts";
 
 const meshes = (g) => { const out = []; g.traverse((o) => o.isMesh && out.push(o)); return out; };
 const size = (o) => new THREE.Box3().setFromObject(o).getSize(new THREE.Vector3());
@@ -71,4 +72,29 @@ const accent = r.children.find((c) => c.isLine && !c.isLineSegments);
 assert.equal(accent.material.color.getHexString(), "e0a526");
 assert.equal(accent.material.depthTest, false);
 assert.ok(size(r).z >= 0.3 - 1e-9, "flat resistor thickened");
+
+// labels that would overprint stack upward; the others stay where they are
+{
+  const P = (x, y, w = 80, h = 18) => ({ x, y, w, h });
+  assert.deepEqual(stackLabels([P(100, 100), P(300, 100)]), [0, 0], "side by side: nothing moves");
+  assert.deepEqual(stackLabels([P(100, 100)]), [0], "one label");
+  // two ports 0.3 mm apart on a 20 mm tooth: the same pixel, give or take one
+  const two = stackLabels([P(200, 300), P(201, 301)]);
+  assert.equal(two[1], 0, "the lower label keeps its place");
+  assert.ok(Math.abs((300 - two[0]) - (301 - 18 - 2)) < 1e-9, `the upper one sits a label height and the gap above the lower (${two[0]})`);
+  // a port, its series capacitor and a second port in a column: a stack of three, no overlaps left
+  const boxes = [P(200, 300), P(205, 298, 120), P(195, 302)];
+  const lift = stackLabels(boxes);
+  ok3: for (let i = 0; i < 3; i++) for (let j = i + 1; j < 3; j++) {
+    const a = boxes[i], b = boxes[j], ya = a.y - lift[i], yb = b.y - lift[j];
+    const overlap = Math.abs(a.x - b.x) < (a.w + b.w) / 2 && Math.abs(ya - yb) < (a.h + b.h) / 2;
+    assert.ok(!overlap, `labels ${i} and ${j} no longer overlap`);
+    if (overlap) break ok3;
+  }
+  assert.ok(lift.every((d) => d >= 0) && lift.filter((d) => d === 0).length === 1, "only upward, and the lowest stays");
+  assert.deepEqual(stackLabels([P(100, 100), P(100, 140)]), [0, 0], "labels a row apart do not move");
+  const dense = stackLabels(Array.from({ length: 100 }, () => P(100, 100)));
+  assert.equal(new Set(dense).size, dense.length, "dense port arrays keep all labels separate beyond 64 rows");
+  assert.ok(dense.every((d, i) => i === 0 || d - dense[i - 1] >= 20), "dense labels retain the full height and gap");
+}
 console.log("port glyph checks passed");

@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import { validColor } from "../designer/colors.ts";
+import { validColor, validOpacity } from "../designer/colors.ts";
 import type { Bundle, Part, Primitive, Vec3 } from "../types";
 import { ghostHostName, isGhostPart, partKind } from "./partKind.ts";
 import type { PartKind } from "./partKind.ts";
@@ -271,6 +271,17 @@ export interface SceneColors {
   gridMajor: string;
 }
 
+/** How see-through a solid is drawn in the modelling view. Metals are opaque and dielectrics see-through (0.9, and
+ *  0.38 without depth writes in x-ray mode, so the conductors inside stay visible). A part's own opacity (the
+ *  design's Opacity, the bundle's `opacity`) wins; x-ray never makes a part more opaque than that. */
+export function solidLook(kind: PartKind, xray: boolean, own?: number): { transparent: boolean; opacity: number; depthWrite: boolean } {
+  const o = validOpacity(own);
+  const dielectric = kind !== "metal";
+  const opacity = Math.min(o ?? (dielectric ? 0.9 : 1), dielectric && xray ? 0.38 : 1);
+  // a part drawn see-through on purpose writes no depth, so what is inside or behind it shows through
+  return { transparent: opacity < 1, opacity, depthWrite: dielectric ? !xray && (o === undefined || o >= 1) : opacity >= 1 };
+}
+
 export function buildParts(b: Bundle, colors: SceneColors, env: THREE.Texture | null, xray: boolean, cache?: SceneGeometryCache): PartObject[] {
   return b.parts.map((part) => {
     const kind = partKind(part);
@@ -289,12 +300,12 @@ export function buildParts(b: Bundle, colors: SceneColors, env: THREE.Texture | 
           polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -8 })
       : kind === "metal"
         ? new THREE.MeshStandardMaterial({
-            color, metalness: 0.9, roughness: 0.34, envMap: env, envMapIntensity: 1.0,
+            color, metalness: 0.9, roughness: 0.34, envMap: env, envMapIntensity: 1.0, ...solidLook(kind, xray, part.opacity),
             side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -4,
           })
         : new THREE.MeshStandardMaterial({
             color, metalness: 0, roughness: 0.75, envMap: env, envMapIntensity: 0.4,
-            transparent: true, opacity: xray ? 0.38 : 0.9, depthWrite: !xray, side: THREE.DoubleSide,
+            ...solidLook(kind, xray, part.opacity), side: THREE.DoubleSide,
             polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 4,
           });
     const meshes: THREE.Mesh[] = [];

@@ -365,8 +365,8 @@ class _Lint:
                 self.error(f"{wp}.range[1]", "cone-length", f"{A}min ({rg[0]:g}) must be below {A}max ({rg[1]:g})")
         elif kind == "wire":
             r = self.ev(f"{wp}.radius", pr.get("radius"))
-            if r is not None and r <= 0:
-                self.error(f"{wp}.radius", "radius", "the radius must be > 0")
+            if r is not None and r < 0:
+                self.error(f"{wp}.radius", "radius", "the radius must be >= 0 (0: an ideal thin wire)")
             pts = pr.get("points")
             if not isinstance(pts, list):
                 self.error(f"{wp}.points", "wire-points", "a wire needs at least 2 distinct points")

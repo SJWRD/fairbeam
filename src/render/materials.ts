@@ -92,6 +92,8 @@ export interface RenderPartInfo {
   conductivity?: number;
   /** the part's (or its material's) own colour: wins over the table, keeps the metallic finish */
   color?: string;
+  /** the part's (or its material's) see-through opacity, 0.05..1: wins over the table's (drawn as plain alpha) */
+  opacity?: number;
   /** a vacuum carver: never rendered */
   void?: boolean;
 }
@@ -108,6 +110,7 @@ export function partInfo(part: Part, names?: { materialName?: string; library?: 
     tan_d: part.material?.tan_d,
     conductivity: part.conductor?.conductivity,
     color: /^#[0-9a-fA-F]{6}$/.test(part.color ?? "") ? part.color!.toLowerCase() : undefined,
+    opacity: typeof part.opacity === "number" && part.opacity >= 0.05 && part.opacity <= 1 ? part.opacity : undefined,
     void: part.void,
   };
 }
@@ -168,11 +171,14 @@ export function materialClass(info: RenderPartInfo, solderMask: "none" | "green"
 
 /** The final look of a part: the table entry, with the part's own colour laid over a metal or a
  *  dielectric. A colour override keeps the material's finish (metallic stays metallic) but drops the
- *  laminate translucency tint, which would otherwise mix with it. */
+ *  laminate translucency tint, which would otherwise mix with it. A see-through opacity below 1 (the
+ *  design's Opacity) replaces the table's translucency with plain alpha, so what lies inside or behind
+ *  the part shows through it, as in the modelling view. */
 export function lookFor(info: RenderPartInfo, solderMask: "none" | "green" = "none"): MaterialLook | null {
   const id = materialClass(info, solderMask);
   if (!id) return null;
-  const look = MATERIAL_LOOKS[id];
-  if (!info.color) return look;
-  return { ...look, baseColor: info.color, attenuation: look.attenuation ? { ...look.attenuation, color: info.color } : null };
+  let look = MATERIAL_LOOKS[id];
+  if (info.color) look = { ...look, baseColor: info.color, attenuation: look.attenuation ? { ...look.attenuation, color: info.color } : null };
+  if (info.opacity !== undefined && info.opacity < 1) look = { ...look, opacity: info.opacity, transmission: 0, attenuation: null };
+  return look;
 }

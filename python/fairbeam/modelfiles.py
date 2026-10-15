@@ -54,6 +54,8 @@ BUNDLED_PROJECT_FILES = frozenset({
     "wideband-dipole-867.json", "yagi-867.json",
 })
 MAX_SOURCE = 256 * 1024
+# a design file is data, not code: one with mesh solids from a scan (a micro-CT tooth: about 30 000 triangles) is a few MB
+MAX_DESIGN = 32 << 20
 HISTORY_KEEP = 50
 DESIGN_SUFFIX = ".design.json"  # fairbeam.design: a model described as data, edited in the designer
 DELETED_PREFIX = "deleted-"  # a deleted design, kept in its history folder
@@ -358,8 +360,8 @@ def _design_text(design) -> str:
 
     design = {**design, "schema": current_schema(design.get("schema"))}
     text = json.dumps(design, indent=2, ensure_ascii=False) + "\n"
-    if len(text.encode("utf-8")) > MAX_SOURCE:
-        raise ModelFileError(422, f"a design is at most {MAX_SOURCE // 1024} KB")
+    if len(text.encode("utf-8")) > MAX_DESIGN:
+        raise ModelFileError(422, f"a design is at most {MAX_DESIGN >> 20} MB")
     return text
 
 

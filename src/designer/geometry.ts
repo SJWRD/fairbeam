@@ -2,7 +2,7 @@
 // python/fairbeam/design.py (resolve_primitive, transform_maps, map_primitive, prim_bbox), written as
 // bundle parts the viewer draws. The server preview replaces it a moment later with the real build
 // (mesh, checks); this only removes the round-trip delay from what you see.
-import { validColor } from "./colors.ts";
+import { resolveOpacity, validColor } from "./colors.ts";
 import type { Bundle, Matrix4Rows, Part, Port } from "../types";
 import type { CircleCut, Design, DesignCut, DesignPart, DesignPrimitive, DesignTransform, PolygonCut, RectCut } from "./types";
 import { evaluate, namesIn } from "./expr.ts";
@@ -125,7 +125,7 @@ function resolve(pr: DesignPrimitive, names: Record<string, number>, priority: n
     out.axis = a; out.origin = o; out.profile = coneProfile(lo, hi, rb, rt);
   } else if (pr.kind === "wire") {
     out.points3 = pr.points.map(v3); out.radius = n(pr.radius);
-    if (out.points3.length < 2 || !(out.radius > 0)) throw new Error("degenerate wire");
+    if (out.points3.length < 2 || !(out.radius >= 0)) throw new Error("degenerate wire");
   } else if (pr.kind === "polyhedron") {
     if (!Array.isArray(pr.vertices) || pr.vertices.length < 4) throw new Error("degenerate polyhedron");
     out.vertices = pr.vertices.map(v3);
@@ -619,7 +619,9 @@ function toBundlePrim(p: Resolved): Record<string, unknown> {
       : { kind: "cylinder", start: p.start, stop: p.stop, radius: p.radius, ...common };
   }
   if (p.kind === "sphere") return { kind: "sphere", center: p.center, radius: p.radius, ...common };
-  if (p.kind === "wire") return { kind: "wire", points: p.points3, radius: p.radius, ...common };
+  if (p.kind === "wire") return p.radius === 0
+    ? { kind: "curve", points: p.points3, ...common }
+    : { kind: "wire", points: p.points3, radius: p.radius, ...common };
   if (p.kind === "polyhedron") return { kind: "polyhedron", vertices: p.vertices, faces: polyhedronTriangles(p.vertices!, p.faces!), ...common };
   if (p.kind === "cone" || p.kind === "torus") return { kind: "rotpoly", axis: p.axis, origin: p.origin, points: p.profile, ...common };
   return p.kind === "linpoly"
@@ -709,6 +711,7 @@ export function quickBundle(d: Design, names: Record<string, number>, previous: 
       }
       parts.push({
         name: part.name, type: metal ? "Metal" : "Material", label: part.label, color: validColor(part.color) ?? validColor(mt.color),
+        ...(resolveOpacity(part, mt) !== undefined ? { opacity: resolveOpacity(part, mt) } : {}),
         primitives: bp, bbox: pb,
         ...(metal ? {} : { material: { eps_r: mt.eps_r === undefined ? 1 : evaluate(mt.eps_r, names), mu_r: evaluate(mt.mu_r ?? 1, names) } }),
       } as unknown as Part);
@@ -737,10 +740,13 @@ export function quickBundle(d: Design, names: Record<string, number>, previous: 
         grow([a.map((x, j) => Math.min(x, c[j]) - (j === k ? 0 : ros)) as V3, a.map((x, j) => Math.max(x, c[j]) + (j === k ? 0 : ros)) as V3]);
         const bounds = (radius: number): [V3, V3] => [a.map((x, j) => Math.min(x, c[j]) - (j === k ? 0 : radius)) as V3, a.map((x, j) => Math.max(x, c[j]) + (j === k ? 0 : radius)) as V3];
         const innerBounds = bounds(ri), shieldBounds = bounds(ros), fillBounds = bounds(ro);
-        parts.push({ name: `Coaxial port ${p.number} conductor`, type: "Metal", color: mats.get(p.conductor ?? "")?.color,
+        const conductor = mats.get(p.conductor ?? "");
+        parts.push({ name: `Coaxial port ${p.number} conductor`, type: "Metal", color: conductor?.color,
+          ...(resolveOpacity(undefined, conductor) !== undefined ? { opacity: resolveOpacity(undefined, conductor) } : {}),
           primitives: [{ kind: "cylinder", start: a, stop: c, radius: ri, priority: 5, bbox: innerBounds },
             { kind: "cylindricalshell", start: a, stop: c, radius: (ro + ros) / 2, shell_width: ros - ro, priority: 5, bbox: shieldBounds }], bbox: shieldBounds } as Part);
         if (p.dielectric != null) parts.push({ name: `Coaxial port ${p.number} dielectric`, type: "Material", color: dielectric?.color,
+          ...(resolveOpacity(undefined, dielectric) !== undefined ? { opacity: resolveOpacity(undefined, dielectric) } : {}),
           material: { eps_r: eps, mu_r: mu, tan_d: evaluate(dielectric?.tan_d ?? 0, names) },
           primitives: [{ kind: "cylindricalshell", start: a, stop: c, radius: (ri + ro) / 2, shell_width: ro - ri, priority: 4, bbox: fillBounds }], bbox: fillBounds } as Part);
         return { ...common, type: "coaxial", mode: "TEM", r_i: ri, r_o: ro, r_os: ros,

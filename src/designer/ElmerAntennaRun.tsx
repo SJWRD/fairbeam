@@ -1,7 +1,7 @@
-import { createSignal, For, onCleanup, Show } from "solid-js";
+import { createEffect, createSignal, For, onCleanup, Show } from "solid-js";
 import { unwrap } from "solid-js/store";
 import { api } from "../runner/api";
-import { researchPath } from "../runner/researchState";
+import { openResearch, researchPath } from "../runner/researchState";
 import { followInDesigner } from "../runner/designRun";
 import { refreshRuns } from "../runner/store";
 import { conflict, dirty, draft, file, names, save } from "./store";
@@ -17,7 +17,13 @@ export default function ElmerAntennaRun(props: { close: () => void }) {
     cell_mm: "12", padding_mm: "40", feed_width_mm: "1", dielectric_cells: "2",
   });
   const [ack,setAck]=createSignal(false), [busy,setBusy]=createSignal(false), [error,setError]=createSignal("");
+  const [diagnostic, setDiagnostic] = createSignal("");
+  const setup = () => { props.close(); openResearch(undefined, "elmer"); };
   let alive=true; onCleanup(()=>{alive=false;});
+  let alert: HTMLParagraphElement | undefined;
+  createEffect(() => {
+    if (error()) queueMicrotask(() => { if (alive) alert?.scrollIntoView({ block: "nearest" }); });
+  });
   const invalid=()=>!ack() || Object.values(values()).some(v=>!v.trim() || !Number.isFinite(Number(v)) || Number(v)<=0)
     || Number(values().f_min_hz)>=Number(values().f_max_hz)
     || Number(values().farfield_hz)<Number(values().f_min_hz) || Number(values().farfield_hz)>Number(values().f_max_hz)
@@ -25,9 +31,16 @@ export default function ElmerAntennaRun(props: { close: () => void }) {
     || !Number.isInteger(Number(values().dielectric_cells)) || Number(values().dielectric_cells)<2 || Number(values().dielectric_cells)>10;
   const submit=async(e:Event)=>{
     e.preventDefault(); if(invalid() || busy() || !file())return;
-    setBusy(true);setError(""); const identity=file()!.id;
+    setBusy(true);setError("");setDiagnostic(""); const identity=file()!.id;
     try{
       if ((await api.health()).elmer_driven !== 2) throw Error(t("elmerAntenna.serverUpdate"));
+      if (!alive) return;
+      const capability = await api.researchProbe("elmer", researchPath("elmer"));
+      if (!alive) return;
+      if (!capability.available) {
+        setDiagnostic(capability.reason ?? "");
+        throw Error(t("elmerAntenna.unavailable"));
+      }
       if(dirty() || conflict())await save();
       if(!alive)return;
       if(file()?.id!==identity || dirty() || conflict())throw Error(t("run.err.notSaved"));
@@ -40,6 +53,9 @@ export default function ElmerAntennaRun(props: { close: () => void }) {
   return <form class="rd-body" onSubmit={submit} data-testid="elmer-antenna-form">
     <p class="note">{t("elmerAntenna.scope")}</p>
     <p class="note">{t("elmerAntenna.pec")}</p>
+    <div class="cluster"><p class="note">{t("elmerAntenna.setupHint")}</p>
+      <button class="btn btn-ghost btn-sm" type="button" disabled={busy()} onClick={setup}>{t("elmerAntenna.setup")}</button>
+    </div>
     <fieldset class="stack" disabled={busy()}><legend>{t("elmerAntenna.option")}</legend>
       <div class="rd-grid"><For each={Object.keys(values()) as (keyof ReturnType<typeof values>)[]}>{key=><label class="dz-field">
         <span class="dz-label">{t(`elmerAntenna.${key}`)}</span>
@@ -49,7 +65,8 @@ export default function ElmerAntennaRun(props: { close: () => void }) {
       <p class="note">{t("elmerAntenna.boundary")}</p>
       <label class="gs-check"><input type="checkbox" checked={ack()} onChange={e=>setAck(e.currentTarget.checked)}/>{t("elmerAntenna.accept")}</label>
     </fieldset>
-    <Show when={error()}><p class="status-block status-critical" role="alert">{error()}</p></Show>
+    <Show when={error()}><p ref={alert} class="status-block status-critical" role="alert">{error()}</p></Show>
+    <Show when={diagnostic()}><details><summary>{t("common.details")}</summary><p class="note">{diagnostic()}</p></details></Show>
     <div class="dialog-actions"><button class="btn btn-primary" type="submit" disabled={busy() || invalid()}>{busy()?t("run.starting"):t("run.saveAndRun")}</button></div>
   </form>;
 }

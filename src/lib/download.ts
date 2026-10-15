@@ -8,6 +8,7 @@
 // "fairbeam:download" window event, matched to the request by its exact URL, so there the message
 // becomes "Saved to <path>" (with Show in folder) or failed/cancelled.
 import { t } from "../i18n/index.ts";
+import { errorText } from "./errorText.ts";
 
 export type DownloadStatus = "requested" | "saved" | "cancelled" | "failed";
 
@@ -120,7 +121,7 @@ async function invokeSaveDownload(name: string, bytes: Uint8Array): Promise<Down
 
 /** The feedback when the content itself could not be generated or handed over. */
 export function downloadFailedMessage(name: string, e: unknown): string {
-  const why = e instanceof Error ? e.message : String(e);
+  const why = errorText(e);
   return t("download.exportFailed", { name, error: why || t("download.unknownError") });
 }
 

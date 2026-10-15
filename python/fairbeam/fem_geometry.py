@@ -160,7 +160,7 @@ def _material_properties(material: dict, names: dict) -> dict[str, Any]:
 
     label = material["name"]
     kind = material["kind"]
-    display_fields = {"name", "kind", "label", "color", "library", "description"}
+    display_fields = {"name", "kind", "label", "color", "opacity", "library", "description"}
     if kind == "metal":
         extra = set(material) - display_fields
         if extra:

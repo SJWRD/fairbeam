@@ -93,7 +93,7 @@ def _text(*parts) -> str:
     return " ".join(str(p) for p in parts if p).lower()
 
 
-def classify_part(part: dict) -> dict:
+def _classify_look(part: dict) -> dict:
     """The look of one part: ``{"look": ..., "colour": hex, "roughness", "metallic", "kind"}``.
 
     ``part`` has ``kind`` ("metal" | "dielectric" | "void"), and optionally ``material`` (the design's material name),
@@ -140,6 +140,16 @@ def classify_part(part: dict) -> dict:
         look = "dielectric"
     colour, rough = LOOK_TABLE[{"rogers": "ptfe"}.get(look, look)][:2]
     return {"look": look, "kind": "dielectric", "colour": override or colour, "roughness": rough, "metallic": 0.0}
+
+
+def classify_part(part: dict) -> dict:
+    """The look of one part (``_classify_look``), with ``alpha`` when the design gives the part a see-through
+    ``opacity`` below 1 (the Properties Opacity, like the in-app Rendered view)."""
+    look = _classify_look(part)
+    opacity = part.get("opacity")
+    if look["kind"] != "void" and isinstance(opacity, (int, float)) and not isinstance(opacity, bool) and 0.05 <= opacity < 1:
+        look["alpha"] = float(opacity)
+    return look
 
 
 # ----------------------------------------------------------------------------------------------- cameras
@@ -511,9 +521,23 @@ def boost_saturation(value: str, factor: float) -> str:
 
 def material_for(look: dict, scale: float, solder_mask: bool, cache: dict):
     """A Principled material for a classified part (cached per look/colour)."""
-    key = (look["look"], look.get("colour"), solder_mask)
+    key = (look["look"], look.get("colour"), solder_mask, look.get("alpha"))
     if key in cache:
         return cache[key]
+    if look.get("alpha") is not None:
+        # see-through (the design's Opacity): the same look, blended with what is behind it
+        mat = material_for({k: v for k, v in look.items() if k != "alpha"}, scale, solder_mask, cache).copy()
+        mat.name = f"Fairbeam {look['look']} {look['alpha']:.2f}"
+        bsdf = next(n for n in mat.node_tree.nodes if n.type == "BSDF_PRINCIPLED")
+        set_input(bsdf, "Alpha", look["alpha"])
+        set_input(bsdf, ["Transmission Weight", "Transmission"], 0.0)
+        for attr, value in (("surface_render_method", "BLENDED"), ("blend_method", "BLEND")):
+            try:
+                setattr(mat, attr, value)   # EEVEE (Blender 4.2+ / older); Cycles reads the Alpha input
+            except (AttributeError, TypeError, ValueError):
+                pass
+        cache[key] = mat
+        return mat
     name = "Fairbeam " + look["look"] + (" mask" if solder_mask and look["look"] == "fr4" else "")
     if look["kind"] == "dielectric":
         look = dict(look, colour=boost_saturation(look["colour"], 1.7 if look["look"] != "fr4" else 1.15))

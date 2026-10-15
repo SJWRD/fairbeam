@@ -309,7 +309,7 @@ fx.cases.forEach((c, i) => {
           check(t.kind === "rotpoly" && t.axis === q.axis && same(t.origin, q.origin) && same(t.points, q.profile), where,
             `${wp.name}[${k}] ${q.kind}: ${JSON.stringify(t)} vs ${JSON.stringify(q)}`);
         } else if (q.kind === "wire") {
-          check(t.kind === "wire" && near(t.radius, q.radius) && same(t.points, q.points), where, `${wp.name}[${k}] wire ${JSON.stringify(t)} vs ${JSON.stringify(q)}`);
+          check((q.radius === 0 ? t.kind === "curve" : t.kind === "wire" && near(t.radius, q.radius)) && same(t.points, q.points), where, `${wp.name}[${k}] wire ${JSON.stringify(t)} vs ${JSON.stringify(q)}`);
         } else if (q.kind === "box") {
           check(t.kind === "box" && same(t.start, q.start) && same(t.stop, q.stop), where, `${wp.name}[${k}] box ${JSON.stringify(t)} vs ${JSON.stringify(q)}`);
         } else if (q.kind === "cylinder") {

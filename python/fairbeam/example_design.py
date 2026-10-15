@@ -54,31 +54,35 @@ def _primitive(p):
         q.update(normal="xyz"[p["normal"]], elevation=p["elevation"], points=p["points"])
         if kind == "linpoly":
             q["length"] = p["length"]
-    elif kind == "cylinder":
+    elif kind in ("cylinder", "cylindricalshell"):
         a, b = p["start"], p["stop"]
+        shell = kind == "cylindricalshell"
+        if shell:
+            outer = p["radius"] + p["shell_width"] / 2
+            inner = p["radius"] - p["shell_width"] / 2
+            if inner < 0:
+                raise ExampleConversionError("cylindrical shell has a negative inner radius")
+        else:
+            outer, inner = p["radius"], 0.0
         axes = [i for i in range(3) if abs(a[i] - b[i]) > 1e-9]
-        if len(axes) != 1:
-            raise ExampleConversionError("cylinder axis is not a single coordinate axis")
-        axis = axes[0]
-        q.update(axis="xyz"[axis], center=[a[i] for i in range(3) if i != axis],
-                 range=[min(a[axis], b[axis]), max(a[axis], b[axis])], radius=p["radius"])
-    elif kind == "cylindricalshell":
-        a, b = p["start"], p["stop"]
-        axes = [i for i in range(3) if abs(a[i] - b[i]) > 1e-9]
-        if len(axes) != 1:
-            raise ExampleConversionError("cylindrical shell axis is not a single coordinate axis")
-        axis = axes[0]
-        outer = p["radius"] + p["shell_width"] / 2
-        inner = p["radius"] - p["shell_width"] / 2
-        if inner < 0:
-            raise ExampleConversionError("cylindrical shell has a negative inner radius")
-        q.update(kind="cylinder", axis="xyz"[axis], center=[a[i] for i in range(3) if i != axis],
-                 range=[min(a[axis], b[axis]), max(a[axis], b[axis])], radius=outer,
-                 inner_radius=inner)
+        if not axes:
+            raise ExampleConversionError(f"{'cylindrical shell' if shell else 'cylinder'} has no length")
+        if len(axes) == 1:
+            axis = axes[0]
+            q.update(kind="cylinder", axis="xyz"[axis], center=[a[i] for i in range(3) if i != axis],
+                     range=[min(a[axis], b[axis]), max(a[axis], b[axis])], radius=outer)
+        else:
+            # a tilted axis (a tilted tooth, a slanted via): the design's end-point form, which builds the
+            # same CSXCAD cylinder from the same start and stop
+            q.update(kind="cylinder", start=list(a), stop=list(b), radius=outer)
+        if shell:
+            q["inner_radius"] = inner
     elif kind == "sphere":
         q.update(center=p["center"], radius=p["radius"])
-    elif kind == "wire":
-        q.update(points=p["points"], radius=p["radius"])
+    elif kind in ("curve", "wire"):
+        # A native Curve has no physical radius. Keep its exact mesh-edge model;
+        # inventing a small positive radius would change the source geometry.
+        q.update(kind="wire", points=p["points"], radius=0.0 if kind == "curve" else p["radius"])
     elif kind == "rotpoly":
         # RotPoly encodings are not guaranteed to match Design's cone/torus/profile forms.
         raise ExampleConversionError("CSXCAD RotPoly is not supported by exact example conversion")
@@ -348,15 +352,21 @@ def _material_name(materials: list, item: dict, same) -> str:
         name, n = f"{base} {n}", n + 1
 
 
-def _coaxial_port(record: dict, materials: list) -> dict:
+def _coaxial_port(record: dict, materials: list, display_materials: dict | None = None) -> dict:
     """A Design coaxial port from ``Simulation.coaxial_port``'s record.  Its conductor (always PEC) and
     filling become design materials referenced by name, so the rebuild creates the same native port."""
-    conductor = _material_name(materials, {"name": record.get("conductor") or "PEC", "kind": "metal"},
-                               lambda m: m["kind"] == "metal" and m.get("conductivity") is None)
+    def display(role):
+        source = (display_materials or {}).get(f"Coaxial port {record['number']} {role}", {})
+        return {key: source[key] for key in ("color", "opacity") if source.get(key) is not None}
+
+    conductor_display = display("conductor")
+    conductor = _material_name(materials, {"name": record.get("conductor") or "PEC", "kind": "metal", **conductor_display},
+                               lambda m: m["kind"] == "metal" and m.get("conductivity") is None
+                               and all(m.get(key) == conductor_display.get(key) for key in ("color", "opacity")))
     dielectric = None
     if record.get("dielectric") is not None:
         item = {"name": record["dielectric"], "kind": "dielectric", "eps_r": str(record["eps_r"]),
-                "tan_d": str(record.get("tan_d") or 0)}
+                "tan_d": str(record.get("tan_d") or 0), **display("dielectric")}
         if abs(record.get("mu_r", 1.0) - 1.0) > 1e-10:
             item["mu_r"] = str(record["mu_r"])
         if record.get("tan_d_freq") is not None:
@@ -364,7 +374,8 @@ def _coaxial_port(record: dict, materials: list) -> dict:
 
         def same(m):
             return m["kind"] == "dielectric" and all(
-                _number(m.get(k)) == _number(item.get(k)) for k in ("eps_r", "tan_d", "mu_r", "tan_d_freq"))
+                _number(m.get(k)) == _number(item.get(k)) for k in ("eps_r", "tan_d", "mu_r", "tan_d_freq")) and all(
+                    m.get(key) == item.get(key) for key in ("color", "opacity"))
         dielectric = _material_name(materials, item, same)
     return {"type": "coaxial", "number": record["number"], "mode": "TEM",
             "start": list(record["start"]), "stop": list(record["stop"]), "direction": record["direction"],
@@ -451,6 +462,8 @@ def _read_design(module, values: dict, source_path: Path):
                 part["label"] = entry["label"] if index == 0 else f"{entry['label']} [{index + 1}]"
             if entry.get("color"):
                 part["color"] = entry["color"]
+            if entry.get("opacity") is not None:
+                part["opacity"] = entry["opacity"]
             if group["transforms"]:
                 part["transforms"] = group["transforms"]
             parts.append(part)
@@ -468,7 +481,7 @@ def _read_design(module, values: dict, source_path: Path):
                           "a": str(p["a"]), "b": str(p["b"]), "start": p["start"],
                           "stop": p["stop"], "direction": p["direction"], "excite": p["excite"]})
         elif p["type"] == "coaxial":
-            ports.append(_coaxial_port(p, materials))
+            ports.append(_coaxial_port(p, materials, sim.materials))
         else:
             raise ExampleConversionError(f"port type {p['type']!r} is not representable")
     resistors = [{"name": p["name"], **{k: str(p[k]) for k in ("R", "L", "C") if k in p},
@@ -633,7 +646,7 @@ def _slot_axis(core: dict, path):
             return in_plane("xyz".index(prim["normal"]))[rest[1]]
     if key == "elevation":
         return "xyz".index(prim["normal"])
-    if prim["kind"] == "cylinder":
+    if prim["kind"] == "cylinder" and "axis" in prim:
         axis = "xyz".index(prim["axis"])
         if key == "range":
             return axis

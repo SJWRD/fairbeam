@@ -209,6 +209,10 @@
        "primitives": [
          {"kind": "wire", "points": [["feed", 0, "h"], ["feed", 0, "h + 30"]], "radius": 0.4},
          {"kind": "wire", "points": [[10, 20, 2], [15, 20, 2], [15, 25, 8]], "radius": "h / 5"}]}}},
+    {"name": "ideal thin-wire curves, rotated and translated",
+     "append": {"parts": {"name": "ideal_wires", "material": "copper",
+       "transforms": [{"type": "rotate", "axis": "z", "center": [0, 0, 0], "angle": 90}, {"type": "move", "offset": [0, 0, "h"]}],
+       "primitives": [{"kind": "wire", "points": [[10, 20, 2], [15, 20, 2], [15, 25, 8]], "radius": 0}]}}},
     {"name": "a polyhedron (quad and triangle faces), rotated, mirrored and translated",
      "append": {"parts": {"name": "poly", "material": "copper",
        "transforms": [{"type": "rotate", "axis": "z", "center": [1, 2, 0], "angle": 90}, {"type": "mirror", "plane": "x", "point": [3, 0, 0]}, {"type": "translate", "copies": 1, "step": [0, "W", 0]}],
@@ -455,6 +459,7 @@
     {"name": "coarse mesh", "set": {"mesh.cells_per_wavelength": 6},
      "expect": ["warning|cells-per-wavelength|mesh.cells_per_wavelength"]},
     {"name": "manual mesh expression lines", "set": {"mesh.mode": "manual", "mesh.lines": {"x": [-100, "feed", 100], "y": [-100, 0, 100], "z": [-100, 0, "h", 100]}}, "expect": []},
+    {"name": "a coaxial port's centerline needs no manual mesh line", "set": {"mesh.mode": "manual", "mesh.lines": {"x": [-100, "feed", 30.4, 30.8, 31.2, 31.6, 32, 100], "y": [-100, -0.8, -0.4, 0, 0.4, 0.8, 100], "z": [-100, -40, -20, 0, "h", 100]}}, "append": {"ports": {"type": "coaxial", "number": 2, "direction": "z", "start": [31, 0.2, -40], "stop": [31, 0.2, -20], "r_i": 0.45, "r_o": 1.5, "r_os": 1.9, "conductor": "copper", "dielectric": null, "feed_shift": 3, "measurement_shift": 6, "termination": "open", "excite": false}}, "expect": ["warning|coax-mesh|ports[1]"]},
     {"name": "manual mesh repeated line", "set": {"mesh.mode": "manual", "mesh.lines": {"x": [-100, -100, "feed", 100], "y": [-100, 0, 100], "z": [-100, 0, "h", 100]}}, "expect": ["error|mesh-lines|mesh.lines.x"]},
     {"name": "manual mesh keeps the far-field band check", "set": {"mesh.mode": "manual", "mesh.lines": {"x": [-100, "feed", 100], "y": [-100, 0, 100], "z": [-100, 0, "h", 100]}, "far_field.frequencies": ["f0", "2 * f0"]}, "expect": ["error|ff-band|far_field.frequencies[1]"]},
     {"name": "adaptive mesh ignores stale legacy fields", "set": {"mesh.mode": "design", "mesh.cells_per_wavelength": -1, "mesh.pad": -1, "mesh.air_cells_per_wavelength": 200, "mesh.overrides": {"air_cells_per_wavelength": 22}}, "expect": []},
@@ -531,13 +536,17 @@
        {"kind": "cone", "axis": "z", "center": [40, 40], "bottom_radius": 2, "top_radius": 0, "range": [0, 5]},
        {"kind": "torus", "axis": "y", "center": [40, 0, 20], "major_radius": 4, "minor_radius": 1}]}},
      "expect": []},
-    {"name": "wires: one point, two equal points, zero radius",
+    {"name": "wires: one point, two equal points, negative radius",
      "append": {"parts": {"name": "w", "material": "copper", "primitives": [
        {"kind": "wire", "points": [[40, 40, 0]], "radius": 0.5},
        {"kind": "wire", "points": [[40, 40, 0], [40, 40, 0]], "radius": 0.5},
-       {"kind": "wire", "points": [[40, 40, 0], [40, 40, 10]], "radius": "0"}]}},
+       {"kind": "wire", "points": [[40, 40, 0], [40, 40, 10]], "radius": "-1"}]}},
      "expect": ["error|wire-points|parts[3].primitives[0].points", "error|wire-points|parts[3].primitives[1].points",
                 "error|radius|parts[3].primitives[2].radius"]},
+    {"name": "an ideal thin wire has zero radius",
+     "append": {"parts": {"name": "ideal", "material": "copper", "primitives": [
+       {"kind": "wire", "points": [[40, 40, 0], [41, 42, 10]], "radius": "0"}]}},
+     "expect": []},
     {"name": "a monopole on the ground plane is fine",
      "append": {"parts": {"name": "mono", "material": "copper", "primitives": [
        {"kind": "wire", "points": [[20, 20, 0], [20, 20, 25]], "radius": 0.5}]}},

@@ -237,6 +237,8 @@ def read_structure(csx, materials: dict, length_unit: float = 1e-3) -> tuple[lis
                                       "thickness": meta.get("thickness")}
             if "color" in meta:
                 entry["color"] = meta["color"]
+            if "opacity" in meta:
+                entry["opacity"] = meta["opacity"]
             if "label" in meta:
                 entry["label"] = meta["label"]
             if meta.get("void") and ptype == "Material":

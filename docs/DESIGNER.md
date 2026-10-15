@@ -153,7 +153,8 @@ directivity rather than its gain.
     - Parameters: Parameter.
   - Transform: Transform… opens the transform dialog for the selected solid or shape. Rotate,
     Scale, Mirror and Translate copies open it with that operation selected. See [Transforms](#transforms).
-  - View: camera presets, Fit and Screenshot, followed by geometry/overlay visibility controls.
+  - View: camera presets, Fit and Screenshot, the Opening view (Save, Go to, Clear), followed by
+    geometry/overlay visibility controls.
     Guide grid controls both the reference grid and active drawing-plane grid; it does not disable
     snapping. Ground plane controls only the model's PEC half-space geometry. Mesh view uses the
     same toggle as Simulation › Mesh. View preserves an
@@ -195,6 +196,11 @@ directivity rather than its gain.
   visible, except inside fields, editors, menus, dialogs, or an active drawing tool. With the 3D
   view focused, arrows orbit (Shift pans), +/− zoom, and Space or F fits the model. Orbiting away
   from a preset clears its pressed state. The number-row aliases are provided for laptop keyboards.
+  **Opening view**: View › Opening view › **Save** keeps the current camera in the design (as `view`:
+  the camera position and the point it looks at, in mm). The design then opens with that camera
+  instead of the fitted isometric view, so a small detail (a probe tip on a large tooth, a feed under
+  a board) is in sight from the start. **Go to** returns to it and **Clear** removes it. Saving and
+  clearing are undo steps, Python Apply keeps the view, and the solver and the exports ignore it.
 - **Properties** (right): the fields of the selected item.
 - **Dock** (bottom): **Checks** and **Parameters**, and for a run started here **Run** (its live
   progress), **Runs** (the design's runs side by side, with the parameters that differ) and
@@ -393,6 +399,16 @@ subfolder), or drag a part onto another part at the top level. Right-click a com
 component** (its parts and subfolders move up one level) and **Delete component and its parts**;
 **Show parts** and **Hide parts** act on everything inside. Each is one undo step.
 
+**Color and Opacity.** A material's Properties and a part's have a **Color** and an **Opacity** (a
+slider from 5 to 100 %; **Default** clears either). They only change how the solid is drawn: the solver,
+the mesh and the results ignore them. A part's own wins over its material's. Opacity makes a solid
+see-through in the 3D view, the Rendered view, Render image… and the Blender render, so a block that
+hides what lies inside or behind it (a substrate around a via, a tooth around a probe tip) can stay
+visible as a faint shell. Without it, metals are opaque and dielectrics nearly so; **See-through
+dielectrics** fades every dielectric further but never makes a part more opaque than its Opacity.
+The design file keeps them as `color` (`"#rrggbb"`) and `opacity` (0.05 to 1) on the material or the
+part.
+
 Right-click a solid or shape in the tree or the 3D view for Rename, Hide, Transform…, Color…,
 Round corners… (on a box), Boolean ›, Move to component ›, Add discrete port here (when the picked
 metal face supports it), Duplicate and Delete. Rename edits the
@@ -434,7 +450,8 @@ A part's properties also add more shapes to it. The kinds:
   a sheet. The build makes it a regular polygon with vertices on the circle, an even number of
   sides that keeps every edge within 0.01 mm of the arc and is never below 64 (a ring is two half
   rings, since CSXCAD polygons have no holes). The VBA macro exports a full circle as a Circle
-  with a cover, a ring as polygons.
+  with a cover, a ring as polygons. A cylinder or tube on a tilted axis (from a Python model, for
+  example a tilted tooth) has **Axis start** and **Axis stop** points instead of an axis, a center and a range.
 - **Sphere**: center and radius.
 - **Polygon**: a flat sheet with corners in a plane (normal and elevation).
 - **Extrude**: a polygon extruded by a length along its normal. In the shape dialog, a polygon with
@@ -443,7 +460,9 @@ A part's properties also add more shapes to it. The kinds:
 - **Torus**: axis, center, the major radius (axis to the tube center) and the minor radius (the
   tube). openEMS gets the tube as a 64-sided polygon turned about the axis.
 - **Wire**: a thin wire along a polyline of points, with a radius. The automatic mesh puts fine
-  cells around it.
+  cells around it. Radius **0** preserves an ideal mesh-edge conductor (CSXCAD `Curve`), including
+  the axial helix example. Its effective thickness depends on the mesh; copying the example
+  retains its own mesh and does not turn it into a finite-radius conductor.
 - **Polyhedron** (`{"kind": "polyhedron", "vertices": [[x, y, z], ...], "faces": [[i, j, k, ...], ...]}`):
   a closed solid from its vertices (expressions allowed, at least 4) and polygon faces (lists of
   vertex indices, at least 4 faces of at least 3 different, existing indices each). There is no
@@ -1199,8 +1218,9 @@ and the search goes on. Sweeps run every point as it is.
   builds the geometry without running the solver and replaces the design's solids, materials, ports,
   parameters, mesh, simulation and far field with the result, in **one undo step**. The design keeps
   its name and id. The script is read back with the same converter as the bundled Python examples, so
-  its rules apply: exact primitives only, coordinates that are linear in the parameters become
-  expressions, the other numbers stay numbers, and a parameter that drives nothing is dropped. After
+  its rules apply: exact primitives only (a cylinder or tube on a tilted axis keeps its two end points),
+  coordinates that are linear in the parameters become expressions, the other numbers stay numbers,
+  and a parameter that drives nothing is dropped. After
   Apply the panel writes the script again from the new design; when that script builds the same
   design your text stays, otherwise it is replaced and the panel says the script was normalized.
   A failure (a Python exception, a syntax error, an unsupported feature, a time-out) comes back with
@@ -1486,7 +1506,8 @@ fill and rim light, a soft ground shadow, and the ports. Copper, gold, silver, t
 aluminium, brass and steel are metallic with their own colour and roughness; a PEC or an unknown
 metal is copper. FR-4 is a translucent yellow-green laminate, Rogers, Taconic and PTFE laminates
 are cream, alumina is white, any other dielectric is a neutral beige; air, vacuum and cut-outs are
-not drawn. A part's own **Color** wins over these defaults and keeps the metallic finish. A
+not drawn. A part's own **Color** wins over these defaults and keeps the metallic finish, and an
+**Opacity** below 100 % draws it see-through (plain transparency instead of the laminate's tint). A
 material is recognised by its name or library entry in the designer, and by its conductivity,
 permittivity and loss in a result or an example (the bundle does not carry names). The table is
 `src/render/materials.ts`, plain data that the Blender renderer mirrors.

@@ -85,7 +85,8 @@ Primitive kinds (simple modelling shapes, each one maps to one CSXCAD primitive)
     as a solid: a flat-ended cylinder along every segment and a sphere at every bend (:func:`add_wire`; CSXCAD's
     ``AddWire`` snaps the line to the mesh edges and resonates a dipole 15 % low), so the mesh needs cells about as small as
     the radius; the automatic mesh refines the free ends and the surface lines. A radius under 0.02 mm, or a wire with a
-    slanted segment, stays CSXCAD's wire (a bare line of mesh edges).
+    slanted segment, stays CSXCAD's wire (a bare line of mesh edges). Radius zero is an ideal
+    thin wire, built as a native CSXCAD ``Curve``; its effective thickness is set by the grid.
 
 ``polyhedron``
     a closed solid from ``vertices`` (x, y, z points, at least 4, expressions allowed) and ``faces``
@@ -430,6 +431,22 @@ def _need(obj, key, where, kind=None):
     return v
 
 
+def _check_view(v) -> None:
+    """The opening view (``view``): the 3D view's camera position and the point it looks at, in mm. Drawing only:
+    the build and the exports ignore it."""
+    if not isinstance(v, dict):
+        raise DesignError("view is {camera: [x, y, z], target: [x, y, z]} in mm", "view")
+    points = []
+    for key in ("camera", "target"):
+        p = v.get(key)
+        if not (isinstance(p, list) and len(p) == 3 and all(
+                isinstance(x, (int, float)) and not isinstance(x, bool) and math.isfinite(x) for x in p)):
+            raise DesignError(f"{key} is three numbers: x, y and z in mm", f"view.{key}")
+        points.append(p)
+    if math.dist(*points) < 1e-9:
+        raise DesignError("the camera must not sit on the point it looks at", "view.camera")
+
+
 _HEX_COLOR = re.compile(r"#[0-9a-fA-F]{6}")
 
 
@@ -438,6 +455,25 @@ def _check_color(obj: dict, where: str) -> None:
     c = obj.get("color")
     if c is not None and not (isinstance(c, str) and _HEX_COLOR.fullmatch(c)):
         raise DesignError("color is a hex colour such as '#c8a040'", f"{where}.color")
+
+
+#: the most see-through a part can be drawn (src/designer/colors.ts OPACITY_MIN): a fainter one is a hidden part
+OPACITY_MIN = 0.05
+
+
+def _check_opacity(obj: dict, where: str) -> None:
+    """An optional display opacity, a number from OPACITY_MIN (nearly clear) to 1 (opaque); drawing only, like
+    the colour (the solver ignores it). A part's own wins over its material's."""
+    o = obj.get("opacity")
+    if o is not None and (isinstance(o, bool) or not isinstance(o, (int, float)) or not math.isfinite(o)
+                          or not OPACITY_MIN <= o <= 1):
+        raise DesignError(f"opacity is a number from {OPACITY_MIN} (nearly clear) to 1 (opaque)", f"{where}.opacity")
+
+
+def display_opacity(part: dict, material: dict) -> float | None:
+    """The opacity a part is drawn with: its own, else its material's, else None (the viewer's default look)."""
+    o = part.get("opacity")
+    return float(o) if o is not None else (float(material["opacity"]) if material.get("opacity") is not None else None)
 
 
 def check_design(d: dict) -> None:
@@ -469,6 +505,8 @@ def check_design(d: dict) -> None:
             raise DesignError("must be the source model's SHA-256 hash", "python_source_hash")
     elif "python_source_hash" in d:
         raise DesignError("needs python_source_model", "python_source_hash")
+    if "view" in d:
+        _check_view(d["view"])
     keys: set[str] = set()
     for i, p in enumerate(d.get("params", [])):
         w = f"params[{i}]"
@@ -498,6 +536,7 @@ def check_design(d: dict) -> None:
         if mt.get("kind") not in ("metal", "dielectric"):
             raise DesignError("kind must be 'metal' or 'dielectric'", f"{w}.kind")
         _check_color(mt, w)
+        _check_opacity(mt, w)
     parts: set[str] = set()
     for i, pt in enumerate(d.get("parts", [])):
         w = f"parts[{i}]"
@@ -508,6 +547,7 @@ def check_design(d: dict) -> None:
         if pt.get("material") not in mats:
             raise DesignError(f"unknown material {pt.get('material')!r}", f"{w}.material")
         _check_color(pt, w)
+        _check_opacity(pt, w)
         if "component" in pt and not isinstance(pt["component"], str):
             raise DesignError("component is a folder path such as 'antenna/feed'", f"{w}.component")
         for j, pr in enumerate(_need(pt, "primitives", w, list)):
@@ -962,8 +1002,8 @@ def resolve_primitive(pr: dict, names: dict, wp: str, priority: int) -> dict:
         if all(math.dist(pts[0], q) < 1e-12 for q in pts):
             raise DesignError("a wire needs two distinct points", f"{wp}.points")
         r = num(pr.get("radius"), f"{wp}.radius")
-        if r <= 0:
-            raise DesignError("the radius must be > 0", f"{wp}.radius")
+        if r < 0:
+            raise DesignError("the radius must be >= 0 (0: an ideal thin wire)", f"{wp}.radius")
         out.update(points=pts, radius=r)
     elif kind == "polyhedron":
         verts, faces = pr.get("vertices"), pr.get("faces")
@@ -2780,10 +2820,10 @@ def build(d: dict, values: dict):
     flat = {(sh["part"], sh["prim"]): sh for sh in sheets}
     for i, (part, pt) in enumerate(zip(parts, d.get("parts", []))):
         mt = part["material"]
-        label, color = pt.get("label"), pt.get("color") or mt.get("color")
+        label, color, opacity = pt.get("label"), pt.get("color") or mt.get("color"), display_opacity(pt, mt)
         if part["metal"]:
             sigma, thick = metal_loss(mt, num)
-            prop = sim.metal(pt["name"], label=label, color=color, conductivity=sigma, thickness=thick)
+            prop = sim.metal(pt["name"], label=label, color=color, opacity=opacity, conductivity=sigma, thickness=thick)
             if isinstance(prop, LossyMetal):
                 prop.sheet_limit = thin_limit
         else:
@@ -2791,7 +2831,7 @@ def build(d: dict, values: dict):
             prop = sim.dielectric(pt["name"], num(mt.get("eps_r", 1), f"materials.{mt['name']}.eps_r"),
                                   tan_d=num(mt.get("tan_d", 0), f"materials.{mt['name']}.tan_d"),
                                   tan_d_freq=None if tan_f is None else num(tan_f, f"materials.{mt['name']}.tan_d_freq") * 1e9,
-                                  label=label, color=color,
+                                  label=label, color=color, opacity=opacity,
                                   mu_r=num(mt.get("mu_r", 1), f"materials.{mt['name']}.mu_r"))
         for j, p in enumerate(part["prims"]):
             sh = flat.get((i, j))
@@ -2820,7 +2860,14 @@ def build(d: dict, values: dict):
             from .coax import resolved_coax
             try:
                 cp = resolved_coax(po, d.get("materials", []), num)
+                display = {}
+                for role in ("conductor", "dielectric"):
+                    material = next((m for m in d.get("materials", []) if m.get("name") == cp.get(role)), {})
+                    for key in ("color", "opacity"):
+                        if material.get(key) is not None:
+                            display[f"{role}_{key}"] = material[key]
                 sim.coaxial_port(cp["number"], a, c, cp["direction"], cp["r_i"], cp["r_o"], cp["r_os"],
+                                 **display,
                                  **{key: cp[key] for key in ("conductor", "dielectric", "eps_r", "mu_r", "tan_d", "tan_d_freq", "feed_shift", "measurement_shift", "termination", "excite") if key in cp})
             except ValueError as error:
                 raise DesignError(str(error), w) from error
@@ -3109,12 +3156,15 @@ def add_wire(prop, points, radius, **kw):
     CSXCAD's own ``AddWire`` snaps the polyline to the nearest mesh edges whatever the radius, and a half-wave
     dipole of it resonated 15 % below the same dipole drawn as cylinders. A wire thinner than
     ``WIRE_SOLID_MIN`` stays a CSXCAD wire, a bare line of mesh edges, and so does a wire with a slanted segment (an oblique cylinder
-    would not export to CST as one). Returns the primitive, or an object that forwards
+    would not export to CST as one). Radius zero preserves an ideal native CSXCAD Curve.
+    Returns the primitive, or an object that forwards
     ``AddTransform`` to every one of them."""
     import numpy as np
 
     if hasattr(prop, "_prop"):   # a lossy metal: its wires stay perfect conductors
         prop = prop._prop(("pec",))
+    if float(radius) == 0:
+        return prop.AddCurve(points, **kw)
     pts = np.asarray(points, float)
     if not radius or float(radius) < WIRE_SOLID_MIN or pts.ndim != 2 or pts.shape[0] != 3 or pts.shape[1] < 2:
         return prop.AddWire(points, radius, **kw)
@@ -3375,6 +3425,8 @@ def to_python(d: dict) -> str:
         lbl = f", label={pt['label']!r}" if pt.get("label") else ""
         col = pt.get("color") or mt.get("color")
         col = f", color={col!r}" if col else ""
+        see = display_opacity(pt, mt)
+        col += f", opacity={see!r}" if see is not None else ""
         if mt["kind"] == "metal":
             loss = ""
             if _given(mt.get("conductivity")):
@@ -3571,11 +3623,17 @@ def to_python(d: dict) -> str:
         exc = "" if po.get("excite", True) else ", excite=False"
         if po.get("type") == "coaxial":
             mt = next((m for m in d.get("materials", []) if m.get("name") == po.get("dielectric")), {})
+            display = ""
+            for role in ("conductor", "dielectric"):
+                material = next((m for m in d.get("materials", []) if m.get("name") == po.get(role)), {})
+                for key in ("color", "opacity"):
+                    if material.get(key) is not None:
+                        display += f", {role}_{key}={material[key]!r}"
             out.append(f"    sim.coaxial_port({po['number']}, {vec(po['start'])}, {vec(po['stop'])}, {po['direction']!r}, "
                        f"{e(po['r_i'])}, {e(po['r_o'])}, {e(po['r_os'])}, conductor={po['conductor']!r}, "
                        f"dielectric={po.get('dielectric')!r}, eps_r={e(mt.get('eps_r', 1))}, mu_r={e(mt.get('mu_r', 1))}, "
                        f"tan_d={e(mt.get('tan_d', 0))}, tan_d_freq={('(' + e(mt['tan_d_freq']) + ') * 1e9') if mt.get('tan_d_freq') is not None else 'None'}, feed_shift={e(po.get('feed_shift', 0))}, "
-                       f"measurement_shift={e(po['measurement_shift'])}, termination={po.get('termination', 'open')!r}{exc})")
+                       f"measurement_shift={e(po['measurement_shift'])}, termination={po.get('termination', 'open')!r}{exc}{display})")
             continue
         if po.get("type") == "waveguide":
             out.append(f"    sim.waveguide_port({po['number']}, {vec(po['start'])}, {vec(po['stop'])}, {po['direction']!r}, "

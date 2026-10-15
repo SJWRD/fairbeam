@@ -2,6 +2,13 @@
 // Run with: node --experimental-strip-types scripts/check-viewport-lifecycle.mjs
 import assert from "node:assert/strict";
 import { clearOwnedDebugReference, frameTask, portMarkerRadius, watchPixelRatio } from "../src/scene/viewportLifecycle.ts";
+import { poseToSave, validPose } from "../src/scene/cameraViews.ts";
+
+// A design's opening view (Design.view): the poses the viewport takes, and the pose it saves.
+assert.deepEqual(validPose({ camera: [1, 2, 3], target: [0, 0, 0] }), { camera: [1, 2, 3], target: [0, 0, 0] });
+for (const bad of [null, {}, { camera: [1, 2], target: [0, 0, 0] }, { camera: [1, 2, "x"], target: [0, 0, 0] },
+  { camera: [1, 2, Infinity], target: [0, 0, 0] }, { camera: [1, 1, 1], target: [1, 1, 1] }]) assert.equal(validPose(bad), null, `refused: ${JSON.stringify(bad)}`);
+assert.deepEqual(poseToSave({ x: 1.234567, y: -0.00001, z: 2 }, { x: 0, y: 3.33333, z: -1e-9 }), { camera: [1.2346, 0, 2], target: [0, 3.3333, 0] }, "saved on a 1e-4 mm grid, no -0");
 
 let nextHandle = 1;
 const frames = new Map();
@@ -90,4 +97,4 @@ assert.deepEqual(ratios, [1.25, 1.5, 2, 1.25], "fractional monitor changes updat
 stopPixelRatio();
 assert.ok(queries.every((query) => query.listeners.size === 0), "unmount removes all resolution listeners");
 
-console.log("viewport lifecycle: frame cleanup, marker bounds and fractional DPR transitions pass");
+console.log("viewport lifecycle: frame cleanup, marker bounds, fractional DPR transitions and opening-view poses pass");

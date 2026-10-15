@@ -110,7 +110,7 @@ def _design_boxes(design, values):
                 raise ValueError("Unsupported box primitive attributes")
     material_values = {}
     for material in design.get("materials", []):
-        allowed = {"name", "kind", "color", "library", "eps_r", "tan_d", "tan_d_freq", "conductivity", "thickness"}
+        allowed = {"name", "kind", "color", "opacity", "library", "eps_r", "tan_d", "tan_d_freq", "conductivity", "thickness"}
         if set(material) - allowed:
             raise ValueError(f"Unsupported material properties on {material['name']}; dispersion is not supported")
         if evaluate(material.get("tan_d", 0), names) != 0:

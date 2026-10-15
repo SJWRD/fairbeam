@@ -6,7 +6,8 @@ import { batch, createEffect, createMemo, createRoot, createSignal, on } from "s
 import { reconcile, unwrap } from "solid-js/store";
 import { api, type PcbFile, type PcbOptions } from "../runner/api";
 import { applyModelEntry, draftPreview, forgetPreviewFailure, restoreProject, invalidatePreview, previewActive, previewFailure, previewIsCurrent, previewState, health, modelKey, models, refreshModels, runDesignPreview, selectModel, serverState, setUnsavedDesignCheck, showEmptyDesign, showQuickPreview } from "../runner/store";
-import { openCount, setCenterView, setHiddenParts } from "../state";
+import { openCount, setCenterView, setHiddenParts, setOpeningView } from "../state";
+import { validPose } from "../scene/cameraViews";
 import { quickBundle } from "./geometry";
 import { portFeedEntries } from "../lib/portGroups";
 import { type Backup, clearBackup, forgetLastDesign, readBackup, readLastDesign, rememberLastDesign, writeBackup } from "./draftBackup";
@@ -17,7 +18,7 @@ import { openParametersTab, setParameterRanges } from "./dockState";
 import { appMode, setAppMode } from "../workspace";
 import { designChecks, mergeChecks, type Check, type CheckFix } from "./checks";
 import { checkMessage } from "./checkText";
-import { validColor } from "./colors";
+import { validColor, validOpacity } from "./colors";
 import { designMaterial, type LibraryMaterial } from "./materials";
 import { designMaterialFromUser, type UserMaterial } from "./userMaterials";
 import { openTransform } from "./transforms";
@@ -213,6 +214,11 @@ export const defaultDesignerIO = createDesignerIO(defaultDesignerSession, {
   stopPreview, forgetPreviewFailure, resetParamAsks: () => setParamAsks([]),
   schedulePreview: () => schedulePreview(0), applyModelEntry,
   restoreModelSelection: f => selectModel(f?.id ?? ""),
+  // the first picture of the opened design is its saved opening view, if it has one
+  openedDesign: () => {
+    const pose = validPose(unwrap(draft).view);
+    setOpeningView(pose && draft.model?.id ? { modelId: draft.model.id, ...pose } : null);
+  },
 });
 export const { openDesign, save, saveExplicit, saveBeforeLeaving } = defaultDesignerIO;
 const { take, applyValidation, isReleased } = defaultDesignerIO;
@@ -223,6 +229,12 @@ export async function restoreRecovery(saved: Backup): Promise<boolean> {
   if (file() !== f || !asyncState.isDraftCurrent(ticket)) return false;
   return defaultDesignerIO.restoreRecoveredDraft(saved.design);
 }
+/** Save a camera pose as the design's opening view (one undo step), or clear it with null. */
+export function setDesignView(pose: { camera: [number, number, number]; target: [number, number, number] } | null) {
+  if (!pose && !draft.view) return;
+  edit((d) => { if (pose) d.view = pose; else delete d.view; }, "view", t(pose ? "history.saveView" : "history.clearView"));
+}
+
 /** Keep the Design tab on the model picked in the Run panel. */
 export function syncToModel() {
   const id = modelKey();
@@ -993,6 +1005,20 @@ export function setColors(kind: "parts" | "materials", indices: number[], color:
       if (c) o.color = c; else delete o.color;
     }
   }, `${kind}[${indices[0] ?? 0}].color`);
+}
+
+/** Set (or, with undefined, clear) the see-through display opacity of parts or materials: one undo step for all
+ *  (a slider drag merges into it, like typing). */
+export function setOpacity(kind: "parts" | "materials", indices: number[], opacity: number | undefined) {
+  const o = opacity === undefined ? undefined : validOpacity(Math.round(opacity * 100) / 100);
+  if (opacity !== undefined && o === undefined) return;
+  edit((d) => {
+    for (const i of indices) {
+      const item = d[kind][i];
+      if (!item) continue;
+      if (o !== undefined) item.opacity = o; else delete item.opacity;
+    }
+  }, `${kind}[${indices[0] ?? 0}].opacity`);
 }
 
 // ------------------------------------------------------------------ parameters: rename, delete, duplicate

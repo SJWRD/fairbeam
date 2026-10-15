@@ -149,6 +149,9 @@ def clean_parts(parts) -> list[dict]:
             item["color"] = p["color"][:7] if len(p["color"]) >= 7 else p["color"]
         if isinstance(p.get("eps_r"), (int, float)) and not isinstance(p.get("eps_r"), bool):
             item["eps_r"] = float(p["eps_r"])
+        # the design's see-through Opacity (0.05..1); anything else is the default look
+        if isinstance(p.get("opacity"), (int, float)) and not isinstance(p.get("opacity"), bool) and 0.05 <= p["opacity"] < 1:
+            item["opacity"] = float(p["opacity"])
         if p.get("void"):
             item["void"] = True
         out.append(item)

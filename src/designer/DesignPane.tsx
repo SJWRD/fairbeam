@@ -16,12 +16,12 @@ import type { AxisCylinder, Axis, CircleCut, ConePrimitive, DesignPrimitive, Exp
 import {
   addPort, addPrimitiveToPart, addTransform, applyFix, checks, copyCount, draft, edit, fieldId, focusPath, issues, names, removeTransform,
   selection, serverErrors, setSelection, type ShapeKind, toAxisCylinder, unknownNames, setPortType,
-  addCut, addPolygonCut, addRoundCut, removeCut, setColors,
+  addCut, addPolygonCut, addRoundCut, removeCut, setColors, setOpacity,
 } from "./store";
 import { type Check, wgCutoffGHz, wgMode } from "./checks";
 import { checkExplain, checkFixLabel, checkTitle } from "./checkText";
 import { checkAction } from "./checkActions";
-import { resolveColor, themeColor } from "./colors";
+import { OPACITY_MIN, resolveColor, resolveOpacity, themeColor } from "./colors";
 import { pathText } from "./pathText";
 import { latestPickedPoint } from "./pointTools";
 import { deleteVertex, insertVertexAt, pickedVertex, pickVertex, toggleVertexEdit, vertexTarget } from "./vertexEdit";
@@ -265,6 +265,25 @@ function ColorField(props: { label: string; value: string | undefined; fallback:
   );
 }
 
+/** A see-through display opacity: a 5 to 100 % slider plus a reset to the default look (metals opaque,
+ *  dielectrics slightly see-through; a part: its material's). Drawing only, like the color. */
+function OpacityField(props: { label: string; value: number | undefined; fallback: () => number; onPick: (o: number) => void; onReset: () => void; id?: string }) {
+  const pct = () => Math.round((props.value ?? props.fallback()) * 100);
+  return (
+    <div class="dz-field dz-color-field" title={t("props.opacity.hint")}>
+      <span class="dz-label">{props.label}</span>
+      <div class="cluster-sm">
+        <input type="range" class="dz-opacity-input" id={props.id} aria-label={props.label} min={OPACITY_MIN * 100} max="100" step="5"
+          value={pct()} aria-valuetext={t("props.opacity.value", { pct: pct() })}
+          onInput={(e) => props.onPick(Number(e.currentTarget.value) / 100)} />
+        <span class="mono note">{props.value === undefined ? t("props.color.default") : t("props.opacity.value", { pct: pct() })}</span>
+        <Show when={props.value !== undefined}>
+          <button class="btn btn-ghost btn-sm" onClick={props.onReset}>{t("props.color.reset")}</button>
+        </Show>
+      </div>
+    </div>
+  );
+}
 
 function MaterialInspector(props: { i: number }) {
   const m = () => draft.materials[props.i];
@@ -303,6 +322,8 @@ function MaterialInspector(props: { i: number }) {
       </Show>
       <ColorField label={t("props.color")} value={m().color} fallback={() => themeColor(m().kind === "metal")}
         onPick={(c) => setColors("materials", [props.i], c)} onReset={() => setColors("materials", [props.i], undefined)} />
+      <OpacityField label={t("props.opacity")} value={resolveOpacity(undefined, m())} fallback={() => (m().kind === "metal" ? 1 : 0.9)}
+        onPick={(o) => setOpacity("materials", [props.i], o)} onReset={() => setOpacity("materials", [props.i], undefined)} />
       <Show when={MATERIAL_LIBRARY.find((e) => e.id === m().library)}>
         {(e) => {
           // Add gives tan δ at the design's frequency (f0, or empty: the band centre) instead of the
@@ -384,6 +405,9 @@ function PartInspector(props: { i: number; j?: number }) {
       <ColorField label={t("props.color.part")} id={fieldId(`parts[${props.i}].color`)} value={p().color}
         fallback={() => { const mt = draft.materials.find((q) => q.name === p().material); return resolveColor(undefined, mt, themeColor(mt?.kind === "metal")); }}
         onPick={(c) => setColors("parts", [props.i], c)} onReset={() => setColors("parts", [props.i], undefined)} />
+      <OpacityField label={t("props.opacity.part")} id={fieldId(`parts[${props.i}].opacity`)} value={resolveOpacity(p(), undefined)}
+        fallback={() => { const mt = draft.materials.find((q) => q.name === p().material); return resolveOpacity(undefined, mt) ?? (mt?.kind === "metal" ? 1 : 0.9); }}
+        onPick={(o) => setOpacity("parts", [props.i], o)} onReset={() => setOpacity("parts", [props.i], undefined)} />
       <GroupIssue path={`parts[${props.i}]`} />
       <div class="dz-sub">
         <span class="dz-label">{t("props.transforms")} <span class="dz-unit">{count() !== null && count()! > 1 ? `· ${t("props.transforms.copies", { count: count()! - 1, total: count() })}` : ""}</span></span>

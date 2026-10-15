@@ -13,9 +13,7 @@ from fairbeam.model import load_model, resolve_params
 
 
 MODELS = Path(__file__).resolve().parents[1] / "models"
-EXPECTED_REFUSALS = {
-    "helix_axial": "curve",
-}
+EXPECTED_REFUSALS = {}
 
 
 def notes(design):
@@ -44,6 +42,7 @@ def _built_signature(sim):
             sim.f_min, sim.f_max, sim.boundaries,
             tuple((p.get("start"), p.get("stop"), p.get("R")) for p in sim.ports),
             tuple((e.get("name"), e.get("R")) for e in sim.lumped_elements),
+            tuple(getattr(sim, "pattern_freqs", None) or []),
             tuple(sorted((k, m.get("tan_d"), m.get("tan_d_freq")) for k, m in sim.materials.items())),
             tuple((part["name"], part.get("material", {}).get("eps_r"),
                    tuple(tuple(p["bbox"][0]) + tuple(p["bbox"][1]) for p in part["primitives"]))
@@ -51,9 +50,23 @@ def _built_signature(sim):
 
 
 class ExampleDesignTests(unittest.TestCase):
+    def test_bundled_design_sources_open_without_build_errors(self):
+        from fairbeam.modelfiles import BUNDLED_DESIGNS
+        from fairbeam.preview import handle
+
+        self.assertEqual(len(BUNDLED_DESIGNS), 5)
+        for key in sorted(BUNDLED_DESIGNS):
+            with self.subTest(model=key):
+                source = MODELS.parents[1] / "examples" / "designs" / f"{key}.design.json"
+                design = json.loads(source.read_text(encoding="utf-8"))
+                result = handle({"op": "preview_design", "design": design})
+                self.assertTrue(result["ok"], result)
+                errors = [c for c in result["result"]["checks"] if c.get("severity") == "error"]
+                self.assertEqual(errors, [], key)
+
     def test_conversion_preview_checks_all_convertible_examples(self):
         files = sorted(p for p in MODELS.glob("*.py") if p.stem not in EXPECTED_REFUSALS)
-        self.assertEqual(len(files), 12)
+        self.assertEqual(len(files), 13)
         from fairbeam.design import build
 
         for source in files:
@@ -108,8 +121,6 @@ class ExampleDesignTests(unittest.TestCase):
                         candidate = default + 0.17
                     changed = dict(values)
                     changed[key] = candidate
-                    if (source.stem, key) == ("pyramidal_horn", "f0"):
-                        continue   # f0 only sets the pattern frequency here: the horn's size follows the gain
                     self.assertTrue(_built_signature(build(design, changed)) != _built_signature(built),
                                     f"{source.stem}: changing {key} changes nothing")
 

@@ -34,6 +34,9 @@ export interface DesignMaterial {
   /** metal with a conductivity: mm, the thickness of its sheets drawn with zero thickness (0.035 if empty) */
   thickness?: Expr;
   color?: string;
+  /** see-through display opacity, OPACITY_MIN (nearly clear) to 1 (opaque); absent: the default look. Drawing
+   * only, like the color; a part's own wins (src/designer/colors.ts) */
+  opacity?: number;
   /** the material library entry the values were copied from (src/designer/materials.ts); informational */
   library?: string;
 }
@@ -54,7 +57,7 @@ export interface ConePrimitive { kind: "cone"; axis: Axis; center: [Expr, Expr];
 /** Torus about `axis` through `center`: major_radius to the tube centre, minor_radius of the tube
  * (CSXCAD rotational polygon of a regular 64-gon). */
 export interface TorusPrimitive { kind: "torus"; axis: Axis; center: Vec3; major_radius: Expr; minor_radius: Expr; priority?: number }
-/** Thin wire (CSXCAD Wire): a polyline of x, y, z points and a radius, rasterised as a volume. */
+/** Polyline wire; radius 0 preserves a native CSXCAD Curve (ideal mesh-edge conductor). */
 export interface WirePrimitive { kind: "wire"; points: Vec3[]; radius: Expr; priority?: number }
 /** Closed solid (CSXCAD Polyhedron): `vertices` (x, y, z) and polygon `faces` (lists of vertex indices,
  * at least 4 vertices and 4 faces). The build fans each face into triangles, as CSXCAD needs. */
@@ -81,6 +84,8 @@ export interface DesignPart {
   component?: string;
   material: string;
   color?: string;
+  /** see-through display opacity (wins over the material's); absent: the material's, else the default look */
+  opacity?: number;
   primitives: DesignPrimitive[];
   transforms?: DesignTransform[];
   /** rectangles (like a sheet brick: min = max on one axis), round holes and polygons cut out of the
@@ -192,6 +197,9 @@ export interface Design {
   };
   far_field: { enabled: boolean; frequencies?: Expr[]; phase_center?: [Expr, Expr, Expr]; /** which NF2FF box faces record (x-, x+, y-, y+, z-, z+); omitted: all */ faces?: boolean[] };
   parameter_sweep?: ParameterSweepDefinition;
+  /** The opening view: where the 3D view's camera is and the point it looks at when the design opens (mm).
+   * Drawing only; absent: the isometric view fitted to the model. */
+  view?: DesignView;
   /** The work coordinate system (WCS) the drawing tools use; absent: the global one. w points
    * along `normal` (negative with `flip`), `origin` is in global coordinates, `angle` turns u and v
    * about `normal`. Geometry never depends on it: shapes drawn in a local WCS store their own transforms. */
@@ -202,6 +210,9 @@ export interface Design {
  * and the conversion notes. A note's `code` names its text (exampleCopy.note.<code>, filled in with
  * `values`); `text` is the English sentence, for a code this version does not know. */
 export interface DesignConversion { source?: string; notes: { code: string; text: string; values?: Record<string, string | number> }[] }
+
+/** A camera pose in design coordinates (mm): the camera's position and the orbit target it looks at. */
+export interface DesignView { camera: [number, number, number]; target: [number, number, number] }
 
 export interface DesignWcs { normal: Axis; origin: [Expr, Expr, Expr]; angle: 0 | 90 | 180 | 270; flip?: boolean }
 

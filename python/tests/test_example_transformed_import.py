@@ -32,6 +32,37 @@ def _matrix(rx, ry, rz, scale=1.0, reflected=False, offset=(0.0, 0.0, 0.0)):
 
 
 class TransformedExampleImportTests(unittest.TestCase):
+    def test_ideal_curve_round_trip_keeps_native_curve_and_points(self):
+        sim = Simulation(1e9, 2e9, max_timesteps=8)
+        points = [[0.0, 0.0, 0.0], [2.0, 1.0, 3.0], [1.0, 4.0, 5.0]]
+        curve = sim.metal("ideal").AddCurve(np.array(points).T, priority=7)
+        curve.AddTransform("Matrix", _matrix(0, 0, 30))
+        module = SimpleNamespace(build=lambda _values: sim)
+        _, core = _read_design(module, {}, Path("ideal-curve.py"))
+        primitive = core["parts"][0]["primitives"][0]
+        self.assertEqual(primitive["kind"], "wire")
+        self.assertEqual(primitive["radius"], 0)
+        self.assertEqual(primitive["points"], points)
+        design = {
+            "schema": "fairbeam.design/1",
+            "model": {"id": "curve-copy", "name": "Curve copy"}, "params": [],
+            "simulation": core["simulation"], "materials": core["materials"],
+            "parts": core["parts"], "ports": [], "resistors": [],
+            "far_field": {"enabled": False},
+            "mesh": {"mode": "manual", "lines": {a: [-10, -5, 0, 5, 10] for a in "xyz"}},
+        }
+        rebuilt = build(design, {})
+        native = rebuilt.csx.GetPropertiesByName("ideal")[0].GetAllPrimitives()[0]
+        self.assertEqual(native.GetTypeName(), "Curve")
+        np.testing.assert_allclose([native.GetPoint(i) for i in range(native.GetNumberOfPoints())], points)
+        np.testing.assert_allclose(native.GetTransform().GetMatrix(), curve.GetTransform().GetMatrix(), atol=1e-12)
+        # Exporting and re-importing through Python must not add a physical wire radius either.
+        with tempfile.TemporaryDirectory() as temp:
+            source = Path(temp) / "curve_copy.py"
+            source.write_text(to_python(design), encoding="utf-8")
+            _, again = _read_design(load_model(source), {}, source)
+            self.assertEqual(again["parts"][0]["primitives"][0], primitive)
+
     def test_decomposed_maps_reconstruct_gimbal_and_reflected_matrices(self):
         points = ([0.0, 0.0, 0.0], [1.0, 2.0, 3.0], [-8.0, 1.0, 0.5])
         for ry in (90, -90, 89.999999999, 0):
@@ -117,6 +148,49 @@ class TransformedExampleImportTests(unittest.TestCase):
             generated_bounds = sorted(tuple(v for corner in p["bbox"] for v in corner)
                                       for p in generated_primitives)
             np.testing.assert_allclose(generated_bounds, source_bounds, rtol=0, atol=1e-6)
+
+    def test_tilted_cylinders_and_shells_keep_their_end_points(self):
+        # a tooth whose axis leans in the xz plane, and a slanted tube: CSXCAD takes any axis, and the
+        # design holds it in the cylinder's end-point form (an axis-aligned one keeps the axis form)
+        sim = Simulation(1e9, 2e9, max_timesteps=8)
+        tilt = math.radians(10)
+        top = [0.5 + 4 * math.sin(tilt), 0.0, 4 * math.cos(tilt)]
+        sim.dielectric("tooth", 7.3).AddCylinder([0.5, 0.0, 0.0], top, 1.5, priority=3)
+        sim.metal("tube").AddCylindricalShell([-2.0, -1.0, 0.0], [-1.0, 1.0, 2.0], 0.4, 0.1, priority=10)
+        sim.metal("pin").AddCylinder([2.0, 2.0, -1.0], [2.0, 2.0, 1.0], 0.2, priority=10)
+
+        module = SimpleNamespace(build=lambda _values: sim)
+        _, core = _read_design(module, {}, Path("tilted-python-model.py"))
+        prims = {part["name"]: part["primitives"][0] for part in core["parts"]}
+        self.assertEqual({k: prims["tooth"][k] for k in ("kind", "start", "stop", "radius")},
+                         {"kind": "cylinder", "start": [0.5, 0.0, 0.0], "stop": [round(v, 6) for v in top], "radius": 1.5})
+        self.assertNotIn("axis", prims["tooth"])
+        self.assertEqual(prims["tube"]["start"], [-2.0, -1.0, 0.0])
+        self.assertAlmostEqual(prims["tube"]["radius"], 0.45)
+        self.assertAlmostEqual(prims["tube"]["inner_radius"], 0.35)
+        self.assertEqual((prims["pin"]["axis"], prims["pin"]["center"], prims["pin"]["range"]), ("z", [2.0, 2.0], [-1.0, 1.0]))
+        # the end-point form has no axis of its own: its coordinates are plain x, y and z slots
+        i = [part["name"] for part in core["parts"]].index("tooth")
+        self.assertEqual(_slot_axis(core, ("parts", i, "primitives", 0, "stop", 2)), 2)
+        self.assertIsNone(_slot_axis(core, ("parts", i, "primitives", 0, "radius")))
+
+        design = {
+            "schema": "fairbeam.design/1",
+            "model": {"id": "tilted-import", "name": "Tilted import"},
+            "params": [],
+            "simulation": core["simulation"],
+            "materials": core["materials"],
+            "parts": core["parts"],
+            "ports": [],
+            "resistors": [],
+            "far_field": {"enabled": False},
+            "mesh": {"mode": "manual", "lines": {axis: [-10.0, -5.0, 0.0, 5.0, 10.0] for axis in "xyz"}},
+        }
+        rebuilt = build(design, {})
+        bounds = lambda s: sorted(tuple(v for corner in p["bbox"] for v in corner)
+                                  for part in read_structure(s.csx, s.materials)[0] for p in part["primitives"])
+        # (the end points are rounded to 1e-6 mm like every converted coordinate)
+        np.testing.assert_allclose(bounds(rebuilt), bounds(sim), rtol=0, atol=2e-6)
 
 
 if __name__ == "__main__":

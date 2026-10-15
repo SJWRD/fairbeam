@@ -10,7 +10,7 @@ import {
   MousePointer2, MousePointerClick, Pencil, Play, Plus, Redo2, Save, SaveAll, Settings2, Cog, SlidersHorizontal, Spline, Torus, Trash2, Triangle, Undo2, X, Zap, Keyboard,
   ChevronDown, ChevronUp, ChevronsRight, FileUp, Activity, Gauge, Layers2, CircuitBoard, ClipboardList, LocateFixed, Shapes, ScanLine, ChartNoAxesCombined, SlidersVertical,
   ArrowUpFromLine, Combine, Circle, PenTool, Fullscreen, AudioWaveform, Radar, Package, Omega, Timer, ChartScatter, ChartLine, Grid2x2, Diamond, Anvil, CopyPlus, Clipboard,
-  SquareDashed, RectangleHorizontal, Rotate3d, LayoutDashboard, Gem, Aperture,
+  SquareDashed, RectangleHorizontal, Rotate3d, LayoutDashboard, Gem, Aperture, Bookmark, BookmarkPlus, BookmarkX,
 } from "lucide-solid";
 import { health, meshFreshness, setRunOpen } from "../runner/store";
 import { setCstImportOpen } from "../lib/cstImport";
@@ -60,11 +60,11 @@ import { farfieldOverride } from "../lib/arrayStore";
 import RibbonField from "./RibbonField";
 import "../styles/ribbon.css";
 import { cyclePanes } from "./panes";
-import type { Expr } from "./types";
+import type { DesignView, Expr } from "./types";
 import { ExprField, Inspector, kindLabel } from "./DesignPane";
 import { humanizePaths } from "./pathText";
 import { NavTree } from "./NavTree";
-import { CAMERA_VIEWS, type ViewName } from "../scene/cameraViews";
+import { CAMERA_VIEWS, validPose, type ViewName } from "../scene/cameraViews";
 import { CameraViewIcon } from "../scene/CameraViewIcon";
 import { ShapeDialogHost } from "./dialogs/ShapeDialog";
 import { NewParamHost } from "./dialogs/NewParamDialog";
@@ -85,7 +85,7 @@ import { HistoryDialog } from "./HistoryDialog";
 import {
   addMaterial, addParam, addPort, addWaveguidePort, addResistor, addShape, canDuplicate, canRedo, canRemove, canUndo, undoLabel, redoLabel, conflict, dirty, draft, issueUnder, names,
   duplicateSelected, edit, errorCount, exportPython, file, highlightedPart, message, pickPart, redo, removeSelected, saveExplicit, saving,
-  selection, setMessage, setSelection, type ShapeKind, undo,
+  selection, setDesignView, setMessage, setSelection, type ShapeKind, undo,
 } from "./store";
 import { downloadFailedMessage, downloadMessage, revealDownloadedFile, saveDownload } from "../lib/download";
 import {
@@ -454,6 +454,10 @@ export function Ribbon() {
   // camera commands act on the 3D view: it comes to the front of the main area first
   const view = (id: string) => { activateMainTab("3d"); document.querySelector(".viewport")?.dispatchEvent(new CustomEvent("fairbeam:view", { detail: id })); };
   const fit = () => { activateMainTab("3d"); document.querySelector<HTMLButtonElement>(".viewport [data-action='fit']")?.click(); };
+  // the opening view: the camera the design opens with (Design.view); the 3D view tells its pose or takes one
+  const cameraPose = (detail: unknown) => document.querySelector(".viewport")?.dispatchEvent(new CustomEvent("fairbeam:camera-pose", { detail }));
+  const saveOpeningView = () => { activateMainTab("3d"); cameraPose((pose: DesignView) => setDesignView(pose)); };
+  const goToOpeningView = () => { const pose = validPose(draft.view); if (pose) { activateMainTab("3d"); cameraPose(pose); } };
   const currentMonitors = () => (draft as typeof draft & { monitors?: { currents?: Expr[] } }).monitors?.currents ?? [];
   const fieldPlaneCount = () => (draft as typeof draft & { monitors?: { field_planes?: unknown[] } }).monitors?.field_planes?.length ?? 0;
   // Post-processing's note: how to get plots, or how to compare (and why currents are off)
@@ -618,6 +622,11 @@ export function Ribbon() {
           <For each={VIEWS}>{(v) => <RButton icon={v.icon} label={t(v.label)} title={`${t(v.title)} (${v.shortcut})`} onClick={() => view(v.id)} />}</For>
           <RButton icon={Fullscreen} label={t("ribbon.view.fit")} title={`${SHORTCUTS.fit.label} (${SHORTCUTS.fit.key})`} onClick={fit} />
           <RButton icon={Camera} label={t("ribbon.view.screenshot")} disabled={!screenshotAvailable()} title={screenshotAvailable()?t("ribbon.view.screenshotTitle"):screenshotReason()} onClick={() => void captureActiveSurface()} />
+        </RGroup>
+        <RGroup label={t("ribbon.openingView.group")} icon={Bookmark}>
+          <RButton icon={BookmarkPlus} label={t("ribbon.openingView.save")} disabled={!bundle()?.parts.length} title={t("ribbon.openingView.saveTitle")} onClick={saveOpeningView} />
+          <RButton icon={Bookmark} label={t("ribbon.openingView.go")} disabled={!validPose(draft.view)} title={validPose(draft.view) ? t("ribbon.openingView.goTitle") : t("ribbon.openingView.none")} onClick={goToOpeningView} />
+          <RButton icon={BookmarkX} label={t("ribbon.openingView.clear")} disabled={!draft.view} title={draft.view ? t("ribbon.openingView.clearTitle") : t("ribbon.openingView.none")} onClick={() => setDesignView(null)} />
         </RGroup>
         <RGroup label={t("render.group")} icon={Gem}>
           <RButton icon={Gem} label={t("render.toggle.label")} pressed={renderedView()} disabled={!bundle()?.parts.length} title={t("render.toggle.title")} onClick={() => setRenderedView(!renderedView())} />

@@ -805,6 +805,26 @@ class Build(unittest.TestCase):
             module_for(d).build({p.key: p.default for p in module_for(d).PARAMS})
         self.assertEqual(cm.exception.where, "parts[2].cuts[0].stop")
 
+    def test_opening_view_is_drawing_only(self):
+        """The opening view (the 3D view's camera when the design opens) is checked and changes nothing built."""
+        d = blank_design("t", "T")
+        plain = build_preview(None, {}, design=d)["bundle"]
+        d["view"] = {"camera": [40.5, -60, 35.25], "target": [0, 0, 0.8]}
+        check_design(d)
+        viewed = build_preview(None, {}, design=d)["bundle"]
+        self.assertEqual(json.dumps(plain["parts"], sort_keys=True), json.dumps(viewed["parts"], sort_keys=True))
+        self.assertEqual(plain["mesh"], viewed["mesh"])
+        self.assertNotIn("view", to_python(d))
+        for bad, where in (([], "view"), ({"camera": [1, 2], "target": [0, 0, 0]}, "view.camera"),
+                           ({"camera": [1, 2, 3], "target": [0, 0, "z"]}, "view.target"),
+                           ({"camera": [1, 2, True], "target": [0, 0, 0]}, "view.camera"),
+                           ({"camera": [1, 2, float("inf")], "target": [0, 0, 0]}, "view.camera"),
+                           ({"camera": [1, 2, 3], "target": [1, 2, 3]}, "view.camera")):
+            d["view"] = bad
+            with self.subTest(view=bad), self.assertRaises(DesignError) as cm:
+                check_design(d)
+            self.assertEqual(cm.exception.where, where)
+
     def test_components_are_folders_only(self):
         """A part's component path groups it in the designer's tree; the build ignores it."""
         d = blank_design("t", "T")
@@ -819,6 +839,43 @@ class Build(unittest.TestCase):
         with self.assertRaises(DesignError) as cm:
             check_design(d)
         self.assertEqual(cm.exception.where, "parts[2].component")
+
+    def test_opacity_is_drawing_only(self):
+        """A material's or a part's see-through opacity reaches the bundle (the part's own wins) and the Python
+        export, and changes nothing the solver sees."""
+        d = blank_design("t", "T")
+        plain = build_preview(None, {}, design=d)["bundle"]
+        sub = next(m for m in d["materials"] if m["kind"] == "dielectric")
+        sub["opacity"] = 0.4
+        d["parts"][2]["opacity"] = 0.75
+        check_design(d)
+        seen = build_preview(None, {}, design=d)["bundle"]
+        by_name = {p["name"]: p for p in seen["parts"]}
+        substrate = next(p for p in d["parts"] if p["material"] == sub["name"])
+        self.assertEqual(by_name[substrate["name"]]["opacity"], 0.4)
+        self.assertEqual(by_name[d["parts"][2]["name"]]["opacity"], 0.75)
+        self.assertEqual(sum("opacity" in p for p in seen["parts"]), 2)
+        strip = lambda parts: json.dumps([{k: v for k, v in p.items() if k != "opacity"} for p in parts], sort_keys=True)
+        self.assertEqual(strip(plain["parts"]), strip(seen["parts"]))
+        self.assertEqual(plain["mesh"], seen["mesh"])
+        with tempfile.TemporaryDirectory() as tmp:
+            pp = Path(tmp) / "see_through.py"
+            pp.write_text(to_python(d))
+            self.assertIn("opacity=0.4", pp.read_text())
+            exported = build_preview(str(pp), {})["bundle"]
+            # and a Python model converted back to a design keeps it on the parts
+            from fairbeam.example_design import convert_example
+            back = convert_example(pp, "see-through", "See-through")
+        self.assertEqual(json.dumps(exported["parts"], sort_keys=True), json.dumps(seen["parts"], sort_keys=True))
+        self.assertEqual({p["name"]: p.get("opacity") for p in back["parts"]},
+                         {p["name"]: p.get("opacity") for p in seen["parts"]})
+        for bad in (0, 0.01, 1.5, True, "0.5", float("nan")):
+            d["parts"][2]["opacity"] = bad
+            with self.subTest(opacity=bad), self.assertRaises(DesignError) as cm:
+                check_design(d)
+            self.assertEqual(cm.exception.where, "parts[2].opacity")
+        d["parts"][2]["opacity"] = 1
+        check_design(d)
 
     def test_transform_and_shape_errors(self):
         cases = [
@@ -841,7 +898,7 @@ class Build(unittest.TestCase):
             ({"kind": "torus", "axis": "z", "center": [0, 0, 0], "major_radius": 0, "minor_radius": 1}, None, "parts[3].primitives[0].major_radius"),
             ({"kind": "wire", "points": [[0, 0, 0]], "radius": 1}, None, "parts[3].primitives[0].points"),
             ({"kind": "wire", "points": [[0, 0, 0], [0, 0, 0]], "radius": 1}, None, "parts[3].primitives[0].points"),
-            ({"kind": "wire", "points": [[0, 0, 0], [0, 0, 1]], "radius": 0}, None, "parts[3].primitives[0].radius"),
+            ({"kind": "wire", "points": [[0, 0, 0], [0, 0, 1]], "radius": -1}, None, "parts[3].primitives[0].radius"),
             ({"kind": "sphere", "center": [0, 0, 0], "radius": 1}, [{"type": "mirror", "plane": "q"}], "parts[3].transforms[0].plane"),
             ({"kind": "sphere", "center": [0, 0, 0], "radius": 1}, [{"type": "translate", "copies": 2.5, "step": [1, 0, 0]}],
              "parts[3].transforms[0].copies"),
@@ -1044,6 +1101,36 @@ class DesignApi(unittest.TestCase):
                 self.assertTrue(pv["bundle"]["parts"])
                 self.assertIn({"severity": "error", "path": path, "code": code},
                               [{k: c[k] for k in ("severity", "path", "code")} for c in pv["checks"]])
+
+    def test_designs_of_a_few_mb_preview_and_save(self):
+        """A design with scanned mesh solids (a micro-CT tooth) is a few MB of JSON: more than the 1 MiB of the
+        other routes and the 256 KB of a Python source. Preview and save take it; a body past MAX_DESIGN_BODY and a
+        file past MAX_DESIGN are still refused."""
+        from fairbeam import modelfiles
+        from fairbeam.server import MAX_BODY, MAX_DESIGN_BODY
+
+        st, body = self.request("POST", "/api/designs", {"id": "big_scan", "name": "Big scan"})
+        self.assertEqual(st, 201, body)
+        d = body["design"]
+        d["model"]["description"] = "x" * (3 << 20)   # stands in for the vertices of a scanned solid
+        st, saved = self.request("PUT", "/api/designs/big_scan", {"design": d, "base_hash": body["hash"]})
+        self.assertEqual(st, 200, saved)
+        self.assertGreater((self.models / "big_scan.design.json").stat().st_size, MAX_BODY)
+        st, again = self.request("GET", "/api/designs/big_scan")
+        self.assertEqual((st, len(again["design"]["model"]["description"])), (200, 3 << 20))
+        st, pv = self.request("POST", "/api/preview", {"design": d})
+        self.assertEqual(st, 200, pv)
+        self.assertTrue(pv["bundle"]["parts"])
+        for method, path in (("POST", "/api/preview"), ("PUT", "/api/designs/big_scan")):
+            conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=30)
+            conn.request(method, path, headers={"Host": f"127.0.0.1:{self.port}", "Content-Type": "application/json",
+                                                "Content-Length": str(MAX_DESIGN_BODY + 1)})
+            self.assertEqual(conn.getresponse().status, 413, path)
+            conn.close()
+        with mock.patch.object(modelfiles, "MAX_DESIGN", 1 << 20):
+            st, err = self.request("PUT", "/api/designs/big_scan", {"design": d, "base_hash": saved["hash"]})
+        self.assertEqual(st, 422, err)
+        self.assertIn("a design is at most 1 MB", err["error"])
 
     def test_preview_refuses_build_fatal_resistance(self):
         base = blank_design("fatal-preview", "Fatal preview")
