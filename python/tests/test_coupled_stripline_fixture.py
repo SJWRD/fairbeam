@@ -3,8 +3,10 @@
 Native acquisition is deliberately excluded from default unittest discovery.
 """
 import argparse
+from decimal import Decimal
 from datetime import datetime, timezone
 import json
+import math
 import os
 from pathlib import Path
 import re
@@ -34,13 +36,18 @@ def audit_header(text,meta):
     text=text.rsplit(f.PROPAGATION_MARKER,1)[-1]
     if re.search(r'forced timestep:.*larger than calculated timestep',text):
         raise ValueError('forced step exceeds native stability bound')
-    grid=re.search(r'FDTD simulation size: (\d+)x(\d+)x(\d+) --> (\d+) FDTD cells',text)
+    grid=re.search(r'FDTD simulation size: (\d+)x(\d+)x(\d+) --> (\d+(?:\.\d+)?(?:[eE][+-]?\d+)?) FDTD cells',text)
     interval=re.search(r'Exact-endcriteria: evaluating the end criteria every (\d+) timestep',text)
     pulse=re.search(r'Excitation signal length is: (\d+) timesteps',text)
     if ('openEMS 64bit -- version v0.37.0-rc3' not in text or not grid or not interval or not pulse
             or f'fixed number of threads: {f.THREADS}' not in text):
         raise ValueError('complete native runtime/grid/clock/source header required')
-    if list(map(int,grid.groups()[:3]))!=meta['native_lines'] or int(grid[4])!=meta['native_cells']:
+    dimensions=list(map(int,grid.groups()[:3]));cells=math.prod(dimensions)
+    # rc3 console counts may be rounded to six significant digits. The
+    # dimension product and statistics-file count still have to be exact.
+    if (dimensions!=meta['native_lines'] or cells!=meta['native_cells']
+            or meta['native']['cells']!=cells
+            or Decimal(grid[4]) not in (Decimal(cells),Decimal(format(cells,'.6g')))):
         raise ValueError('native grid differs from preflight')
     if int(interval[1])!=int(1/(2*f.FREQUENCIES[-1]*meta['native']['dt_s'])) or int(pulse[1])!=meta['max_timesteps']:
         raise ValueError('native probe/source clock differs from preflight')
@@ -428,7 +435,7 @@ class CoupledStriplineControls(unittest.TestCase):
 
     def test_native_header_and_field_sampling_clock_are_checked(self):
         _,meta=f.build(4,1)
-        meta['native']=dict(dt_s=meta['declared_dt_s'],numerical_time_s=2e-9)
+        meta['native']=dict(dt_s=meta['declared_dt_s'],numerical_time_s=2e-9,cells=meta['native_cells'])
         interval=int(1/(2*f.FREQUENCIES[-1]*meta['declared_dt_s']))
         shape='x'.join(str(v) for v in meta['native_lines'])
         text=(f'openEMS 64bit -- version v0.37.0-rc3\nfixed number of threads: 4\n'
@@ -446,6 +453,34 @@ class CoupledStriplineControls(unittest.TestCase):
         for bad in (data*[2,1],data*np.nan,np.vstack((data[:5],data[4:]))):
             with self.assertRaises(ValueError):
                 f.trace_clock(bad,meta)
+
+    def test_large_grid_header_accepts_exact_and_rounded_scientific_counts(self):
+        _,meta=f.build(4,1)
+        meta.update(native_lines=[385,133,25],native_cells=1280125)
+        dt=meta['declared_dt_s'];meta['native']=dict(dt_s=dt,cells=1280125)
+        for count in ('1280125','1.28012e+06'):
+            text=(f'openEMS 64bit -- version v0.37.0-rc3\nfixed number of threads: 4\n'
+                f'FDTD simulation size: 385x133x25 --> {count} FDTD cells\n'
+                f'Exact-endcriteria: evaluating the end criteria every {int(1/(2*f.FREQUENCIES[-1]*dt))} timestep\n'
+                f'Excitation signal length is: {meta["max_timesteps"]} timesteps\n')
+            self.assertEqual(audit_header(text,meta)['threads'],4)
+
+    def test_large_header_keeps_exact_grid_and_stats_guards(self):
+        _,meta=f.build(4,1)
+        meta.update(native_lines=[385,133,25],native_cells=1280125)
+        dt=meta['declared_dt_s'];meta['native']=dict(dt_s=dt,cells=1280125)
+        template=(f'openEMS 64bit -- version v0.37.0-rc3\nfixed number of threads: 4\n'
+            'FDTD simulation size: 385x133x25 --> COUNT FDTD cells\n'
+            f'Exact-endcriteria: evaluating the end criteria every {int(1/(2*f.FREQUENCIES[-1]*dt))} timestep\n'
+            f'Excitation signal length is: {meta["max_timesteps"]} timesteps\n')
+        for count in ('1.28013e+06','1.28e+06','1280124','NaN','inf'):
+            with self.subTest(count=count),self.assertRaises(ValueError):
+                audit_header(template.replace('COUNT',count),meta)
+        valid=template.replace('COUNT','1.28012e+06')
+        with self.assertRaises(ValueError):
+            audit_header(valid,{**meta,'native':{**meta['native'],'cells':1280124}})
+        with self.assertRaises(ValueError):
+            audit_header(valid.replace('385x133x25','385x133x24'),meta)
 
     def test_last_passing_mesh_does_not_hide_missing_earlier_convergence(self):
         ref=f.reference()
