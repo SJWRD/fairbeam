@@ -17,7 +17,7 @@ from CSXCAD import ContinuousStructure
 from openEMS import ports as native_ports
 from openEMS import physical_constants as constants
 
-from fairbeam import Simulation, excitation, multiport
+from fairbeam import Simulation, multiport
 from tests.coax_resonator_fixture import save, sha, runtime_identity as base_runtime
 from tests.stripline_fixture import impedance
 
@@ -30,7 +30,7 @@ SPATIAL_CONTROLS = CONTROLS[:6]
 CAP_S, END_DB, DT_FACTOR = 9e-9, -100., .5
 PLANE_OFFSETS = (3., 4., 6., 8.)
 CALIBRATION_PAIRS = ((0, 2), (1, 3))
-PROTOCOL = 'ring-hybrid-v2'
+PROTOCOL = 'ring-hybrid-v3'
 NATIVE_STEP_RATIO_MAX = .97
 PROPAGATION_MARKER = 'FAIRBEAM-RING-HYBRID-PROPAGATION-BEGIN'
 LIMITS = dict(s_target_abs=.005, phase_target_deg=.5, s_mesh_abs=.0025,
@@ -91,6 +91,22 @@ def geometry():
         arc_quarter_lengths=[1, 1, 1, 3],
         plane_offsets_b=list(PLANE_OFFSETS), calibration_pairs=[list(p) for p in CALIBRATION_PAIRS],
         metal='zero-thickness PEC', junction='overlapping ring and constant-width straight feeds', scope=SCOPE)
+
+
+def pulse():
+    """Derivative of a modulated Gaussian: zero DC and suppressed outer band.
+
+    The unmodulated envelope spectrum is -24 dB at the comparison edges.
+    Differentiation contributes f/f0, keeping the lower edge above the frozen
+    incident spectral floor. This changes excitation, not the DUT or target.
+    """
+    tau = np.sqrt(24*np.log(10)/20)/(np.pi*(FREQUENCIES[-1]-F0))
+    omega, t0 = 2*np.pi*F0, 5*tau
+    u = f'((t-{t0:.17g})/{tau:.17g})'
+    argument = f'({omega:.17g}*(t-{t0:.17g}))'
+    expression = f'(-{2/(omega*tau):.17g}*{u}*cos{argument}-sin{argument})*exp(-{u}^2)'
+    return dict(type='ring-bandpass-derivative', f0_hz=F0, tau_s=float(tau),
+                duration_s=float(10*tau), envelope_edge_db=-24., expression=expression)
 
 
 def reference(freq=FREQUENCIES):
@@ -190,6 +206,9 @@ def build(n, port, *, control='ordinary'):
     sim = RingSimulation(FREQUENCIES[0], FREQUENCIES[-1], excitation='dgauss',
         end_criteria_db=END_DB-(10 if control == 'time' else 0),
         boundaries=['PEC', 'PML_8', 'PEC', 'PEC', 'PEC', 'PEC'])
+    stimulus = pulse()
+    sim.fdtd.SetCustomExcite(stimulus['expression'], FREQUENCIES[-1], FREQUENCIES[-1])
+    sim.excitation = {**stimulus, 'f_min': FREQUENCIES[0], 'f_max': FREQUENCIES[-1]}
     csx = ContinuousStructure(CoordSystem=1)
     sim.fdtd.SetCSX(csx);sim.csx, sim.mesh = csx, csx.GetGrid()
     sim.mesh.SetDeltaUnit(sim.unit);sim.mesh.SetMeshType(1);sim.fdtd.SetCoordSystem(1)
@@ -255,7 +274,7 @@ def build(n, port, *, control='ordinary'):
         declared_dt_s=float(dt), max_timesteps=steps, cap_s=cap, end_db=sim.end_criteria_db,
         dt_factor=factor, local_dr_mm=B/n, source_radius_mm=source_radius,
         plane_radii_mm=[radius+x*B for x in PLANE_OFFSETS], ampere_heights_mm=heights,
-        source_duration_s=excitation.dgauss_duration_s(FREQUENCIES[-1]), threads=THREADS, scope=SCOPE)
+        source_duration_s=stimulus['duration_s'], excitation=stimulus, threads=THREADS, scope=SCOPE)
     return sim, meta
 
 

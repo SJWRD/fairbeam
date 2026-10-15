@@ -138,6 +138,31 @@ def synthetic_waves(s, n=4):
 
 
 class RingHybridTests(unittest.TestCase):
+    def test_bandpass_derivative_matches_independent_spectrum_and_zero_dc(self):
+        p = f.pulse();tau = p['tau_s']
+        t = np.linspace(0., p['duration_s'], 40001)
+        values = eval(p['expression'].replace('^', '**'), {'__builtins__': {}},
+                      dict(t=t, cos=np.cos, sin=np.sin, exp=np.exp))
+        self.assertLess(abs(np.trapezoid(values, t))/tau, 1e-14)
+        frequencies = np.array([1.5e9, 3e9, 4.5e9, 6e9])
+        measured = np.array([abs(np.trapezoid(values*np.exp(-2j*np.pi*x*t), t)) for x in frequencies])
+        analytical = frequencies/f.F0*np.sqrt(np.pi)*tau/2*(
+            np.exp(-(np.pi*tau*(frequencies-f.F0))**2)+
+            np.exp(-(np.pi*tau*(frequencies+f.F0))**2))
+        np.testing.assert_allclose(measured/tau, analytical/tau, rtol=0, atol=3e-11)
+        self.assertGreater(measured[0]/measured[1], f.LIMITS['incident_floor'])
+        self.assertLess(measured[3]/measured[1], 4e-5)
+        self.assertLess(p['duration_s'], f.CAP_S)
+
+    def test_native_source_expression_and_duration_are_recorded(self):
+        sim, meta = f.build(2, 1)
+        self.assertEqual(meta['excitation'], f.pulse())
+        self.assertEqual(meta['source_duration_s'], f.pulse()['duration_s'])
+        self.assertEqual(sim.excitation['type'], 'ring-bandpass-derivative')
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp)/'input.xml';sim.fdtd.Write2XML(str(path));tree = ET.parse(path)
+        self.assertEqual(tree.find('.//Excitation').get('Function'), f.pulse()['expression'])
+
     def test_wave_reference_against_independent_line_current_network(self):
         frequencies = np.r_[f.FREQUENCIES, 2e9, 4e9]
         lines = [(j, (j+1) % 4, np.sqrt(2)*f.Z0, m/(4*f.F0)) for j, m in enumerate((1, 1, 1, 3))]
