@@ -85,7 +85,8 @@ Primitive kinds (simple modelling shapes, each one maps to one CSXCAD primitive)
     as a solid: a flat-ended cylinder along every segment and a sphere at every bend (:func:`add_wire`; CSXCAD's
     ``AddWire`` snaps the line to the mesh edges and resonates a dipole 15 % low), so the mesh needs cells about as small as
     the radius; the automatic mesh refines the free ends and the surface lines. A radius under 0.02 mm, or a wire with a
-    slanted segment, stays CSXCAD's wire (a bare line of mesh edges).
+    slanted segment, stays CSXCAD's wire (a bare line of mesh edges). Radius zero is an ideal
+    thin wire, built as a native CSXCAD ``Curve``; its effective thickness is set by the grid.
 
 ``polyhedron``
     a closed solid from ``vertices`` (x, y, z points, at least 4, expressions allowed) and ``faces``
@@ -962,8 +963,8 @@ def resolve_primitive(pr: dict, names: dict, wp: str, priority: int) -> dict:
         if all(math.dist(pts[0], q) < 1e-12 for q in pts):
             raise DesignError("a wire needs two distinct points", f"{wp}.points")
         r = num(pr.get("radius"), f"{wp}.radius")
-        if r <= 0:
-            raise DesignError("the radius must be > 0", f"{wp}.radius")
+        if r < 0:
+            raise DesignError("the radius must be >= 0 (0: an ideal thin wire)", f"{wp}.radius")
         out.update(points=pts, radius=r)
     elif kind == "polyhedron":
         verts, faces = pr.get("vertices"), pr.get("faces")
@@ -3109,12 +3110,15 @@ def add_wire(prop, points, radius, **kw):
     CSXCAD's own ``AddWire`` snaps the polyline to the nearest mesh edges whatever the radius, and a half-wave
     dipole of it resonated 15 % below the same dipole drawn as cylinders. A wire thinner than
     ``WIRE_SOLID_MIN`` stays a CSXCAD wire, a bare line of mesh edges, and so does a wire with a slanted segment (an oblique cylinder
-    would not export to CST as one). Returns the primitive, or an object that forwards
+    would not export to CST as one). Radius zero preserves an ideal native CSXCAD Curve.
+    Returns the primitive, or an object that forwards
     ``AddTransform`` to every one of them."""
     import numpy as np
 
     if hasattr(prop, "_prop"):   # a lossy metal: its wires stay perfect conductors
         prop = prop._prop(("pec",))
+    if float(radius) == 0:
+        return prop.AddCurve(points, **kw)
     pts = np.asarray(points, float)
     if not radius or float(radius) < WIRE_SOLID_MIN or pts.ndim != 2 or pts.shape[0] != 3 or pts.shape[1] < 2:
         return prop.AddWire(points, radius, **kw)

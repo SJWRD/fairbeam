@@ -444,7 +444,9 @@ A part's properties also add more shapes to it. The kinds:
 - **Torus**: axis, center, the major radius (axis to the tube center) and the minor radius (the
   tube). openEMS gets the tube as a 64-sided polygon turned about the axis.
 - **Wire**: a thin wire along a polyline of points, with a radius. The automatic mesh puts fine
-  cells around it.
+  cells around it. Radius **0** preserves an ideal mesh-edge conductor (CSXCAD `Curve`), including
+  the axial helix example. Its effective thickness depends on the mesh; copying the example
+  retains its own mesh and does not turn it into a finite-radius conductor.
 - **Polyhedron** (`{"kind": "polyhedron", "vertices": [[x, y, z], ...], "faces": [[i, j, k, ...], ...]}`):
   a closed solid from its vertices (expressions allowed, at least 4) and polygon faces (lists of
   vertex indices, at least 4 faces of at least 3 different, existing indices each). There is no

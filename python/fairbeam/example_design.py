@@ -79,8 +79,10 @@ def _primitive(p):
             q["inner_radius"] = inner
     elif kind == "sphere":
         q.update(center=p["center"], radius=p["radius"])
-    elif kind == "wire":
-        q.update(points=p["points"], radius=p["radius"])
+    elif kind in ("curve", "wire"):
+        # A native Curve has no physical radius. Keep its exact mesh-edge model;
+        # inventing a small positive radius would change the source geometry.
+        q.update(kind="wire", points=p["points"], radius=0.0 if kind == "curve" else p["radius"])
     elif kind == "rotpoly":
         # RotPoly encodings are not guaranteed to match Design's cone/torus/profile forms.
         raise ExampleConversionError("CSXCAD RotPoly is not supported by exact example conversion")

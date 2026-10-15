@@ -841,7 +841,7 @@ class Build(unittest.TestCase):
             ({"kind": "torus", "axis": "z", "center": [0, 0, 0], "major_radius": 0, "minor_radius": 1}, None, "parts[3].primitives[0].major_radius"),
             ({"kind": "wire", "points": [[0, 0, 0]], "radius": 1}, None, "parts[3].primitives[0].points"),
             ({"kind": "wire", "points": [[0, 0, 0], [0, 0, 0]], "radius": 1}, None, "parts[3].primitives[0].points"),
-            ({"kind": "wire", "points": [[0, 0, 0], [0, 0, 1]], "radius": 0}, None, "parts[3].primitives[0].radius"),
+            ({"kind": "wire", "points": [[0, 0, 0], [0, 0, 1]], "radius": -1}, None, "parts[3].primitives[0].radius"),
             ({"kind": "sphere", "center": [0, 0, 0], "radius": 1}, [{"type": "mirror", "plane": "q"}], "parts[3].transforms[0].plane"),
             ({"kind": "sphere", "center": [0, 0, 0], "radius": 1}, [{"type": "translate", "copies": 2.5, "step": [1, 0, 0]}],
              "parts[3].transforms[0].copies"),

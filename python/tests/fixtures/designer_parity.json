@@ -209,6 +209,10 @@
        "primitives": [
          {"kind": "wire", "points": [["feed", 0, "h"], ["feed", 0, "h + 30"]], "radius": 0.4},
          {"kind": "wire", "points": [[10, 20, 2], [15, 20, 2], [15, 25, 8]], "radius": "h / 5"}]}}},
+    {"name": "ideal thin-wire curves, rotated and translated",
+     "append": {"parts": {"name": "ideal_wires", "material": "copper",
+       "transforms": [{"type": "rotate", "axis": "z", "center": [0, 0, 0], "angle": 90}, {"type": "move", "offset": [0, 0, "h"]}],
+       "primitives": [{"kind": "wire", "points": [[10, 20, 2], [15, 20, 2], [15, 25, 8]], "radius": 0}]}}},
     {"name": "a polyhedron (quad and triangle faces), rotated, mirrored and translated",
      "append": {"parts": {"name": "poly", "material": "copper",
        "transforms": [{"type": "rotate", "axis": "z", "center": [1, 2, 0], "angle": 90}, {"type": "mirror", "plane": "x", "point": [3, 0, 0]}, {"type": "translate", "copies": 1, "step": [0, "W", 0]}],
@@ -532,13 +536,17 @@
        {"kind": "cone", "axis": "z", "center": [40, 40], "bottom_radius": 2, "top_radius": 0, "range": [0, 5]},
        {"kind": "torus", "axis": "y", "center": [40, 0, 20], "major_radius": 4, "minor_radius": 1}]}},
      "expect": []},
-    {"name": "wires: one point, two equal points, zero radius",
+    {"name": "wires: one point, two equal points, negative radius",
      "append": {"parts": {"name": "w", "material": "copper", "primitives": [
        {"kind": "wire", "points": [[40, 40, 0]], "radius": 0.5},
        {"kind": "wire", "points": [[40, 40, 0], [40, 40, 0]], "radius": 0.5},
-       {"kind": "wire", "points": [[40, 40, 0], [40, 40, 10]], "radius": "0"}]}},
+       {"kind": "wire", "points": [[40, 40, 0], [40, 40, 10]], "radius": "-1"}]}},
      "expect": ["error|wire-points|parts[3].primitives[0].points", "error|wire-points|parts[3].primitives[1].points",
                 "error|radius|parts[3].primitives[2].radius"]},
+    {"name": "an ideal thin wire has zero radius",
+     "append": {"parts": {"name": "ideal", "material": "copper", "primitives": [
+       {"kind": "wire", "points": [[40, 40, 0], [41, 42, 10]], "radius": "0"}]}},
+     "expect": []},
     {"name": "a monopole on the ground plane is fine",
      "append": {"parts": {"name": "mono", "material": "copper", "primitives": [
        {"kind": "wire", "points": [[20, 20, 0], [20, 20, 25]], "radius": 0.5}]}},

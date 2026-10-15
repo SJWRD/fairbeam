@@ -106,7 +106,7 @@ for (const key of ["a", "Enter", "Escape", "Tab", "ArrowLeft", " "]) eq(pickerKe
 // ---- "Open as new project": the reason, from the example's own geometry
 const bundle = (file) => JSON.parse(read(`public/projects/${file}`));
 eq(exampleConversionBlocker(bundle("pyramidal-horn.json")), null, "the pyramidal horn (polyhedra) can be converted");
-check(/curve/.test(exampleConversionBlocker(bundle("helix-axial.json")) ?? ""), "the helix names its wire curve");
+eq(exampleConversionBlocker(bundle("helix-axial.json")), null, "the helix preserves its native ideal thin-wire curve");
 for (const f of ["dipole.json", "patch-antenna.json", "microstrip-line.json", "wilkinson-divider.json", "sierpinski-monopole--iterations-3.json", "minkowski-patch.json", "pyramidal-horn.json"]) {
   eq(exampleConversionBlocker(bundle(f)), null, `${f} can be converted`);
 }

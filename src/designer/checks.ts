@@ -285,7 +285,7 @@ export function designChecks(d: Design): Check[] {
       }
     } else if (pr.kind === "wire") {
       const r = ev(`${wp}.radius`, pr.radius);
-      if (r !== null && r <= 0) error(`${wp}.radius`, "radius", "the radius must be > 0");
+      if (r !== null && r < 0) error(`${wp}.radius`, "radius", "the radius must be >= 0 (0: an ideal thin wire)");
       if (!Array.isArray(pr.points)) {
         error(`${wp}.points`, "wire-points", "a wire needs at least 2 distinct points");
         return;

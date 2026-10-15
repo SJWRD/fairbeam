@@ -40,7 +40,6 @@ export const exampleSourceFor = (models: readonly ModelEntry[], modelId: string 
 // _primitive) refuses them: the reason is shown on the disabled button instead of after a server trip.
 // Values are i18n keys (examples.shape.*).
 const UNCONVERTIBLE: Record<string, string> = {
-  curve: "examples.shape.curve",
   rotpoly: "examples.shape.rotpoly",
 };
 

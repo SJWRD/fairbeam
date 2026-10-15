@@ -32,6 +32,37 @@ def _matrix(rx, ry, rz, scale=1.0, reflected=False, offset=(0.0, 0.0, 0.0)):
 
 
 class TransformedExampleImportTests(unittest.TestCase):
+    def test_ideal_curve_round_trip_keeps_native_curve_and_points(self):
+        sim = Simulation(1e9, 2e9, max_timesteps=8)
+        points = [[0.0, 0.0, 0.0], [2.0, 1.0, 3.0], [1.0, 4.0, 5.0]]
+        curve = sim.metal("ideal").AddCurve(np.array(points).T, priority=7)
+        curve.AddTransform("Matrix", _matrix(0, 0, 30))
+        module = SimpleNamespace(build=lambda _values: sim)
+        _, core = _read_design(module, {}, Path("ideal-curve.py"))
+        primitive = core["parts"][0]["primitives"][0]
+        self.assertEqual(primitive["kind"], "wire")
+        self.assertEqual(primitive["radius"], 0)
+        self.assertEqual(primitive["points"], points)
+        design = {
+            "schema": "fairbeam.design/1",
+            "model": {"id": "curve-copy", "name": "Curve copy"}, "params": [],
+            "simulation": core["simulation"], "materials": core["materials"],
+            "parts": core["parts"], "ports": [], "resistors": [],
+            "far_field": {"enabled": False},
+            "mesh": {"mode": "manual", "lines": {a: [-10, -5, 0, 5, 10] for a in "xyz"}},
+        }
+        rebuilt = build(design, {})
+        native = rebuilt.csx.GetPropertiesByName("ideal")[0].GetAllPrimitives()[0]
+        self.assertEqual(native.GetTypeName(), "Curve")
+        np.testing.assert_allclose([native.GetPoint(i) for i in range(native.GetNumberOfPoints())], points)
+        np.testing.assert_allclose(native.GetTransform().GetMatrix(), curve.GetTransform().GetMatrix(), atol=1e-12)
+        # Exporting and re-importing through Python must not add a physical wire radius either.
+        with tempfile.TemporaryDirectory() as temp:
+            source = Path(temp) / "curve_copy.py"
+            source.write_text(to_python(design), encoding="utf-8")
+            _, again = _read_design(load_model(source), {}, source)
+            self.assertEqual(again["parts"][0]["primitives"][0], primitive)
+
     def test_decomposed_maps_reconstruct_gimbal_and_reflected_matrices(self):
         points = ([0.0, 0.0, 0.0], [1.0, 2.0, 3.0], [-8.0, 1.0, 0.5])
         for ry in (90, -90, 89.999999999, 0):

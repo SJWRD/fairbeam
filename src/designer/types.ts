@@ -54,7 +54,7 @@ export interface ConePrimitive { kind: "cone"; axis: Axis; center: [Expr, Expr];
 /** Torus about `axis` through `center`: major_radius to the tube centre, minor_radius of the tube
  * (CSXCAD rotational polygon of a regular 64-gon). */
 export interface TorusPrimitive { kind: "torus"; axis: Axis; center: Vec3; major_radius: Expr; minor_radius: Expr; priority?: number }
-/** Thin wire (CSXCAD Wire): a polyline of x, y, z points and a radius, rasterised as a volume. */
+/** Polyline wire; radius 0 preserves a native CSXCAD Curve (ideal mesh-edge conductor). */
 export interface WirePrimitive { kind: "wire"; points: Vec3[]; radius: Expr; priority?: number }
 /** Closed solid (CSXCAD Polyhedron): `vertices` (x, y, z) and polygon `faces` (lists of vertex indices,
  * at least 4 vertices and 4 faces). The build fans each face into triangles, as CSXCAD needs. */

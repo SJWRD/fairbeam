@@ -125,7 +125,7 @@ function resolve(pr: DesignPrimitive, names: Record<string, number>, priority: n
     out.axis = a; out.origin = o; out.profile = coneProfile(lo, hi, rb, rt);
   } else if (pr.kind === "wire") {
     out.points3 = pr.points.map(v3); out.radius = n(pr.radius);
-    if (out.points3.length < 2 || !(out.radius > 0)) throw new Error("degenerate wire");
+    if (out.points3.length < 2 || !(out.radius >= 0)) throw new Error("degenerate wire");
   } else if (pr.kind === "polyhedron") {
     if (!Array.isArray(pr.vertices) || pr.vertices.length < 4) throw new Error("degenerate polyhedron");
     out.vertices = pr.vertices.map(v3);
@@ -619,7 +619,9 @@ function toBundlePrim(p: Resolved): Record<string, unknown> {
       : { kind: "cylinder", start: p.start, stop: p.stop, radius: p.radius, ...common };
   }
   if (p.kind === "sphere") return { kind: "sphere", center: p.center, radius: p.radius, ...common };
-  if (p.kind === "wire") return { kind: "wire", points: p.points3, radius: p.radius, ...common };
+  if (p.kind === "wire") return p.radius === 0
+    ? { kind: "curve", points: p.points3, ...common }
+    : { kind: "wire", points: p.points3, radius: p.radius, ...common };
   if (p.kind === "polyhedron") return { kind: "polyhedron", vertices: p.vertices, faces: polyhedronTriangles(p.vertices!, p.faces!), ...common };
   if (p.kind === "cone" || p.kind === "torus") return { kind: "rotpoly", axis: p.axis, origin: p.origin, points: p.profile, ...common };
   return p.kind === "linpoly"
