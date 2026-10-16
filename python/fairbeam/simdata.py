@@ -21,6 +21,8 @@ import time
 from contextlib import contextmanager
 from pathlib import Path
 
+from ._filelocks import model_lock
+
 MARKER_SUFFIX = ".fairbeam-running"
 # folders directly under the sim root that hold history, not raw openEMS output
 RESERVED = {"jobs", "model-history"}
@@ -56,28 +58,33 @@ def mark_running(path: str | Path):
 
     The marker sits next to the folder (openEMS may wipe the folder itself when a run starts).
     Nested use for the same folder is fine: only the outermost block removes the marker."""
-    marker = marker_path(os.path.abspath(path))
+    marker = marker_path(Path(path).resolve())
+    key = ("simulation-marker", os.path.normcase(str(marker)))
     mine = str(os.getpid())
-    try:
-        owned = marker.read_text(encoding="utf-8").strip() == mine
-    except OSError:
-        owned = False
     created = False
-    if not owned:
+    # Serialize the check and claim across CLI processes. A live owner's marker
+    # must never be overwritten; both runs would also overwrite the same raw data.
+    with model_lock(key):
         try:
+            owned = marker.read_text(encoding="utf-8").strip() == mine
+        except FileNotFoundError:
+            owned = False
+        if not owned:
+            if _marker_live(marker):
+                raise RuntimeError(f"simulation folder is already in use: {path}")
             marker.parent.mkdir(parents=True, exist_ok=True)
             marker.write_text(mine + "\n", encoding="utf-8")
             created = True
-        except OSError:
-            pass
     try:
         yield
     finally:
         if created:
-            try:
-                marker.unlink()
-            except OSError:
-                pass
+            with model_lock(key):
+                try:
+                    if marker.read_text(encoding="utf-8").strip() == mine:
+                        marker.unlink()
+                except FileNotFoundError:
+                    pass
 
 
 def _marker_live(marker: Path) -> bool:

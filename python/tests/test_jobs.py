@@ -6,6 +6,7 @@ import os
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import unittest
 from contextlib import redirect_stdout
@@ -14,7 +15,7 @@ from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from fairbeam.jobs import Job, JobManager, process_info  # noqa: E402
+from fairbeam.jobs import Job, JobManager, process_info, _drain_output  # noqa: E402
 from fairbeam.procutil import WINDOWS, kill_tree, new_group_kwargs, pid_alive  # noqa: E402
 
 FAKE = str(Path(__file__).resolve().parent / "fake_openems.py")
@@ -50,6 +51,41 @@ def alive(pid: int) -> bool:
         return bool(state) and not state.startswith("Z")
     except OSError:
         return True
+
+
+class OutputCapture(unittest.TestCase):
+    def test_drains_more_than_queue_capacity_and_both_streams(self):
+        lines = [f"line {i}" for i in range(1500)]
+        proc = mock.Mock(stdout=io.BytesIO(("\n".join(lines) + "\n").encode()),
+                         stderr=io.BytesIO(b"last error\n"))
+        proc.poll.return_value = 0
+        received = []
+        with mock.patch("fairbeam.jobs.release_group"):
+            self.assertTrue(_drain_output(proc, lambda line, name: received.append((line, name))))
+        self.assertEqual([line for line, name in received if name == "stdout"], lines)
+        self.assertIn(("last error", "stderr"), received)
+
+    def test_inherited_pipe_times_out_without_late_callbacks(self):
+        release, closed = threading.Event(), threading.Event()
+
+        class InheritedPipe:
+            def readline(self):
+                release.wait(5)
+                return b"late output\n"
+
+            def close(self):
+                closed.set()
+
+        proc = mock.Mock(stdout=InheritedPipe(), stderr=io.BytesIO())
+        proc.poll.return_value = 0
+        received = []
+        try:
+            with mock.patch("fairbeam.jobs.release_group"):
+                self.assertFalse(_drain_output(proc, lambda *args: received.append(args), idle_timeout=0.1))
+        finally:
+            release.set()
+        self.assertTrue(closed.wait(2))
+        self.assertEqual(received, [], "abandoned readers must not mutate completed jobs")
 
 
 class JobLifecycle(unittest.TestCase):
@@ -116,6 +152,34 @@ class JobLifecycle(unittest.TestCase):
         self.assertEqual(again.status, "done")
         self.assertEqual(len(again.events), len(job.events))
         self.assertEqual(m2.list()[0]["id"], job.id)
+
+    def test_slow_final_output_is_processed_before_finishing(self):
+        m = self.manager()
+        entered, release = threading.Event(), threading.Event()
+        handle = m._handle
+
+        def delayed(job, parser, line, stream):
+            if line.startswith("fairbeam: wrote "):
+                entered.set()
+                if not release.wait(15):
+                    raise RuntimeError("test did not release output handler")
+            return handle(job, parser, line, stream)
+
+        m._handle = delayed
+        job = self.submit(m)
+        try:
+            self.assertTrue(entered.wait(10))
+            self.assertTrue(wait_for(lambda: job.proc.poll() is not None))
+            # Longer than the old pump join timeout. A slow handler must not cause
+            # a successful child to be classified before its bundle line is parsed.
+            self.assertFalse(wait_for(lambda: job.terminal, timeout=5.5))
+        finally:
+            release.set()
+        self.assertTrue(wait_for(lambda: job.terminal))
+        self.assertEqual(job.status, "done", job.error)
+        self.assertEqual(job.bundle, "fake-dipole.json")
+        log = (job.dir / "log.txt").read_text(encoding="utf-8")
+        self.assertLess(log.index("fairbeam: wrote "), log.index("[exit code 0]"))
 
     def test_default_command(self):
         m = JobManager(self.root / "jobs", self.root / "projects", python="/py", autostart=False)
