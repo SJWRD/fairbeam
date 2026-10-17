@@ -23,6 +23,7 @@ import json
 import os
 import platform
 import shutil
+import stat
 import subprocess
 import sys
 import tarfile
@@ -323,6 +324,71 @@ def write_manifest(root: Path, manifest: dict) -> None:
     _retry_windows_file_operation(lambda: os.replace(tmp, target))
 
 
+def _plain_path(path: Path, *, directory: bool) -> bool:
+    """Use lstat: Windows junctions and other reparse points are not ordinary paths."""
+    info = path.lstat()
+    if stat.S_ISLNK(info.st_mode) or getattr(info, "st_file_attributes", 0) & 0x400:
+        return False  # FILE_ATTRIBUTE_REPARSE_POINT (also available on older Python)
+    return stat.S_ISDIR(info.st_mode) if directory else stat.S_ISREG(info.st_mode)
+
+
+def cleanup_downloads(root: Path, pins: dict, key: str, engine: str) -> None:
+    """Best-effort cache collection, called only after verify and manifest publication.
+
+    Inspect only direct regular files. Keep the selected engine and uv archives (stage 1
+    caches uv here too), plus their partial downloads. Never resolve a linked cache/root.
+    """
+    root = root.absolute()
+    cache = root / "downloads"
+
+    def safe_cache() -> bool:
+        # Check ancestors from the volume down before accessing anything below them.
+        return all(_plain_path(p, directory=True) for p in reversed((cache, *cache.parents)))
+
+    def warn(detail) -> None:
+        print(f"Fairbeam runtime: download cache cleanup skipped: {detail}", file=sys.stderr, flush=True)
+
+    try:
+        if not safe_cache():
+            return
+        marker = root / "manifest.json"
+        if not _plain_path(marker, directory=False):
+            return
+        manifest = json.loads(marker.read_text(encoding="utf-8"))
+        if (manifest.get("marker") != MARKER or manifest.get("platform") != key
+                or manifest.get("engine", "cpu") != engine):
+            return
+        _, pin = select_openems_pin(pins, key, engine)
+        urls = (pin["url"], pins["uv"][key]["url"])
+        keep = set()
+        for url in urls:
+            # Match the basename used by download() and both stage-1 setup scripts.
+            name = url.rsplit("/", 1)[-1]
+            if not name or name in (".", "..") or any(c in name for c in "\\:?&#"):
+                raise ValueError("unrecognized pinned archive name")
+            keep.update((name, name + ".part"))
+        if sys.platform == "win32":
+            keep = {name.casefold() for name in keep}
+        for candidate in cache.iterdir():
+            name = candidate.name.casefold() if sys.platform == "win32" else candidate.name
+            if name in keep or not name.lower().endswith((".tar.gz", ".zip", ".whl", ".part")):
+                continue
+            try:
+                def remove() -> None:
+                    # Recheck on each retry, including if a directory was replaced while waiting.
+                    if safe_cache() and _plain_path(candidate, directory=False):
+                        candidate.unlink()
+                _retry_windows_file_operation(remove)
+            except FileNotFoundError:
+                pass
+            except OSError as e:
+                warn(f"{candidate.name}: {e}")
+    except FileNotFoundError:
+        pass  # Older installations need not have a download cache.
+    except (OSError, ValueError, KeyError, TypeError, AttributeError) as e:
+        warn(e)
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--runtime-root", required=True)
@@ -334,7 +400,8 @@ def main() -> None:
     ap.add_argument("--openems-archive", help="use this local openEMS archive instead of downloading it")
     a = ap.parse_args()
 
-    root = Path(a.runtime_root).resolve()
+    cleanup_root = Path(a.runtime_root).absolute()  # Preserve links for the cleanup safety checks.
+    root = cleanup_root.resolve()
     res = Path(a.resources).resolve()
     pins = json.loads((res / "runtime" / "pins.json").read_text(encoding="utf-8"))
     key = platform_key()
@@ -359,10 +426,17 @@ def main() -> None:
             manifest = json.loads((root / "manifest.json").read_text(encoding="utf-8"))
         except (OSError, ValueError):
             fail(f"{root / 'manifest.json'} is missing or damaged: run the full install (setup-runtime)")
+        if (not isinstance(manifest, dict) or manifest.get("marker") != MARKER
+                or manifest.get("platform") != key or manifest.get("engine", "cpu") != a.engine):
+            fail("runtime manifest does not match this platform and engine: run the full install (setup-runtime)")
         progress("install-app", None, "fairbeam")
         version = install_app(root, res, py)
+        verify(py, root)
+        if a.engine == "gpu":
+            verify_gpu_engine(root)
         manifest.update(fairbeam=version, updated=time.strftime("%Y-%m-%dT%H:%M:%S%z"))
         write_manifest(root, manifest)
+        cleanup_downloads(cleanup_root, pins, key, a.engine)
         progress("done", 1.0, f"fairbeam {version}")
         return
 
@@ -430,6 +504,7 @@ def main() -> None:
         "installed": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
     }
     write_manifest(root, manifest)
+    cleanup_downloads(cleanup_root, pins, key, a.engine)
     progress("done", 1.0, f"openEMS {versions['openems']}, fairbeam {version}")
 
 

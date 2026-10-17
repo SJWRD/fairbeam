@@ -4,6 +4,7 @@ import ctypes
 from ctypes import wintypes
 import importlib.util
 import json
+import os
 from pathlib import Path
 import sys
 import shutil
@@ -231,6 +232,234 @@ class RuntimeLibsCleanup(unittest.TestCase):
                     self.assertIn("could not remove the obsolete libs wheel", stderr)
                     if verify_result:
                         self.assertIn("the runtime does not import", stderr)
+
+
+class RuntimeDownloadCleanup(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.base = Path(self.temp.name).resolve()
+        self.root = self.base / "runtime"
+        self.cache = self.root / "downloads"
+        self.cache.mkdir(parents=True)
+        self.pins = json.loads(PINS_PATH.read_text(encoding="utf-8"))
+        self.key = "windows-x64"
+        self.manifest = {"marker": install.MARKER, "platform": self.key, "engine": "cpu"}
+        install.write_manifest(self.root, self.manifest)
+
+    def archive(self, name, directory=None):
+        path = (directory or self.cache) / name
+        path.write_bytes(b"offline fixture")
+        return path
+
+    def clean(self, root=None, key=None, engine="cpu"):
+        install.cleanup_downloads(root or self.root, self.pins, key or self.key, engine)
+
+    def test_obsolete_archives_and_orphan_parts_only(self):
+        stale = [self.archive(n) for n in ("old.tar.gz", "old.zip", "old.whl", "lost.part", "old.zip.part")]
+        preserved = [self.archive(n) for n in ("notes.txt", "other.tar", "unknown.exe")]
+        for group in ("uv", "openems"):
+            name = self.pins[group][self.key]["url"].rsplit("/", 1)[-1]
+            preserved.extend((self.archive(name), self.archive(name + ".part")))
+        folder = self.cache / "directory.zip"
+        folder.mkdir()
+        preserved.append(self.archive("nested.zip", folder))
+        preserved.append(self.archive("outside.zip", self.root))
+        self.clean()
+        self.assertTrue(all(not p.exists() for p in stale))
+        self.assertTrue(all(p.read_bytes() == b"offline fixture" for p in preserved))
+
+    def test_cpu_gpu_and_platform_keep_sets_are_separate(self):
+        for key, engine in (("windows-x64", "cpu"), ("windows-x64", "gpu"), ("macos-arm64", "cpu")):
+            with self.subTest(key=key, engine=engine):
+                root = self.base / f"{engine}-runtime-{key}"
+                cache = root / "downloads"
+                cache.mkdir(parents=True)
+                install.write_manifest(root, dict(self.manifest, platform=key, engine=engine))
+                files = {}
+                for group in ("uv", "openems", "openems_gpu"):
+                    for platform_key in ("windows-x64", "macos-arm64"):
+                        pin = self.pins[group].get(platform_key, {})
+                        if pin.get("url"):
+                            files[group, platform_key] = self.archive(pin["url"].rsplit("/", 1)[-1], cache)
+                other_runtime = self.archive("other-runtime.zip")
+                self.clean(root=root, key=key, engine=engine)
+                for (group, platform_key), path in files.items():
+                    expected = platform_key == key and group in ("uv", "openems_gpu" if engine == "gpu" else "openems")
+                    self.assertEqual(path.exists(), expected, str(path))
+                self.assertTrue(other_runtime.exists())
+
+    def test_missing_invalid_or_mismatched_marker_prevents_cleanup(self):
+        stale = self.archive("old.zip")
+        marker = self.root / "manifest.json"
+        for manifest in (None, {}, dict(self.manifest, marker="other"),
+                         dict(self.manifest, engine="gpu"), dict(self.manifest, platform="macos-arm64")):
+            with self.subTest(manifest=manifest):
+                if manifest is None:
+                    marker.unlink()
+                else:
+                    marker.write_text(json.dumps(manifest), encoding="utf-8")
+                self.clean()
+                self.assertTrue(stale.exists())
+        marker.write_text("not json", encoding="utf-8")
+        with redirect_stderr(StringIO()):
+            self.clean()
+        self.assertTrue(stale.exists())
+
+    def test_incomplete_pins_fail_closed(self):
+        stale = self.archive("old.zip")
+        del self.pins["uv"]
+        stderr = StringIO()
+        with redirect_stderr(stderr):
+            self.clean()
+        self.assertTrue(stale.exists())
+        self.assertIn("cleanup skipped", stderr.getvalue())
+
+    def test_symlinks_are_not_followed_or_removed(self):
+        outside = self.archive("outside.zip", self.base)
+        link = self.cache / "linked.zip"
+        try:
+            link.symlink_to(outside)
+        except OSError as e:
+            self.skipTest(f"symlink creation unavailable: {e}")
+        self.clean()
+        self.assertTrue(link.is_symlink())
+        self.assertEqual(outside.read_bytes(), b"offline fixture")
+        linked_root = self.base / "linked-runtime"
+        linked_root.symlink_to(self.root, target_is_directory=True)
+        stale = self.archive("old.zip")
+        self.clean(root=linked_root)
+        self.assertTrue(stale.exists())
+        # A linked manifest must not authorize collection either.
+        marker = self.root / "manifest.json"
+        external_marker = self.base / "manifest.json"
+        marker.replace(external_marker)
+        marker.symlink_to(external_marker)
+        self.clean()
+        self.assertTrue(stale.exists())
+
+    @unittest.skipUnless(sys.platform == "win32", "Windows directory junctions")
+    def test_junctions_at_cache_ancestor_and_entry_are_not_followed(self):
+        outside = self.base / "outside"
+        outside.mkdir()
+        protected = self.archive("old.zip", outside)
+
+        def junction(link, target):
+            # mklink is a cmd builtin; paths are generated by TemporaryDirectory, not user input.
+            subprocess.run(["cmd", "/c", "mklink", "/J", str(link), str(target)],
+                           capture_output=True, check=True)
+            self.addCleanup(lambda: os.rmdir(link))
+
+        junction(self.cache / "directory.zip", outside)
+        self.clean()
+        self.assertTrue(protected.exists())
+        linked_parent = self.base / "linked-parent"
+        junction(linked_parent, self.root)
+        stale = self.archive("local.zip")
+        self.clean(root=linked_parent)
+        self.assertTrue(stale.exists())
+        other_root = self.base / "other-runtime"
+        other_root.mkdir()
+        install.write_manifest(other_root, self.manifest)
+        junction(other_root / "downloads", outside)
+        self.clean(root=other_root)
+        self.assertTrue(protected.exists())
+
+    def test_reparse_attribute_is_rejected_even_without_symlink_mode(self):
+        path = self.cache / "reparse.zip"
+        info = SimpleNamespace(st_mode=install.stat.S_IFREG, st_file_attributes=0x400)
+        with mock.patch.object(Path, "lstat", return_value=info):
+            self.assertFalse(install._plain_path(path, directory=False))
+
+    def test_transient_delete_retries_and_permanent_failure_is_nonfatal(self):
+        stale = self.archive("old.zip")
+        real_unlink = Path.unlink
+        attempts = []
+
+        def unlink(path, *args, **kwargs):
+            if path == stale:
+                attempts.append(path)
+                if len(attempts) < 3:
+                    raise win_error(32)
+            return real_unlink(path, *args, **kwargs)
+
+        with mock.patch.object(install.sys, "platform", "win32"), \
+                mock.patch.object(Path, "unlink", unlink), mock.patch.object(install.time, "sleep"):
+            self.clean()
+        self.assertEqual(len(attempts), 3)
+        self.assertFalse(stale.exists())
+        self.archive("old.zip")
+        stderr = StringIO()
+        with mock.patch.object(Path, "unlink", side_effect=PermissionError("locked")), redirect_stderr(stderr):
+            self.clean()
+        self.assertTrue(stale.exists())
+        self.assertIn("old.zip: locked", stderr.getvalue())
+
+    def test_cleanup_runs_only_after_successful_verify_and_manifest_for_both_paths(self):
+        for app_only in (False, True):
+            for failure in (None, "install_app", "verify", "write_manifest", "delete", "interrupt"):
+                with self.subTest(app_only=app_only, failure=failure):
+                    install.write_manifest(self.root, self.manifest)
+                    stale = self.archive("old.zip")
+                    args = ["install.py", "--runtime-root", str(self.root), "--resources", str(INSTALL_PATH.parents[1])]
+                    if app_only:
+                        args.append("--app-only")
+                    for tool in (install.venv_python(self.root), install.uv_exe(self.root)):
+                        tool.parent.mkdir(parents=True, exist_ok=True)
+                        tool.touch()
+                    oems = self.root / "openEMS"
+                    oems.mkdir(exist_ok=True)
+                    for name in ("CSXCAD", "openEMS"):
+                        (oems / f"{name}-cp{sys.version_info.major}{sys.version_info.minor}.whl").touch()
+                    versions = {"openems": "test", "csxcad": "test", "fairbeam": "test"}
+                    events = []
+                    real_write = install.write_manifest
+                    real_unlink = Path.unlink
+
+                    def stage(name, result=None):
+                        def call(*args):
+                            events.append(name)
+                            self.assertTrue(stale.exists())
+                            if failure == "interrupt" and name == "install_app":
+                                raise KeyboardInterrupt
+                            if name == failure:
+                                raise RuntimeError(name)
+                            if name == "write_manifest":
+                                real_write(*args)
+                            return result
+                        return call
+
+                    def unlink(path, *args, **kwargs):
+                        if path == stale:
+                            self.assertEqual(events, ["install_app", "verify", "write_manifest"])
+                            self.assertEqual(json.loads((self.root / "manifest.json").read_text(encoding="utf-8"))["fairbeam"], "test")
+                            if failure == "delete":
+                                raise PermissionError("blocked cache")
+                        return real_unlink(path, *args, **kwargs)
+
+                    stderr = StringIO()
+                    with mock.patch.object(install.sys, "argv", args), \
+                            mock.patch.object(install, "platform_key", return_value=self.key), \
+                            mock.patch.object(install, "download"), \
+                            mock.patch.object(install, "unpack_openems", return_value=oems), \
+                            mock.patch.object(install, "run"), \
+                            mock.patch.object(install, "install_app", side_effect=stage("install_app", "test")), \
+                            mock.patch.object(install, "verify", side_effect=stage("verify", versions)), \
+                            mock.patch.object(install, "write_manifest", side_effect=stage("write_manifest")), \
+                            mock.patch.object(Path, "unlink", unlink), \
+                            mock.patch.object(install, "progress") as progress, redirect_stderr(stderr):
+                        if failure == "interrupt":
+                            with self.assertRaises(KeyboardInterrupt):
+                                install.main()
+                        elif failure in ("install_app", "verify", "write_manifest"):
+                            with self.assertRaisesRegex(RuntimeError, failure):
+                                install.main()
+                        else:
+                            install.main()
+                            self.assertEqual(progress.call_args.args[0], "done")
+                    self.assertEqual(stale.exists(), failure is not None)
+                    if failure == "delete":
+                        self.assertIn("blocked cache", stderr.getvalue())
 
 
 class WindowsFileRetry(unittest.TestCase):
