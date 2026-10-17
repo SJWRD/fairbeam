@@ -208,10 +208,10 @@ export default function App() {
     if (native) void native.invoke("sync_native_menu_availability", { availability }).catch(() => {});
   });
   createEffect(() => {
-    const id = designFile()?.id;
-    if (!id) return;
-    const native = (window as unknown as { __TAURI_INTERNALS__?: { invoke: (command: string, args: { id: string }) => Promise<unknown> } }).__TAURI_INTERNALS__;
-    if (native) void native.invoke("remember_recent_design", { id }).catch(() => {});
+    const saved = designFile();
+    if (!saved) return;
+    const native = (window as unknown as { __TAURI_INTERNALS__?: { invoke: (command: string, args: { id: string; title: string }) => Promise<unknown> } }).__TAURI_INTERNALS__;
+    if (native) void native.invoke("remember_recent_design", { id: saved.id, title: saved.design.model.name }).catch(() => {});
   });
 
   onMount(async () => {

@@ -1399,7 +1399,7 @@ fn set_workspace_folder(app: AppHandle, path: String) -> Result<String, String> 
     // The native Open Recent menu belongs to the active workspace. Drop it as soon as a different
     // workspace is scheduled so paths from this workspace do not appear after the next start.
     if changed {
-        settings.recent_designs.clear();
+        settings.clear_recent_designs();
     }
     save_settings(&app, &settings)?;
     if changed {
@@ -1452,7 +1452,7 @@ fn valid_design_id(id: &str) -> bool {
 }
 
 #[tauri::command]
-fn remember_recent_design(app: AppHandle, id: String) -> Result<(), String> {
+fn remember_recent_design(app: AppHandle, id: String, title: Option<String>) -> Result<(), String> {
     if !valid_design_id(&id) {
         return Err("Invalid design id".into());
     }
@@ -1472,9 +1472,9 @@ fn remember_recent_design(app: AppHandle, id: String) -> Result<(), String> {
         // Keep its recent designs out of settings so they do not reappear in the new workspace.
         return Ok(());
     }
-    settings.recent_designs.retain(|entry| entry != &id);
-    settings.recent_designs.insert(0, id);
-    settings.recent_designs.truncate(8);
+    if !settings.remember_recent_design(id, title.as_deref()) {
+        return Ok(());
+    }
     save_settings(&app, &settings)?;
     app.set_menu(app_menu(&app).map_err(|e| e.to_string())?)
         .map(|_| ())
@@ -1707,12 +1707,13 @@ fn app_menu(handle: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
     let quit = MenuItem::with_id(handle, "quit", tx("quit-windows"), true, None::<&str>)?;
     #[cfg(not(any(windows, target_os = "macos")))]
     let quit = MenuItem::with_id(handle, "quit", tx("quit-other"), true, None::<&str>)?;
-    let recent_entries = load_settings(handle)
+    let recent_settings = load_settings(handle);
+    let recent_entries = recent_settings
         .recent_designs
-        .into_iter()
+        .iter()
         .filter(|id| valid_design_id(id))
         .take(8)
-        .map(|id| action_item(handle, &format!("file-open-recent:{id}"), &id))
+        .map(|id| action_item(handle, &format!("file-open-recent:{id}"), &recent_settings.recent_design_label(id)))
         .collect::<tauri::Result<Vec<_>>>()?;
     let recent_refs = recent_entries
         .iter()

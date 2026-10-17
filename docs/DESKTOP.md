@@ -90,7 +90,7 @@ The macOS pack (26.8 MB) is published in
 |---|---|---|---|
 | resources (read-only, inside the app) | `Fairbeam.app/Contents/Resources` | install dir, next to `fairbeam.exe` | `ui/` (built viewer), `python/fairbeam/` (the package source), `models/`, `templates/`, `projects/` (example bundles and `index.json`), `runtime/` (see below) |
 | app data | `~/Library/Application Support/org.fairbeam.desktop` | `%LOCALAPPDATA%\org.fairbeam.desktop` | `runtime/`, `logs/` (`server.log`, `shell.log`, `runtime-<time>.log`; Tauri's app local data dir) |
-| settings | `~/Library/Application Support/org.fairbeam.desktop/settings.json` | `%APPDATA%\org.fairbeam.desktop\settings.json` | `runtime` (`managed` / `external`), `python`, `workspace`, `prefer_gpu`, `check_updates_on_start`, `recent_designs` (the eight File › Open Recent entries) and, in a build with sign-in, `account` (Tauri's app config dir) |
+| settings | `~/Library/Application Support/org.fairbeam.desktop/settings.json` | `%APPDATA%\org.fairbeam.desktop\settings.json` | `runtime` (`managed` / `external`), `python`, `workspace`, `prefer_gpu`, `check_updates_on_start`, `recent_designs` (the eight File › Open Recent IDs), optional `recent_design_titles` (their saved display names) and, in a build with sign-in, `account` (Tauri's app config dir) |
 | runtime | `<app data>/runtime` | `<app data>\runtime` | `uv/`, `python/` (uv-managed CPython), `venv/`, `openEMS/`, `app/fairbeam/` (copied package), `downloads/`, `cache/`, `manifest.json` |
 | workspace (visible to the user) | `~/Documents/Fairbeam` | `%USERPROFILE%\Documents\Fairbeam` | `projects/`, `models/`, `templates/`, `jobs/`, `model-history/`, `.sim/` |
 
