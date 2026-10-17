@@ -14,6 +14,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod design_reveal;
+mod export_payload;
 #[cfg(target_os = "linux")]
 mod linux_reveal;
 
@@ -422,9 +423,11 @@ async fn save_download(
     app: AppHandle,
     shell: tauri::State<'_, Shell>,
     name: String,
-    bytes: Vec<u8>,
+    bytes: Option<Vec<u8>>,
+    text: Option<String>,
     extension: String,
 ) -> Result<Value, String> {
+    let bytes = export_payload::decode(bytes, text, SAVE_LIMIT)?;
     validate_save_name(&name, &extension, bytes.len())?;
     let dialog_app = app.clone();
     let filter_name = extension.to_uppercase();
