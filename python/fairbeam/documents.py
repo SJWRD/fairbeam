@@ -189,8 +189,8 @@ def read(path: Path) -> tuple[dict, str]:
     return _parse(data), digest(data)
 
 
-def _windows_read_dacl(path: Path) -> bytes:
-    """Read a self-relative descriptor containing only the destination's DACL."""
+def _windows_read_security(path: Path, information: int) -> bytes:
+    """Read only the requested parts of a file's self-relative security descriptor."""
     import ctypes
     from ctypes import wintypes
 
@@ -200,12 +200,57 @@ def _windows_read_dacl(path: Path) -> bytes:
                     wintypes.DWORD, ctypes.POINTER(wintypes.DWORD))
     get.restype = wintypes.BOOL
     size = wintypes.DWORD()
-    if get(str(path), 4, None, 0, ctypes.byref(size)) or ctypes.get_last_error() != 122:
+    if get(str(path), information, None, 0, ctypes.byref(size)) or ctypes.get_last_error() != 122:
         raise ctypes.WinError(ctypes.get_last_error())
     data = ctypes.create_string_buffer(size.value)
-    if not get(str(path), 4, data, len(data), ctypes.byref(size)):
+    if not get(str(path), information, data, len(data), ctypes.byref(size)):
         raise ctypes.WinError(ctypes.get_last_error())
     return data.raw[:size.value]
+
+
+def _windows_read_dacl(path: Path) -> bytes:
+    """Read a self-relative descriptor containing only the destination's DACL."""
+    return _windows_read_security(path, 4)
+
+
+def _windows_read_owner_group(path: Path) -> tuple[bytes, bytes]:
+    """Read actual owner/group SIDs; descriptor offsets and control flags are not identity."""
+    import ctypes
+    from ctypes import wintypes
+
+    api = ctypes.WinDLL("advapi32", use_last_error=True)
+    api.IsValidSid.argtypes = (ctypes.c_void_p,)
+    api.IsValidSid.restype = wintypes.BOOL
+    api.GetLengthSid.argtypes = (ctypes.c_void_p,)
+    api.GetLengthSid.restype = wintypes.DWORD
+    data = ctypes.create_string_buffer(_windows_read_security(path, 1 | 2))
+    values = []
+    for name in ("GetSecurityDescriptorOwner", "GetSecurityDescriptorGroup"):
+        get = getattr(api, name)
+        get.argtypes = (ctypes.c_void_p, ctypes.POINTER(ctypes.c_void_p),
+                        ctypes.POINTER(wintypes.BOOL))
+        get.restype = wintypes.BOOL
+        sid, defaulted = ctypes.c_void_p(), wintypes.BOOL()
+        if not get(data, ctypes.byref(sid), ctypes.byref(defaulted)):
+            raise ctypes.WinError(ctypes.get_last_error())
+        if not sid.value or not api.IsValidSid(sid):
+            raise DocumentError("Cannot determine the document owner and group")
+        values.append(ctypes.string_at(sid, api.GetLengthSid(sid)))
+    return values[0], values[1]
+
+
+def _windows_require_owner_group(path: Path, expected: tuple[bytes, bytes]) -> None:
+    """Refuse ownership changes rather than attempting to acquire or change ownership."""
+    import ctypes
+    from ctypes import wintypes
+
+    actual = _windows_read_owner_group(path)
+    api = ctypes.WinDLL("advapi32", use_last_error=True)
+    api.EqualSid.argtypes = (ctypes.c_void_p, ctypes.c_void_p)
+    api.EqualSid.restype = wintypes.BOOL
+    for original, staging in zip(expected, actual):
+        if not api.EqualSid(ctypes.create_string_buffer(original), ctypes.create_string_buffer(staging)):
+            raise DocumentError("Cannot preserve the document owner and group; save a separate copy")
 
 
 def _windows_apply_dacl(path: Path, descriptor: bytes) -> None:
@@ -304,6 +349,7 @@ def save(path: Path, document: dict, base_hash: str | None = None) -> str:
         if previous == data:
             return digest(data)
         dacl = _windows_read_dacl(path) if previous is not None and os.name == "nt" else None
+        owner_group = _windows_read_owner_group(path) if dacl is not None else None
         fd, name = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".tmp", dir=path.parent)
         temporary = Path(name)
         try:
@@ -312,6 +358,9 @@ def save(path: Path, document: dict, base_hash: str | None = None) -> str:
             with os.fdopen(fd, "wb") as stream:
                 try:
                     if dacl is not None:
+                        # Owner-relative ACEs must retain their meaning after replacement.
+                        # Refuse a different owner/group before content or DACL changes.
+                        _windows_require_owner_group(temporary, owner_group)
                         # Restrict the empty staging file before any document bytes are written.
                         _windows_apply_dacl(temporary, dacl)
                     stream.write(data)

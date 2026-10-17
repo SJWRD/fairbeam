@@ -18,7 +18,9 @@ class Documents(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
-        self.root = Path(self.tmp.name)
+        # Hosted Windows TEMP may use an 8.3 alias. Match the canonical parent
+        # used by document access before comparing destination/staging paths.
+        self.root = Path(self.tmp.name).resolve()
         self.path = self.root / "İzmir patch.fb"
         self.design = blank_design("my_patch", "İzmir patch 😀")
         self.document = doc.create(self.design, "İzmir patch.results")
@@ -177,6 +179,72 @@ class Documents(unittest.TestCase):
                 self.assertEqual(doc._windows_read_dacl(self.path), before)
                 self.assertEqual(doc.read(self.path)[0], self.document)
         self.assertEqual(list(self.root.iterdir()), [self.path])
+
+    @unittest.skipUnless(os.name == "nt", "Windows owner/group preservation")
+    def test_windows_owner_group_is_checked_before_content_and_stays_unchanged(self):
+        initial = doc.save(self.path, self.document)
+        before = doc._windows_read_owner_group(self.path)
+        check = doc._windows_require_owner_group
+        def check_empty_stage(path, expected):
+            self.assertEqual(path.stat().st_size, 0)
+            self.assertEqual(expected, before)
+            check(path, expected)
+        self.document["design"]["model"]["name"] = "edited"
+        with mock.patch.object(doc, "_windows_require_owner_group", side_effect=check_empty_stage) as checked:
+            doc.save(self.path, self.document, initial)
+        checked.assert_called_once()
+        self.assertEqual(doc._windows_read_owner_group(self.path), before)
+        self.assertEqual(doc.read(self.path)[0], self.document)
+        self.assertEqual(list(self.root.iterdir()), [self.path])
+
+    @unittest.skipUnless(os.name == "nt", "Windows owner/group refusal")
+    def test_windows_different_owner_or_group_refuses_before_bytes_or_dacl_changes(self):
+        initial = doc.save(self.path, self.document)
+        before = doc._windows_read_owner_group(self.path)
+        before_acl = doc._windows_read_dacl(self.path)
+        read = doc._windows_read_owner_group
+        self.document["design"]["model"]["name"] = "edited"
+        for index in (0, 1):
+            with self.subTest(identity=("owner", "group")[index]):
+                different = list(before)
+                # Change one subauthority byte, retaining a structurally valid distinct SID.
+                sid = bytearray(different[index]); sid[-1] ^= 1
+                different[index] = bytes(sid)
+                def destination_differs(path):
+                    if path == self.path:
+                        return tuple(different)
+                    self.assertEqual(path.stat().st_size, 0)
+                    return read(path)
+                with mock.patch.object(doc, "_windows_read_owner_group", side_effect=destination_differs), \
+                        mock.patch.object(doc, "_windows_apply_dacl") as apply:
+                    with self.assertRaisesRegex(doc.DocumentError, "owner and group"):
+                        doc.save(self.path, self.document, initial)
+                    apply.assert_not_called()
+                self.assertEqual(doc.read(self.path)[1], initial)
+                self.assertEqual(read(self.path), before)
+                self.assertEqual(doc._windows_read_dacl(self.path), before_acl)
+                self.assertEqual(list(self.root.iterdir()), [self.path])
+
+    @unittest.skipUnless(os.name == "nt", "Windows ownership read failure")
+    def test_windows_unreadable_owner_group_keeps_original_and_cleans_empty_stage(self):
+        initial = doc.save(self.path, self.document)
+        before = doc._windows_read_owner_group(self.path)
+        read = doc._windows_read_owner_group
+        self.document["design"]["model"]["name"] = "edited"
+        for target in ("destination", "stage"):
+            with self.subTest(target=target):
+                def refused(path):
+                    if (path == self.path) == (target == "destination"):
+                        if path != self.path:
+                            self.assertEqual(path.stat().st_size, 0)
+                        raise PermissionError("owner/group read refused")
+                    return read(path)
+                with mock.patch.object(doc, "_windows_read_owner_group", side_effect=refused):
+                    with self.assertRaisesRegex(PermissionError, "owner/group read refused"):
+                        doc.save(self.path, self.document, initial)
+                self.assertEqual(doc.read(self.path)[1], initial)
+                self.assertEqual(read(self.path), before)
+                self.assertEqual(list(self.root.iterdir()), [self.path])
 
     @unittest.skipUnless(os.name == "nt", "Windows DACL failure handling")
     def test_windows_acl_failure_never_publishes_and_cleans_empty_stage(self):
@@ -394,9 +462,7 @@ class Documents(unittest.TestCase):
     def test_directory_reparse_flag_refused(self):
         _, reference = self.result()
         real_lstat = Path.lstat
-        # Windows hosted runners can expose TEMP through an 8.3 name. The reader
-        # canonicalizes the selected parent; intercept that same directory.
-        folder = (self.root / self.document["results_directory"]).resolve()
+        folder = self.root / self.document["results_directory"]
         inspected = []
         def lstat(path, *args, **kwargs):
             info = real_lstat(path, *args, **kwargs)
