@@ -138,6 +138,47 @@ class DocumentWorkspace:
             doc._regular(path)
         modelfiles._write_atomic(path, doc._json_bytes(state).decode("utf-8"))
 
+    def _discard_unpublished(self, path: Path, parent_info, state: dict,
+                             expected_state: bytes, created: dict | None) -> None:
+        """Best-effort rollback of only this attempt's unpublished UUID binding."""
+        key = state["model_id"]
+        try:
+            with modelfiles._transaction(self.models_dir, key), model_lock(doc._document_lock_key(path)):
+                # Publication can succeed before doc.save raises (for example during
+                # staging cleanup). Any destination entry or uncertain boundary retains
+                # the binding and clone for Open recovery, without reading external data.
+                current_parent = path.parent.lstat()
+                if (doc._linked(current_parent) or not stat.S_ISDIR(current_parent.st_mode)
+                        or not os.path.samestat(parent_info, current_parent) or doc._path(path) != path):
+                    return
+                try:
+                    path.lstat()
+                except FileNotFoundError:
+                    pass
+                else:
+                    return
+                directory = self.state_dir.lstat()
+                if doc._linked(directory) or not stat.S_ISDIR(directory.st_mode):
+                    return
+                state_path = self._state_path(state["id"])
+                try:
+                    current_state = doc._read_bytes(state_path, MAX_STATE)
+                except FileNotFoundError:
+                    current_state = None
+                if current_state is not None and current_state != expected_state:
+                    return
+                if created is not None:
+                    created_path = self.models_dir / (key + modelfiles.DESIGN_SUFFIX)
+                    doc._regular(created_path)
+                    if modelfiles.read_design_file(self.models_dir, key)["hash"] != created["hash"]:
+                        return
+                    created_path.unlink()
+                if current_state is not None:
+                    state_path.unlink()
+        except (OSError, ValueError, modelfiles.ModelFileError):
+            # Cleanup must never replace the original save failure or remove uncertain data.
+            pass
+
     def document_id_for(self, model_id: str) -> str | None:
         """Read the existing portable identity without creating metadata or path authority."""
         modelfiles.check_id(model_id)
@@ -497,29 +538,28 @@ class DocumentWorkspace:
             # Record the UUID binding before publishing the portable file. If the process
             # stops immediately after publication, reopening still finds the original key.
             created = None
+            provisional_state = None
+            new_binding = source_state is None or document["id"] != source_state["id"]
+            parent_info = path.parent.stat()
             try:
+                if new_binding:
+                    try:
+                        self._state_path(state["id"]).lstat()
+                    except FileNotFoundError:
+                        pass
+                    else:
+                        raise doc.DocumentConflict("This document identity already has workspace metadata")
                 if key != model_id:
                     file = self._create_design(key, document["design"])
                     created = file
                     state["workspace_hash"] = file["hash"]
-                if source_state is None or document["id"] != source_state["id"]:
+                if new_binding:
+                    provisional_state = doc._json_bytes(state)
                     self._write_state(state)
                 revision = doc.save(path, document, None if save_as else base_hash)
             except Exception:
-                if created is not None:
-                    # Only remove the exact private clone this attempt created. A concurrent
-                    # edit must survive even when publishing the portable file failed.
-                    try:
-                        with modelfiles._transaction(self.models_dir, key):
-                            created_path = self.models_dir / (key + modelfiles.DESIGN_SUFFIX)
-                            doc._regular(created_path)
-                            if modelfiles.read_design_file(self.models_dir, key)["hash"] == created["hash"]:
-                                created_path.unlink()
-                                state_path = self._state_path(state["id"])
-                                if _json_file(state_path) == state:
-                                    state_path.unlink()
-                    except (OSError, ValueError, modelfiles.ModelFileError):
-                        pass
+                if provisional_state is not None:
+                    self._discard_unpublished(path, parent_info, state, provisional_state, created)
                 raise
             state.update(revision=revision, workspace_hash=file["hash"])
             try:
