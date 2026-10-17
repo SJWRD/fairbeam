@@ -35,7 +35,7 @@ class ResultPublication(unittest.TestCase):
         with mock.patch.object(doc.sys, "platform", "darwin"), \
                 mock.patch.object(doc, "_macos_rename_exclusive", side_effect=OSError(errno.ENOTSUP, "unsupported")), \
                 mock.patch.object(doc.os, "link", side_effect=OSError(errno.ENOTSUP, "unsupported")):
-            with self.assertRaisesRegex(doc.DocumentError, "atomically create"):
+            with self.assertRaisesRegex(doc.DocumentError, "atomic file creation"):
                 workspace._immutable(self.path, self.data)
         self.assertEqual(list(self.root.iterdir()), [])
 

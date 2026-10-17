@@ -150,11 +150,20 @@ def _read_bytes(path: Path, limit: int) -> bytes:
     _regular(path)
     flags = os.O_RDONLY | getattr(os, "O_BINARY", 0) | getattr(os, "O_NOFOLLOW", 0)
     with os.fdopen(os.open(path, flags), "rb") as stream:
-        if not stat.S_ISREG(os.fstat(stream.fileno()).st_mode):
+        info = os.fstat(stream.fileno())
+        if not stat.S_ISREG(info.st_mode):
             raise DocumentError("Expected a regular file")
-        data = stream.read(limit + 1)
+        if info.st_size < 0:
+            raise DocumentError("File has an invalid size")
+        if info.st_size > limit:
+            raise DocumentError("File exceeds its size limit")
+        # A MAX_RESULT-sized read can allocate/probe a large buffer even for a tiny
+        # file. Bound it by this opened descriptor, with one byte to detect growth.
+        data = stream.read(info.st_size + 1)
     if len(data) > limit:
         raise DocumentError("File exceeds its size limit")
+    if len(data) != info.st_size:
+        raise DocumentError("File changed size while it was being read")
     return data
 
 
