@@ -30,7 +30,20 @@ export function rememberNativeDocument(document: NativeDocumentBinding) {
 /** A recovered portable workspace stays scoped while its native grant is restored. */
 export const hasDocumentResultScope = (file: DesignFile | null) => !!file &&
   (!!file.document_id || !!nativeDocumentFor(file) || /^fb_[0-9a-f]{32}$/.test(file.id));
-type ResultJob = { model: string; status: string; bundle?: string | null };
+type ResultJob = { model: string; status: string; bundle?: string | null; kind?: string;
+  research?: { backend: string; settings: Record<string, unknown>;
+    source?: { model_id: string; workspace_hash: string; backup_scope: string; design_sha256: string } } };
+
+/** Research results require explicit server-validated workspace ownership, even when an
+ * old source-less run happens to share its embedded model ID with a workspace filename. */
+export function documentJobMatches(file: DesignFile, job: ResultJob): boolean {
+  if (job.model !== file.id) return false;
+  if (job.kind !== "research") return true;
+  const research = job.research, source = research?.source;
+  return research?.backend === "elmer" && research.settings.analysis === "driven" && !!source &&
+    source.model_id === file.id && source.backup_scope === file.backup_scope &&
+    /^[0-9a-f]{64}$/.test(source.workspace_hash) && /^[0-9a-f]{64}$/.test(source.design_sha256);
+}
 type CompletedJob = ResultJob & { id: string; finished?: number | null; kind?: string };
 type ResultJournal = { seen: string[]; pending: string[]; seed?: boolean };
 const RESULTS_JOURNAL_KEY = "fairbeam.document-results/1";
@@ -53,7 +66,7 @@ const [resultJournals, setResultJournals] = createSignal(readResultJournals());
 let observedJobs: readonly CompletedJob[] = [];
 let observedScope: string | undefined | null = null;
 const completedKeys = (file: DesignFile, jobs: readonly CompletedJob[]) => jobs
-  .filter(job => job.model === file.id && job.kind !== "research" && job.status === "done" && job.bundle)
+  .filter(job => documentJobMatches(file, job) && job.status === "done" && job.bundle)
   .map(job => JSON.stringify([job.id, job.finished ?? null, job.bundle]));
 function writeResultJournal(file: DesignFile, state: ResultJournal) {
   setResultJournals(previous => {
@@ -104,7 +117,7 @@ function acknowledgeResults(file: DesignFile, candidates: ReadonlySet<string>) {
 export function documentResultFiles(file: DesignFile | null, jobs: readonly ResultJob[]): Set<string> | undefined {
   if (!file || !hasDocumentResultScope(file)) return undefined;
   const included = new Set(nativeDocumentFor(file)?.results.flatMap(result => result.project_file ? [result.project_file] : []));
-  for (const job of jobs) if (job.model === file.id && job.status === "done" && job.bundle) included.add(job.bundle);
+  for (const job of jobs) if (documentJobMatches(file, job) && job.status === "done" && job.bundle) included.add(job.bundle);
   return included;
 }
 async function invoke<T>(command: string, args?: Record<string, unknown>): Promise<T> {

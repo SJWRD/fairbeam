@@ -22,6 +22,20 @@ RUN_SCHEMA = "fairbeam.document-run/1"
 MAX_STATE = 16 * 1024 * 1024
 
 
+def _research_source(model: str, metadata: dict | None) -> dict | None:
+    """Only server-bound driven runs have portable source provenance."""
+    if (not isinstance(metadata, dict) or metadata.get("backend") != "elmer"
+            or not isinstance(metadata.get("settings"), dict) or metadata["settings"].get("analysis") != "driven"):
+        return None
+    source = metadata.get("source")
+    if (not isinstance(source, dict) or source.get("model_id") != model
+            or not isinstance(source.get("backup_scope"), str) or not source["backup_scope"]
+            or any(not isinstance(source.get(field), str) or not doc._HASH.fullmatch(source[field])
+                   for field in ("workspace_hash", "design_sha256"))):
+        return None
+    return source
+
+
 def _directory(path: Path) -> None:
     path.mkdir(parents=True, exist_ok=True)
     info = path.lstat()
@@ -84,8 +98,9 @@ def _result_bytes(path: Path, document: dict, reference: dict) -> bytes:
 
 
 class DocumentWorkspace:
-    def __init__(self, models_dir: Path, projects_dir: Path, history_dir: Path, manager=None):
+    def __init__(self, models_dir: Path, projects_dir: Path, history_dir: Path, manager=None, *, backup_scope: str | None = None):
         self.models_dir = Path(models_dir).resolve()
+        self.backup_scope = backup_scope
         self.projects_dir = Path(projects_dir).resolve()
         self.history_dir = Path(history_dir).resolve()
         self.state_dir = self.history_dir / "documents"
@@ -272,8 +287,12 @@ class DocumentWorkspace:
         source-design hash does not assert that solver overrides match the design defaults.
         Exceptions should be reported by the server hook without changing the job's outcome.
         """
-        if job.status != "done" or not job.bundle or not job.input_snapshot or job.kind == "research":
+        research = job.kind == "research"
+        admitted = _research_source(job.model, job.research) if research else None
+        if job.status != "done" or not job.bundle or (not admitted if research else not job.input_snapshot):
             return False
+        if research and admitted["backup_scope"] != self.backup_scope:
+            raise doc.DocumentError("The completed research belongs to a different workspace scope")
         modelfiles.check_id(job.model)
         if self.manager is None:
             return False
@@ -282,18 +301,40 @@ class DocumentWorkspace:
             raise doc.DocumentError("A completed result must be a JSON file")
         source = Path(self.manager.input_path(job))
         source_raw = doc._read_bytes(source, modelfiles.MAX_DESIGN)
-        if doc.digest(source_raw) != job.input_snapshot.get("sha256"):
-            raise doc.DocumentError("The completed run's admitted input changed")
-        design = json.loads(source_raw, object_pairs_hook=doc._unique_object)
-        source_hash = doc.design_digest(design)
+        if research:
+            from .research import load_result
+            if doc.digest(source_raw) != job.research.get("snapshot_sha256"):
+                raise doc.DocumentError("The completed research input changed")
+            spec = json.loads(source_raw, object_pairs_hook=doc._unique_object)
+            if (spec.get("source") != admitted or spec.get("backend") != "elmer"
+                    or spec.get("settings", {}).get("analysis") != "driven"):
+                raise doc.DocumentError("The completed research source identity changed")
+            design = spec.get("design")
+            source_hash = doc.design_digest(design)
+            if source_hash != admitted["design_sha256"]:
+                raise doc.DocumentError("The completed research design differs from its original source")
+            research_result, checksum = load_result(job)
+            if (checksum != job.research.get("result_sha256")
+                    or research_result.get("schema") != "fairbeam.elmer-driven-result/1"
+                    or research_result.get("input_sha256") != job.research["snapshot_sha256"]):
+                raise doc.DocumentError("The completed research result identity changed")
+        else:
+            if doc.digest(source_raw) != job.input_snapshot.get("sha256"):
+                raise doc.DocumentError("The completed run's admitted input changed")
+            design = json.loads(source_raw, object_pairs_hook=doc._unique_object)
+            source_hash = doc.design_digest(design)
         raw = doc._read_bytes(self.projects_dir / name, doc.MAX_RESULT)
         result = json.loads(raw, object_pairs_hook=doc._unique_object)
         if (not isinstance(result, dict) or result.get("schema") != "fairbeam.project/1"
                 or result.get("model", {}).get("id") != design["model"]["id"]):
             raise doc.DocumentError("The completed result does not match its admitted model")
+        if research and (doc.digest(raw) != research_result.get("bundle_sha256")
+                         or result.get("experimental", {}).get("input_sha256") != job.research["snapshot_sha256"]):
+            raise doc.DocumentError("The completed research bundle does not match its admitted input")
         doc._json_bytes(result)
         record = {"schema": RUN_SCHEMA, "job_id": job.id, "model_id": job.model,
-                  "project_file": name, "sha256": doc.digest(raw), "design_sha256": source_hash}
+                  "project_file": name, "sha256": doc.digest(raw), "design_sha256": source_hash,
+                  **({"backup_scope": admitted["backup_scope"]} if research else {})}
         with self._lock():
             folder = self.state_dir / "runs"
             _directory(folder)
@@ -313,6 +354,8 @@ class DocumentWorkspace:
                 if record.get("schema") != RUN_SCHEMA:
                     raise doc.DocumentError("Invalid completed-run metadata")
                 if record.get("model_id") != key:
+                    continue
+                if "backup_scope" in record and record["backup_scope"] != self.backup_scope:
                     continue
                 doc._basename(record["project_file"])
                 if any(not isinstance(record.get(field), str) or not doc._HASH.fullmatch(record[field])
@@ -388,7 +431,9 @@ class DocumentWorkspace:
                 warnings.append("A separate document copy was saved. Existing document result references require explicitly opening the original; only recorded completed results were considered")
             recorded_jobs = {record.get("job_id") for record in completed}
             untracked = sum(1 for job in jobs if job.get("model") == model_id and job.get("status") == "done"
-                            and job.get("bundle") and job.get("kind") != "research"
+                            and job.get("bundle") and (job.get("kind") != "research"
+                                or (self.backup_scope is not None and
+                                    (_research_source(model_id, job.get("research")) or {}).get("backup_scope") == self.backup_scope))
                             and job.get("id") not in recorded_jobs)
             if untracked:
                 warnings.append(f"{untracked} completed result(s) were not attached because their source design was not recorded")

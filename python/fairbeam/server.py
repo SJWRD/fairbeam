@@ -631,7 +631,7 @@ class App:
         self.manager = manager or JobManager(self.jobs_dir, self.projects_dir, python=self.python,
                                              sim_root=self.sim_root)
         from .document_workspace import DocumentWorkspace
-        self.documents = DocumentWorkspace(self.models_dir, self.projects_dir, self.history_dir, self.manager)
+        self.documents = DocumentWorkspace(self.models_dir, self.projects_dir, self.history_dir, self.manager, backup_scope=self.backup_scope)
         from .convergence import ServerStudies
         self.studies = ServerStudies(self.manager, self.projects_dir)
         self.engines = detect_engines(self.python)
@@ -653,7 +653,7 @@ class App:
     # ---- endpoint implementations (return JSON-able objects or raise ApiError)
 
     def health(self) -> dict:
-        return {"ok": True, "api": 1, "research": True, "elmer_driven": 2, **self.versions, "cpu_count": self.cpu,
+        return {"ok": True, "api": 1, "research": True, "elmer_driven": 2, "research_source": True, **self.versions, "cpu_count": self.cpu,
                 "physical_cores": self.physical, "host_cpu": resources.host_cpu_name(),
                 "default_threads": resources.auto_threads(self.cpu, self.physical),
                 "throughput": resources.measured_throughput(self.projects_dir, resources.host_cpu_name()),
@@ -1732,6 +1732,29 @@ class App:
 
     def research_submit(self, body: dict) -> dict:
         try:
+            if isinstance(body, dict) and "source" in body:
+                body = dict(body)
+                source = body.pop("source")
+                if (not isinstance(source, dict) or set(source) != {"model_id", "workspace_hash", "backup_scope"}
+                        or not isinstance(source.get("workspace_hash"), str)
+                        or not re.fullmatch(r"[0-9a-f]{64}", source["workspace_hash"])
+                        or not isinstance(source.get("backup_scope"), str)):
+                    raise ValueError("research source requires a workspace model, hash and backup scope")
+                if body.get("backend") != "elmer" or not isinstance(body.get("settings"), dict) or body["settings"].get("analysis") != "driven":
+                    raise ValueError("workspace source binding is supported only for driven Elmer runs")
+                self._require_backup_scope(source)
+                model_id = modelfiles.check_id(source.get("model_id"))
+                with modelfiles._transaction(self.models_dir, model_id):
+                    saved = modelfiles.read_design_file(self.models_dir, model_id)
+                    if saved["hash"] != source["workspace_hash"]:
+                        raise ApiError(409, "the saved source changed; save and reopen the run settings")
+                    source_hash = documents.design_digest(saved["design"])
+                    if documents.design_digest(body.get("design")) != source_hash:
+                        raise ApiError(409, "the research design does not match its saved workspace source")
+                    # Only this validated parameter may add source identity to the immutable
+                    # research input. Client flags or extra fields never establish ownership.
+                    admitted = {**source, "design_sha256": source_hash}
+                    return self.manager.submit_research(body, admitted_source=admitted).to_dict()
             return self.manager.submit_research(body).to_dict()
         except (ValueError, TypeError) as exc:
             raise ApiError(400, str(exc)) from exc

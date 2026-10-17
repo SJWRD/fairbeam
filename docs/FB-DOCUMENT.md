@@ -110,6 +110,13 @@ Missing results do not prevent opening the embedded design. A result with a mism
 is reported as unavailable rather than silently loaded. The workspace adapter captures the
 immutable input snapshot and exact completed result bytes, then copies verified bundles into
 the sidecar when saving. Older jobs without that provenance are skipped with a warning.
+Driven Elmer runs started from a saved workspace can also be attached. The server validates
+the workspace scope, saved revision, and original design before recording source identity in
+the checksummed research input. Capture verifies that original design separately from the
+experimental solver settings, plus the research result and exported bundle checksums. The
+experimental result remains experimental; attachment does not establish numerical accuracy.
+Source-less research calls retain their existing workspace history behavior and are not
+attached to `.fb` documents. Other research modes have no portable viewer bundle.
 Capture assumes exclusive output-directory ownership during the worker's write and completion;
 external writers replacing an output before its first capture are not provenance-attested.
 No sidecar garbage collector runs: unreferenced files are retained.

@@ -91,6 +91,19 @@ s.setJobs([{...sibling,id:'own-job',model:f.id,kind:'run',research:undefined,fin
 assert.deepEqual(new Set(r.designRuns().map(x=>x.file)),new Set(['own.json','sibling.json']));
 assert.equal(d.designResult()?.file,'sibling.json','own workspace completion still follows automatically');
 
+// Driven Elmer uses a server-verified source key/scope, never an embedded-model alias.
+const elmerSource={model_id:f.id,workspace_hash:'a'.repeat(64),backup_scope:f.backup_scope,design_sha256:'b'.repeat(64)};
+const ownElmer={...sibling,id:'own-Elmer',model:f.id,research:{...sibling.research,source:elmerSource}};
+s.setJobs([]);d.clearDesignResult();
+s.setJobs([{...ownElmer,research:sibling.research}]);await tick();
+assert.deepEqual(r.designRuns().map(x=>x.file),['own.json'],'source-less research cannot gain native ownership by an equal model key');
+assert.equal(await d.loadDesignResult('sibling.json'),false);
+s.setJobs([{...ownElmer,research:{...ownElmer.research,source:{...elmerSource,backup_scope:'other-workspace'}}}]);await tick();
+assert.deepEqual(r.designRuns().map(x=>x.file),['own.json'],'research from another workspace scope stays excluded');
+s.ctl.indices.push({promise:Promise.resolve(s.index())});s.setJobs([ownElmer]);await tick();
+assert.deepEqual(new Set(r.designRuns().map(x=>x.file)),new Set(['own.json','sibling.json']));
+assert.equal(d.designResult()?.file,'sibling.json','verified driven Elmer completion follows in its source document');
+
 // A new native selection for the same UUID revokes even a transport ignoring AbortSignal.
 s.setJobs([]);d.clearDesignResult();pending=deferred();
 const request=d.loadDesignResult('own.json');

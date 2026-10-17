@@ -20,7 +20,7 @@ import { attach, invalidatePreview, jobs, live, meshSource, models, notice, refr
 
 import { designDockTab, setDesignDockTab } from "../designer/dockState";
 import { t } from "../i18n/index.ts";
-import { documentResultFiles, hasDocumentResultScope, nativeDocumentFor } from "../lib/nativeDocuments";
+import { documentJobMatches, documentResultFiles, hasDocumentResultScope, nativeDocumentFor } from "../lib/nativeDocuments";
 import { meshStats } from "../designer/meshStats";
 export { designDockTab, setDesignDockTab, type DesignDockTab } from "../designer/dockState";
 export const [runDialogOpen, setRunDialogOpen] = createSignal(false);
@@ -62,8 +62,11 @@ export const retryResultLoad = () => { const f = failedResultLoad(); if (f) void
 
 /** The live job when it is the designer's run. */
 export const designJob = (): Job | null => (live.job && live.job.id === designJobId() ? live.job : null);
-const belongsToDesign = (job: Job) => job.model === designFile()?.id ||
-  (!hasDocumentResultScope(designFile()) && job.research?.backend === "elmer" && job.research.settings.analysis === "driven" && job.model_id === designFile()?.design.model.id);
+const belongsToDesign = (job: Job) => {
+  const file = designFile();
+  return !!file && (hasDocumentResultScope(file) ? documentJobMatches(file, job) : job.model === file.id ||
+    (job.research?.backend === "elmer" && job.research.settings.analysis === "driven" && job.model_id === file.design.model.id));
+};
 
 /** Show a server run in the designer's dock (its Run tab follows it), whoever started it: a run
  * picked in the dock's Queue tab, or a run of the open design another client started (#7, #8). */

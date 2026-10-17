@@ -123,6 +123,17 @@ try {
  largeReload.rememberNativeDocument(response(oldLarge));await largeReload.persistNativeDocument(oldLarge,oldLarge.hash,false);
  largeReload.observeNativeDocumentResults(oldLarge,withNew,scope());assert.equal(largeReload.nativeResultsPendingToken(oldLarge),'[]');
 
+ // Only explicitly source-bound driven Elmer completions create portable pending results.
+ const elmerFile={...f,id:'elmer-source',document_id:'elmer-source-uuid'};
+ core.takeFile(elmerFile);setJobs([]);n.resetNativeDocumentResults(elmerFile,jobs(),scope());n.rememberNativeDocument(response(elmerFile));
+ const elmer={...job('elmer-1','done',elmerFile.id),kind:'research',research:{backend:'elmer',settings:{analysis:'driven'}}};
+ setJobs([elmer]);assert.equal(core.resultsPending(),false,'source-less research is workspace-only');
+ const elmerSource={model_id:elmerFile.id,workspace_hash:'a'.repeat(64),backup_scope:elmerFile.backup_scope,design_sha256:'b'.repeat(64)};
+ setJobs([{...elmer,research:{...elmer.research,source:{...elmerSource,backup_scope:'other-workspace'}}}]);assert.equal(core.resultsPending(),false);
+ setJobs([{...elmer,research:{...elmer.research,source:elmerSource}}]);assert.equal(core.resultsPending(),true);
+ nativeReply=async()=>response(elmerFile);assert.equal(await io.save(),true);assert.equal(core.dirty(),false);
+ setJobs(structuredClone(jobs()));assert.equal(core.dirty(),false,'acknowledged Elmer completion stays clean on repeated polls');
+
  // A bounded overflow journal restores one pending marker, then settles after one save.
  const large={...f,id:'large-history'};
  const many=Array.from({length:1100},(_,i)=>job(`many-${i}`,'done',large.id));
