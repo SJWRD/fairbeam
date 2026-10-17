@@ -130,14 +130,17 @@ export interface LumpedElement {
 export interface SParamQA {
   /** max over frequency and pairs of |S_ij - S_ji| (null if fewer than two columns are known) */
   reciprocity_max: number | null;
-  reciprocity_pairs: Record<string, number>;
+  reciprocity_pairs: Record<string, number | null>;
   /** per excited port j: max / min over frequency of sum_i |S_ij|^2 */
-  column_power_max: Record<string, number>;
-  column_power_min: Record<string, number>;
-  /** max of column_power_max (must be <= 1 for a passive structure) */
+  column_power_max: Record<string, number | null>;
+  column_power_min: Record<string, number | null>;
+  /** Maximum squared singular value; null for incomplete/nonfinite matrices. */
   passivity_max: number | null;
-  passive: boolean;
+  passive: boolean | null;
   passive_tol: number;
+  passivity_power?: number[] | null;
+  passivity_violations?: number[];
+  passivity_method?: string;
 }
 
 /** N-port S-matrix: one openEMS run per excited port; see docs/BUNDLE.md#sparams */
@@ -162,6 +165,8 @@ export interface SParams {
 /** Embedded element patterns, compact encoding; see docs/BUNDLE.md#element_patterns */
 export interface ElementPatternsSection {
   normalization: string;
+  /** Absent on legacy bundles normalized independently by each run's driven wave. */
+  basis?: "matched-incident-waves";
   radius_m: number;
   /** "i16le-base64-scaled" (current writer): little-endian int16 q, value = q * fields[].scale / 32767;
    *  "f32le-base64" (older bundles): little-endian float32 */
@@ -389,6 +394,10 @@ export interface Bundle {
     sparams?: SParams;
     /** complex embedded element patterns (multi-port antennas, fairbeam run --excite all) */
     element_patterns?: ElementPatternsSection;
+    /** Why a requested matched-basis section could not be produced. */
+    element_patterns_unavailable?: string;
+    /** Reflection threshold used for matched bands; -10 dB on older bundles. */
+    s11_band_db?: number;
     /** radiation efficiency over the band, one entry per driven port (fairbeam run --efficiency,
      * a design's monitors.efficiency); see docs/BUNDLE.md */
     efficiency?: EfficiencySweep[];

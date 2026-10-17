@@ -91,7 +91,9 @@ export function quantityAvailability(b: Bundle, ff: FarField, q: PatternQuantity
     return { ok: false, reason: ff.rad_efficiency === null ? t("farfield.reason.noRadEff") : t("farfield.reason.radEffNotPositive") };
   }
   if (q === "gain") return { ok: true, reason: t("farfield.reason.gain") };
-  if (mismatchAt(b, ff.f, drivenPort(b, ff)) === null) return { ok: false, reason: t("farfield.reason.noS11") };
+  const mismatch = mismatchAt(b, ff.f, drivenPort(b, ff));
+  if (mismatch === null) return { ok: false, reason: t("farfield.reason.noS11") };
+  if (!(mismatch > 0)) return { ok: false, reason: t("farfield.reason.invalidMismatch") };
   return { ok: true, reason: t("farfield.reason.realized") };
 }
 
@@ -114,14 +116,14 @@ export function quantityGrid(b: Bundle, ff: FarField, q: PatternQuantity): numbe
   const eq = effectiveQuantity(b, ff, q);
   if (eq === "rhcp") return ff.cp!.rhcp_dbi;
   if (eq === "lhcp") return ff.cp!.lhcp_dbi;
-  const off = quantityOffsetDb(b, ff, eq) ?? 0;
+  const off = quantityOffsetDb(b, ff, eq) ?? Number.NaN;
   return off === 0 ? ff.directivity_dbi : ff.directivity_dbi.map((row) => row.map((v) => v + off));
 }
 
 /** The top of the quantity's colour scale and polar axis (dBi): Dmax plus the gain offset. The
  * circular parts share Dmax as their top, so RHCP and LHCP compare on one scale. */
 export function quantityMax(b: Bundle, ff: FarField, q: PatternQuantity): number {
-  return ff.dmax_dbi + (quantityOffsetDb(b, ff, effectiveQuantity(b, ff, q)) ?? 0);
+  return ff.dmax_dbi + (quantityOffsetDb(b, ff, effectiveQuantity(b, ff, q)) ?? Number.NaN);
 }
 
 /** Largest finite value of a grid (the pattern's own maximum). */
@@ -162,7 +164,9 @@ export function farfieldSummary(b: Bundle, ff: FarField): FarfieldSummary {
     mismatchEff: mis,
     totalEff: eff !== null && mis !== null ? eff * mis : null,
     gainDbi: ff.gain_dbi ?? (eff !== null ? ff.dmax_dbi + toDb(eff) : null),
-    realizedDbi: ff.realized_gain_dbi ?? (eff !== null && mis !== null && mis > 0 ? ff.dmax_dbi + toDb(eff * mis) : null),
+    realizedDbi: eff !== null && mis !== null && mis > 0
+      ? (typeof ff.realized_gain_dbi === "number" && Number.isFinite(ff.realized_gain_dbi)
+        ? ff.realized_gain_dbi : ff.dmax_dbi + toDb(eff * mis)) : null,
     peak: { theta: beam.theta, phi: beam.phi },
   };
 }

@@ -1,5 +1,5 @@
 import type { Bundle, PortResult } from "../types";
-import { isFalseOpenImpedance } from "./sparams.ts";
+import { isFalseOpenImpedance, physicalPortNumber, sMatrix, zFromGamma } from "./sparams.ts";
 
 export interface Sweep {
   f: number[];
@@ -19,18 +19,28 @@ export function sweep(b: Bundle): Sweep | null {
   const excited = b.ports.find((p) => p.excite) ?? b.ports[0];
   const pr: PortResult | undefined = excited ? r.ports[String(excited.number)] : undefined;
   if (!pr) return null;
+  const matrix = sMatrix(b);
+  const index = matrix?.ports.find(p => physicalPortNumber(matrix, p) === excited.number);
+  const canonical = matrix && !matrix.legacy && index !== undefined ? matrix.get(index, index) : null;
+  // A matrix-backed bundle must not silently fall back to a different run reflection.
+  if (matrix && !matrix.legacy && !canonical) return null;
+  const reflection = canonical ?? { re: pr.s11_re, im: pr.s11_im };
+  const zRef = canonical ? matrix!.zRef[matrix!.ports.indexOf(index!)] : pr.z_ref;
+  const zRefF = pr.z_ref_f?.length === r.frequency.length ? pr.z_ref_f : undefined;
+  const impedance = canonical && matrix!.ports.length > 1
+    ? zFromGamma(reflection, zRefF ?? zRef) : { re: pr.zin_re, im: pr.zin_im };
   // |S11| = 0 would give −∞: clamp at −300 dB like magDb; missing samples stay NaN (gaps)
-  const s11Db = pr.s11_re.map((re, i) => 10 * Math.log10(Math.max(1e-30, re * re + pr.s11_im[i] * pr.s11_im[i])));
-  const vswr = pr.s11_re.map((re, i) => {
-    const g = Math.hypot(re, pr.s11_im[i]);
+  const s11Db = reflection.re.map((re, i) => 10 * Math.log10(Math.max(1e-30, re * re + reflection.im[i] * reflection.im[i])));
+  const vswr = reflection.re.map((re, i) => {
+    const g = Math.hypot(re, reflection.im[i]);
     return g >= 1 ? Infinity : (1 + g) / (1 - g);
   });
-  const oldOpen = pr.s11_re.map((re, i) => isFalseOpenImpedance(re, pr.s11_im[i], pr.zin_re?.[i], pr.zin_im?.[i]));
+  const oldOpen = reflection.re.map((re, i) => isFalseOpenImpedance(re, reflection.im[i], impedance.re?.[i], impedance.im?.[i]));
   const repairOpen = oldOpen.some(Boolean);
-  return { f: r.frequency, s11Db, s11Re: pr.s11_re, s11Im: pr.s11_im,
-    zRe: repairOpen ? pr.zin_re.map((z, i) => oldOpen[i] ? NaN : z) : pr.zin_re,
-    zIm: repairOpen ? pr.zin_im.map((z, i) => oldOpen[i] ? NaN : z) : pr.zin_im, vswr, zRef: pr.z_ref,
-    ...(pr.z_ref_f?.length === r.frequency.length ? { zRefF: pr.z_ref_f } : {}) };
+  return { f: r.frequency, s11Db, s11Re: reflection.re, s11Im: reflection.im,
+    zRe: repairOpen ? impedance.re.map((z, i) => oldOpen[i] ? NaN : z) : impedance.re,
+    zIm: repairOpen ? impedance.im.map((z, i) => oldOpen[i] ? NaN : z) : impedance.im, vswr, zRef,
+    ...(zRefF ? { zRefF } : {}) };
 }
 
 export function nearestIndex(xs: number[], x: number): number {

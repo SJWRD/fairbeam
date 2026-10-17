@@ -168,5 +168,24 @@ for (const eff of [null, 0, -0.2]) {
   delete globalThis.sessionStorage;
 }
 
+
+// A nonpositive or unknown mismatch cannot relabel directivity as realized gain.
+for (const reflection of [0.5, 1, 1.1, NaN, Infinity]) {
+  const b = base({});
+  const pr = Object.values(b.results.ports)[0];
+  pr.s11_re = b.results.frequency.map(() => reflection);
+  pr.s11_im = b.results.frequency.map(() => 0);
+  const ff = b.results.farfield[0];
+  const valid = reflection === .5;
+  check(quantityAvailability(b, ff, 'realized').ok === valid, `realized availability: ${reflection}`);
+  check(effectiveQuantity(b, ff, 'realized') === (valid ? 'realized' : 'directivity'), `realized label: ${reflection}`);
+  check((farfieldSummary(b, ff).realizedDbi !== null) === valid, `realized summary: ${reflection}`);
+  const table = resultDataTable(b, 'pattern', undefined, {patternQuantity: 'realized'});
+  check(table.header.at(-1) === (valid ? 'Realized gain (dBi)' : 'Directivity (dBi)'), `realized CSV: ${reflection}`);
+  if (!valid) {
+    check(quantityGrid(b, ff, 'realized') === ff.directivity_dbi, 'unavailable grid uses directivity');
+    check(quantityMax(b, ff, 'realized') === ff.dmax_dbi, 'unavailable maximum uses directivity');
+  }
+}
 console.log(`check-farfield-quantities: ${checks - failures}/${checks} passed (${entries} far-field entries)`);
 process.exit(failures ? 1 : 0);

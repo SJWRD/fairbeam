@@ -2,6 +2,8 @@
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {touchstoneS1p, touchstoneNPort, parseTouchstone, parseTouchstoneNPort} from '../src/export/touchstone.ts';
+import {sweep} from '../src/lib/rf.ts';
+import {sweepCsv} from '../src/export/csv.ts';
 const fixture=JSON.parse(readFileSync(new URL('../python/tests/fixtures/touchstone_references.json',import.meta.url),'utf8'));
 const close=(a,b,tol=1e-12)=>assert.ok(Math.abs(a-b)<=tol, `${a} != ${b}`);
 const quotient=([a,b],[c,d])=>[(a*c+b*d)/(c*c+d*d),(b*c-a*d)/(c*c+d*d)];
@@ -127,4 +129,20 @@ for(const [create,write] of [[one,touchstoneS1p],[through,touchstoneNPort]]) {
     close(got[0],expected[0],1e-9);close(got[1],expected[1],1e-9);
   });
 }
-console.log('Touchstone reference checks: loads, open/short, power-wave through, physical mapping, invalid references and retained horn impedance pass');
+// Measured run reflection differs from the extracted Sii when the other incident wave is nonzero.
+for (const ids of [[1,2],[3,7]]) {
+  const b=one();
+  b.ports=ids.map(number=>({number,type:'lumped',excite:true,R:50}));
+  b.results.frequency=[1e9,2e9];
+  b.results.ports=Object.fromEntries(ids.map(n=>[n,{z_ref:50,s11_re:[.26,.26],s11_im:[0,0],zin_re:[85,85],zin_im:[0,0]}]));
+  b.results.sparams={ports:[1,2],port_numbers:ids,z_ref:[50,50],excited:[1,2],complete:true,s:{
+    '1,1':{re:[.2,.2],im:[0,0]},'2,2':{re:[.2,.2],im:[0,0]},
+    '1,2':{re:[.6,.6],im:[0,0]},'2,1':{re:[.6,.6],im:[0,0]}}};
+  assert.deepEqual(sweep(b).s11Re,[.2,.2]);
+  assert.deepEqual(parseTouchstone(touchstoneS1p(b,'check')).re,[.2,.2]);
+  assert.match(touchstoneNPort(b,'check'), /0\.2/);
+  close(sweep(b).zRe[0],75);
+  assert.match(sweepCsv(b), /-13\.9794/);
+  assert.deepEqual(b.results.ports[ids[0]].s11_re,[.26,.26], 'raw-run reflection remains available for power/far-field accounting');
+}
+console.log('Touchstone reference checks: loads, open/short, power-wave through, physical mapping, canonical Sii, invalid references and retained horn impedance pass');

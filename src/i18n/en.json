@@ -1245,6 +1245,7 @@
   "farfield.reason.noCp": "No circular-polarization data in this far field (a model with CP outputs writes them)",
   "farfield.reason.noRadEff": "No radiation efficiency for this far field (the port's accepted power is not positive), so no gain",
   "farfield.reason.noS11": "No S11 of the driven port, so no realized gain",
+  "farfield.reason.invalidMismatch": "Mismatch efficiency is not positive; realized gain is unavailable",
   "farfield.reason.radEffNotPositive": "The radiation efficiency of this far field is not positive, so no gain",
   "farfield.reason.realized": "Realized gain (dBi): directivity × radiation efficiency × (1 − |S11|²)",
   "farfield.reason.rhcp": "RHCP directivity (dBi): the right-hand circular part of the directivity",

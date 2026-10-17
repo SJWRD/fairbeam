@@ -215,6 +215,7 @@ export function resultDataTable(bundle: Bundle | null | undefined, view: ResultV
     const maps = (bundle?.field_planes ?? []).map((m, i) => [m, i] as const)
       .filter(([, i]) => options.fieldPlane === undefined || i === options.fieldPlane);
     const ax = "xyz";
+    const mm = (bundle?.units?.length_m ?? 1e-3) * 1000;
     // maps with a phasor add the real and imaginary part and the phase of each stored component
     // (the union over the maps; a map lacks the columns of another)
     const phased = maps.map(([m]) => phasorColumns(m));
@@ -224,8 +225,8 @@ export function resultDataTable(bundle: Bundle | null | undefined, view: ResultV
       rows: maps.flatMap(([m, i], n) => m.magnitude.flatMap((row, j) => row.map((value, k) => {
         const own = phased[n].at(j * m.nu + k);
         return [
-          i + 1, m.f / 1e9, ax[m.u_axis], m.u_range[0] + (k * (m.u_range[1] - m.u_range[0])) / Math.max(1, m.nu - 1),
-          ax[m.v_axis], m.v_range[0] + (j * (m.v_range[1] - m.v_range[0])) / Math.max(1, m.nv - 1), finiteCell(value), m.unit,
+          i + 1, m.f / 1e9, ax[m.u_axis], (m.u_range[0] + (k * (m.u_range[1] - m.u_range[0])) / Math.max(1, m.nu - 1)) * mm,
+          ax[m.v_axis], (m.v_range[0] + (j * (m.v_range[1] - m.v_range[0])) / Math.max(1, m.nv - 1)) * mm, finiteCell(value), m.unit,
           ...extra.map((h) => own[phased[n].header.indexOf(h)] ?? null),
         ];
       }))),

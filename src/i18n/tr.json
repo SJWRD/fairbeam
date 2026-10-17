@@ -1223,6 +1223,7 @@
   "farfield.reason.noCp": "Bu uzak alanda dairesel polarizasyon verisi yok (CP çıktıları olan bir model bunları yazar)",
   "farfield.reason.noRadEff": "Bu uzak alan için ışıma verimliliği yok (portun kabul ettiği güç pozitif değil), bu yüzden kazanç yok",
   "farfield.reason.noS11": "Uyarılan portun S11'i yok, bu yüzden gerçekleşen kazanç yok",
+  "farfield.reason.invalidMismatch": "Uyumsuzluk verimi pozitif değil; gerçekleşen kazanç kullanılamıyor",
   "farfield.reason.radEffNotPositive": "Bu uzak alanın ışıma verimliliği pozitif değil, bu yüzden kazanç yok",
   "farfield.reason.realized": "Gerçekleşen kazanç (dBi): yönlülük × ışıma verimliliği × (1 − |S11|²)",
   "farfield.reason.rhcp": "RHCP yönlülüğü (dBi): yönlülüğün sağ el dairesel bileşeni",
