@@ -36,12 +36,12 @@ export function documentEnvelope(value: unknown): FairbeamDocument {
   const names = new Set<string>();
   for (const ref of value.results) {
     if (!object(ref) || !fields(ref, ["file", "sha256", "design_sha256"])
-        || !portableName(ref.file) || !ref.file.endsWith(".json") || names.has(ref.file.toLowerCase())
+        || !portableName(ref.file) || !ref.file.endsWith(".json") || names.has(ref.file.normalize("NFC").toLowerCase())
         || typeof ref.sha256 !== "string" || !hash.test(ref.sha256)
         || typeof ref.design_sha256 !== "string" || !hash.test(ref.design_sha256)) {
       throw new Error("Invalid result reference");
     }
-    names.add(ref.file.toLowerCase());
+    names.add(ref.file.normalize("NFC").toLowerCase());
   }
   return value as unknown as FairbeamDocument;
 }

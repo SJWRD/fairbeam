@@ -30,7 +30,9 @@ round trip (`32.0` to `32`, for example) retain its design identity. It is not a
 
 Folder and result names cannot contain path separators, traversal, alternate streams, Windows
 device names, or trailing dots/spaces, and are limited to 180 UTF-8 bytes.
-Case-insensitive duplicate result names are refused.
+Result names with the same NFC-normalized lowercase spelling are refused; stored filenames keep
+their original spelling. This catches canonical Unicode and ordinary case duplicates, not every
+filesystem's Unicode alias rule.
 A document is limited to 40 MiB, an individual result to 200 MiB, and the reference list to 10,000.
 The Python reader rejects duplicate JSON keys and non-finite numbers. Browser envelope checks are
 preflight only: the server must validate the complete design and file contents before use.
@@ -43,14 +45,27 @@ the previous successful `save`. Cooperating writers share an OS advisory lock. W
 and flushed in the destination directory before publication. A stale revision, deleted file,
 failed flush, or failed replacement must not silently overwrite the previous document.
 
+On macOS, document saves in the same parent directory share a lock identified by the directory's
+device and inode. This intentionally serializes separate documents too, avoiding differences in
+filesystem case and Unicode alias rules. New files use `renamex_np(RENAME_EXCL)` where supported,
+falling back to an exclusive hardlink only when exclusive rename is unavailable. If neither
+operation is supported, creation fails without publishing partial content. Actual volume support,
+including exFAT, requires testing on that volume; it is not implied by the macOS API's availability.
+Other POSIX systems use an exclusive hardlink, and Windows uses a no-replace rename.
+
+The file is flushed before publication, but the parent directory is not fsynced afterward. This
+provides atomic visibility and conflict protection, not a guarantee that the rename survives
+power loss.
+
 Windows replacement copies and verifies the destination DACL, including inherited ACEs and
 inheritance protection, on the empty staging file before writing document bytes. If the DACL
 cannot be read, applied, or preserved exactly, saving fails before replacing the destination.
 A retained deletion-capable handle removes a failed stage even when the copied DACL denies
 deletion; cleanup does not restore broader parent permissions onto document bytes. Publication
 continues to use rename/replace, without `ReplaceFileW`'s partial-failure behavior.
-This preserves the DACL, not every item of filesystem metadata: owner/group, SACLs, alternate data
-streams, and other attributes are not copied. POSIX replacement preserves mode bits only.
+The staging file must already have the same owner and group as the destination, or saving is
+refused before writing bytes. SACLs, alternate data streams, and other attributes are not copied.
+POSIX replacement preserves mode bits only.
 
 `read(path)` returns `(document, byte_hash)` without opening results or executing Python.
 `read_result(path, document, reference)` checks membership, relative boundaries, regular files,
@@ -75,6 +90,8 @@ checksums, links, size limits, and failed writes. They require neither a solver 
 Windows cases also exercise protected and inherited destination DACLs, ACL failures before
 publication, and cleanup with a DACL that denies deletion. Numeric identity cases cover nested
 values, negative zero, exponents, and large integers rounded as browser JSON numbers.
+Platform-independent mocks check the macOS exclusive-rename contract, unsupported-volume refusal,
+competing creates, and parent-directory lock identities; these do not replace tests on a Mac.
 
 ## Remaining integration gates
 
@@ -86,7 +103,7 @@ values, negative zero, exponents, and large integers rounded as browser JSON num
   design's result as a freshly computed one.
 - Round-trip desktop checks, path/rename/move checks, and installer association checks on both OSes.
 - Remaining native filesystem metadata needs an explicit policy before unrestricted overwrites:
-  Windows DACLs and POSIX mode bits are preserved, but owner/group, SACLs, alternate data streams,
-  POSIX extended ACLs, and other platform metadata are not preserved by this layer.
+  Windows DACLs and owner/group identities and POSIX mode bits are preserved, but SACLs, alternate
+  data streams, POSIX ownership and extended ACLs, and other metadata are not preserved by this layer.
 
 Do not advertise `.fb` desktop support or promote a release on this foundation alone.

@@ -1,5 +1,7 @@
 """Portable document storage: no solver, network, native dialog, or OS association required."""
 import copy
+import ctypes
+import errno
 import json
 import os
 from pathlib import Path
@@ -119,6 +121,116 @@ class Documents(unittest.TestCase):
             with self.assertRaises(OSError):
                 doc.save(self.path, self.document)
         self.assertEqual(list(self.root.iterdir()), [])
+
+    def test_macos_lock_serializes_aliases_and_other_documents_in_same_directory(self):
+        other = self.root / "other"
+        other.mkdir()
+        with mock.patch.object(doc.sys, "platform", "darwin"):
+            keys = {doc._document_lock_key(self.root / name) for name in (
+                "É.fb", "e\u0301.fb", "é.fb", "unrelated.fb", "A.fb", "A\u200c.fb")}
+            self.assertEqual(len(keys), 1)
+            self.assertNotIn(doc._document_lock_key(other / "É.fb"), keys)
+        info = self.root.stat()
+        self.assertEqual(keys, {(f"{info.st_dev}:{info.st_ino}", "fb-document-directory")})
+
+    def test_non_macos_document_lock_keeps_existing_identity(self):
+        for platform in ("linux", "win32"):
+            with self.subTest(platform=platform), mock.patch.object(doc.sys, "platform", platform):
+                self.assertEqual(doc._document_lock_key(self.path),
+                                 (os.path.normcase(str(self.path)), "fb-document"))
+
+    def test_macos_exclusive_rename_ffi_and_existing_destination_error(self):
+        source = self.root / "é staging.tmp"
+        rename = mock.Mock(return_value=0)
+        with mock.patch.object(ctypes, "CDLL", return_value=mock.Mock(renamex_np=rename)) as library:
+            doc._macos_rename_exclusive(source, self.path)
+            library.assert_called_once_with(None, use_errno=True)
+            rename.assert_called_once_with(os.fsencode(source), os.fsencode(self.path), 4)
+            self.assertEqual(rename.argtypes, (ctypes.c_char_p, ctypes.c_char_p, ctypes.c_uint))
+            self.assertEqual(rename.restype, ctypes.c_int)
+            rename.return_value = -1
+            with mock.patch.object(ctypes, "get_errno", return_value=errno.EEXIST):
+                with self.assertRaises(FileExistsError) as raised:
+                    doc._macos_rename_exclusive(source, self.path)
+            self.assertEqual(raised.exception.errno, errno.EEXIST)
+            self.assertEqual(raised.exception.filename, str(self.path))
+
+    def test_missing_macos_exclusive_rename_symbol_is_unsupported(self):
+        with mock.patch.object(ctypes, "CDLL", return_value=object()):
+            with self.assertRaises(OSError) as raised:
+                doc._macos_rename_exclusive(self.root / "stage.tmp", self.path)
+        self.assertEqual(raised.exception.errno, errno.ENOSYS)
+
+    def test_macos_create_uses_exclusive_rename_without_hardlinks(self):
+        def publish(source, destination):
+            self.assertFalse(destination.exists())
+            # Windows' retained DELETE handle requires share-delete readers;
+            # check the complete flushed size here and the exact bytes afterward.
+            self.assertEqual(source.stat().st_size, len(doc._json_bytes(self.document)))
+            os.rename(source, destination)
+        with mock.patch.object(doc.sys, "platform", "darwin"), \
+                mock.patch.object(doc, "_macos_rename_exclusive", side_effect=publish) as rename, \
+                mock.patch.object(doc.os, "link", side_effect=AssertionError("hardlinks unavailable")):
+            revision = doc.save(self.path, self.document)
+        rename.assert_called_once()
+        self.assertEqual(doc.read(self.path), (self.document, revision))
+        self.assertEqual(list(self.root.iterdir()), [self.path])
+
+    def test_macos_unsupported_exclusive_rename_falls_back_to_complete_hardlink(self):
+        link = os.link
+        def publish(source, destination):
+            self.assertFalse(destination.exists())
+            self.assertEqual(source.stat().st_size, len(doc._json_bytes(self.document)))
+            link(source, destination)
+        for error in (errno.ENOTSUP, errno.EOPNOTSUPP, errno.ENOSYS):
+            with self.subTest(error=error), mock.patch.object(doc.sys, "platform", "darwin"), \
+                    mock.patch.object(doc, "_macos_rename_exclusive", side_effect=OSError(error, "unsupported")), \
+                    mock.patch.object(doc.os, "link", side_effect=publish) as linked:
+                doc.save(self.path, self.document)
+            linked.assert_called_once()
+            self.assertEqual(doc.read(self.path)[0], self.document)
+            self.assertEqual(list(self.root.iterdir()), [self.path])
+            self.path.unlink()
+
+    def test_macos_unsupported_publication_never_creates_partial_destination(self):
+        with mock.patch.object(doc.sys, "platform", "darwin"), \
+                mock.patch.object(doc, "_macos_rename_exclusive", side_effect=OSError(errno.ENOTSUP, "unsupported")), \
+                mock.patch.object(doc.os, "link", side_effect=OSError(errno.ENOTSUP, "unsupported")):
+            with self.assertRaisesRegex(doc.DocumentError, "atomically create"):
+                doc.save(self.path, self.document)
+        self.assertEqual(list(self.root.iterdir()), [])
+
+    def test_macos_rename_errors_do_not_fall_back(self):
+        for error in (errno.EACCES, errno.EIO, errno.EXDEV, errno.EINVAL):
+            with self.subTest(error=error), mock.patch.object(doc.sys, "platform", "darwin"), \
+                    mock.patch.object(doc, "_macos_rename_exclusive", side_effect=OSError(error, "refused")), \
+                    mock.patch.object(doc.os, "link") as linked:
+                with self.assertRaises(OSError) as raised:
+                    doc.save(self.path, self.document)
+                self.assertEqual(raised.exception.errno, error)
+                linked.assert_not_called()
+            self.assertEqual(list(self.root.iterdir()), [])
+
+    def test_macos_competing_create_is_a_conflict_without_overwrite(self):
+        winner = b"another writer created this file"
+        def competing(source, destination):
+            destination.write_bytes(winner)
+            raise FileExistsError(errno.EEXIST, "destination exists", str(destination))
+        with mock.patch.object(doc.sys, "platform", "darwin"), \
+                mock.patch.object(doc, "_macos_rename_exclusive", side_effect=competing), \
+                mock.patch.object(doc.os, "link") as linked:
+            with self.assertRaises(doc.DocumentConflict):
+                doc.save(self.path, self.document)
+            linked.assert_not_called()
+        self.assertEqual(self.path.read_bytes(), winner)
+        self.assertEqual(list(self.root.iterdir()), [self.path])
+
+    def test_result_normalization_preserves_reference_spelling(self):
+        reference = {"file": "e\u0301.json", "sha256": "0" * 64, "design_sha256": "1" * 64}
+        self.document["results"] = [reference]
+        doc.validate(self.document)
+        doc.save(self.path, self.document)
+        self.assertEqual(doc.read(self.path)[0]["results"], [reference])
 
     @unittest.skipUnless(os.name == "nt", "Windows readonly replacement semantics")
     def test_readonly_replacement_keeps_original_without_temporary_file(self):
