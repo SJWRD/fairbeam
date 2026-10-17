@@ -55,7 +55,17 @@ package) the export is numeric as before.
 - **Publication figures.** *Figure* in the Examples viewer's dock bar exports B&W |S11|, Zin, Smith chart and polar pattern charts, 8.8 cm (single column) or 18 cm (double column), as SVG or PDF.
 - **Export package.** *Export package* in the header (in the designer also Post-processing › Report and export › **Package**) downloads `<model-id>_<yyyymmdd-hhmm>.zip`. Depending on the selected groups and available data, it contains `project.json`, a `README.md` report (setup, run, results, reproduce command), Touchstone and CSV data, drawings, figures, the VBA macro, a PNG of the 3D view and `report.pdf`. The generated README lists the files actually included.
 - **PDF report.** *Export report (PDF)* in the package dialog (in the designer also Post-processing › Report and export › **PDF report**) writes a multi-page A4 vector PDF: summary with key results, the dimensioned drawing, parameter/solver/mesh/run tables, |S11|, Zin, Smith chart, one pattern page per far-field frequency and the reproduce command. Pages are composed as SVG and drawn with jsPDF by `src/drawing/svgpdf.ts`, so the same code runs in Node.
-- `npm run check:exports` validates all of this on the example bundles and writes [examples/drawings/](../examples/drawings/) and [examples/reports/patch-antenna.pdf](../examples/reports/patch-antenna.pdf).
+- `npm run check:exports` validates all of this on the example bundles in memory without rewriting committed examples. It also checks that the generated synthetic array matches its committed fixture.
+
+To intentionally regenerate the committed samples, run these commands from the repository root:
+
+```bash
+node --experimental-strip-types scripts/check-array.mjs --write-examples
+node --experimental-strip-types scripts/check-exports.mjs --write-examples
+node --experimental-strip-types scripts/check-fab.mjs --write-examples
+```
+
+These commands still run the checks. They update the [synthetic array](../examples/synthetic/array2x1.json), [drawings and figures](../examples/drawings/), [PDF report](../examples/reports/patch-antenna.pdf), and [fabrication samples](../examples/fab/). The fabrication command replaces the patch antenna and Wilkinson divider sample directories. Review the generated diff before committing it.
 
 ## Touchstone and imported phase
 
@@ -122,4 +132,4 @@ best match and its stored `fractional_bw` divides by that frequency ([BUNDLE.md]
 
 Designs that are not printed boards (the dipole in free space, the Sierpinski monopole over an infinite PEC ground) have no fabrication export; the dialog says why. A design simulated over an infinite PEC ground exports no bottom copper, with a note.
 
-Honest limits: the simulation used zero-thickness perfect conductors, so the 35 µm copper in the README is an assumption, not a simulated quantity. No solder mask, silkscreen or paste layers are written. Clearances, minimum track and gap, tolerances and the connector footprint are yours to check against your fab's rules. Open every file in a Gerber viewer such as KiCad's GerbView before ordering. `npm run check:fab` (part of `check:exports`) parses selected Gerber, drill and DXF fixtures back, compares copper areas, bounding boxes and drill positions with the bundle geometry within 1 µm, and writes [examples/fab/](../examples/fab/) for the patch antenna and the Wilkinson divider, each with a `render.svg` drawn from the parsed files.
+Honest limits: the simulation used zero-thickness perfect conductors, so the 35 µm copper in the README is an assumption, not a simulated quantity. No solder mask, silkscreen or paste layers are written. Clearances, minimum track and gap, tolerances and the connector footprint are yours to check against your fab's rules. Open every file in a Gerber viewer such as KiCad's GerbView before ordering. `npm run check:fab` (part of `check:exports`) parses generated Gerber, drill and DXF data back in memory and compares copper areas, bounding boxes and drill positions with the bundle geometry within 1 µm. The explicit regeneration commands above update [examples/fab/](../examples/fab/) for the patch antenna and the Wilkinson divider, each with a `render.svg` drawn from the parsed files.
