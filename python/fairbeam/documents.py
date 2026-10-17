@@ -193,6 +193,43 @@ def read(path: Path) -> tuple[dict, str]:
     return _parse(data), digest(data)
 
 
+def _windows_require_unnamed_stream(path: Path) -> None:
+    """Refuse replacement when named data streams cannot be ruled out."""
+    import ctypes
+    from ctypes import wintypes
+
+    class StreamData(ctypes.Structure):
+        _fields_ = (("size", ctypes.c_longlong), ("name", wintypes.WCHAR * 296))
+
+    api = ctypes.WinDLL("kernel32", use_last_error=True)
+    api.FindFirstStreamW.argtypes = (wintypes.LPCWSTR, ctypes.c_int,
+                                    ctypes.POINTER(StreamData), wintypes.DWORD)
+    api.FindFirstStreamW.restype = wintypes.HANDLE
+    api.FindNextStreamW.argtypes = (wintypes.HANDLE, ctypes.POINTER(StreamData))
+    api.FindNextStreamW.restype = wintypes.BOOL
+    api.FindClose.argtypes = (wintypes.HANDLE,)
+    api.FindClose.restype = wintypes.BOOL
+    query_error = "Cannot inspect document data streams; use Save As with a new filename"
+    data = StreamData()
+    handle = api.FindFirstStreamW(str(path), 0, ctypes.byref(data), 0)
+    if handle == ctypes.c_void_p(-1).value:
+        # This is an existing regular document, which has an unnamed data stream.
+        # Unsupported enumeration and every other error fail closed.
+        raise DocumentError(query_error) from ctypes.WinError(ctypes.get_last_error())
+    try:
+        while True:
+            if data.name != "::$DATA":
+                raise DocumentError("Document has named data streams; use Save As with a new filename")
+            if not api.FindNextStreamW(handle, ctypes.byref(data)):
+                error = ctypes.get_last_error()
+                if error == 38:  # ERROR_HANDLE_EOF: enumeration completed.
+                    break
+                raise DocumentError(query_error) from ctypes.WinError(error)
+    finally:
+        if not api.FindClose(handle):
+            raise DocumentError(query_error) from ctypes.WinError(ctypes.get_last_error())
+
+
 def _windows_read_security(path: Path, information: int) -> bytes:
     """Read only the requested parts of a file's self-relative security descriptor."""
     import ctypes
@@ -467,6 +504,8 @@ def save(path: Path, document: dict, base_hash: str | None = None) -> str:
             raise DocumentConflict("Document changed on disk; reopen or save a separate copy")
         if previous == data:
             return digest(data)
+        if previous is not None and os.name == "nt":
+            _windows_require_unnamed_stream(path)
         dacl = _windows_read_dacl(path) if previous is not None and os.name == "nt" else None
         owner_group = _windows_read_owner_group(path) if dacl is not None else None
         posix_metadata = _posix_plain_metadata(path) if previous is not None and os.name != "nt" else None
@@ -489,7 +528,11 @@ def save(path: Path, document: dict, base_hash: str | None = None) -> str:
                     stream.flush()
                     os.fsync(stream.fileno())
                     if previous is not None:
-                        _retry_busy(lambda: os.replace(temporary, path))
+                        def replace():
+                            if os.name == "nt":
+                                _windows_require_unnamed_stream(path)
+                            os.replace(temporary, path)
+                        _retry_busy(replace)
                     else:
                         try:
                             _publish_new(temporary, path)

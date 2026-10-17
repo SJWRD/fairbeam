@@ -87,7 +87,13 @@ The file is flushed before publication, but the parent directory is not fsynced 
 provides atomic visibility and conflict protection, not a guarantee that the rename survives
 power loss.
 
-Windows replacement first compares the destination and empty staging file's owner and primary
+Windows replacement refuses a destination with named data streams, including `Zone.Identifier`,
+or when stream enumeration fails or is unsupported. It checks before staging and again before
+publication; Save As to a new filename leaves the original file and its streams intact. This
+policy has been tested on NTFS; other Windows volumes need their own checks. Identical-byte saves
+do not replace the file and need no stream enumeration.
+
+Windows replacement also compares the destination and empty staging file's owner and primary
 group SIDs. A mismatch or unreadable identity refuses the save before writing bytes; the app
 does not change ownership or request additional privileges. This also keeps owner-relative
 access entries meaningful. Replacement then copies and verifies the destination DACL, including inherited ACEs and
@@ -96,7 +102,11 @@ cannot be read, applied, or preserved exactly, saving fails before replacing the
 A retained deletion-capable handle removes a failed stage even when the copied DACL denies
 deletion; cleanup does not restore broader parent permissions onto document bytes. Publication
 continues to use rename/replace, without `ReplaceFileW`'s partial-failure behavior.
-SACLs, alternate data streams, and other attributes are not copied.
+This is a policy for ordinary local document files, not complete filesystem-metadata preservation.
+The writer neither queries nor guarantees preservation of SACLs, auditing rules, mandatory labels,
+or security resource attributes, and it does not enable security privileges. Files whose security
+depends on that metadata require a separate-copy workflow; the app does not detect those policies.
+Other attributes, including encryption and compression, are not copied or guaranteed.
 
 POSIX replacement preserves ordinary mode bits and requires the empty staging file's owner/group to match
 the destination before writing bytes. It refuses replacement when the destination or stage has
@@ -145,7 +155,10 @@ cd ..
 The shared cases in `python/tests/fixtures/document_envelopes.json` exercise both languages.
 Filesystem tests cover stale saves, simultaneous writers, Unicode, missing results, corrupted
 checksums, links, size limits, and failed writes. They require neither a solver nor network access.
-Windows cases also exercise matching and mismatched owner/group SIDs, ownership read failures,
+Windows cases also exercise named-stream refusal, stream-query failures, ordinary and read-only
+saves, and a stream added during staging. They verify original bytes, streams, owner/group, DACL,
+and file attributes remain intact after refusal. Other cases cover matching and mismatched
+owner/group SIDs, ownership read failures,
 protected and inherited destination DACLs, ACL failures before publication, and cleanup with a
 DACL that denies deletion. Numeric identity cases cover nested
 values, negative zero, exponents, and large integers rounded as browser JSON numbers.
@@ -160,9 +173,10 @@ platform tests check Linux xattr refusal and macOS ACL/Finder-tag refusal on tem
   path/rename/move, dirty-draft confirmation, and installed file associations.
 - Review the result-status presentation with missing, corrupt, historical, and newly computed
   results. Existing JSON import, export, and the openEMS workflow must remain usable.
-- Remaining native filesystem metadata needs an explicit policy before unrestricted overwrites:
-  Windows DACLs and owner/group identities and POSIX owner/group and ordinary mode bits are preserved.
-  POSIX extended metadata causes refusal; Windows SACLs, alternate data streams, and other metadata
-  still need a preservation policy.
+- Validate the bounded metadata policy on target Windows and macOS volumes. Windows preserves
+  DACLs and owner/group identities and refuses named streams or failed stream queries. POSIX
+  preserves owner/group and ordinary mode bits and refuses extended metadata. Windows SACLs,
+  audit/security policies, encryption, compression, and other attributes are outside the verified
+  preservation contract; unrestricted metadata-preserving overwrites are not supported.
 
 Do not promote a release on storage and unit checks alone.
