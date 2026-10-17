@@ -791,7 +791,7 @@ edilmez; bölüm kaydı PR #81'deki tam ölçümlere bağlantı verir.
 
 ## 23. Bölüm 7 karşılaştırma kapsamları
 
-[Bölüm 7 kaydı](benchmarks/pozar-chapter-07.md), Örnek 7.7 için düzgün kuplajlı
+[Bölüm 7 kaydı](https://github.com/ismailakdag/fairbeam/blob/main/docs/benchmarks/pozar-chapter-07.md), Örnek 7.7 için düzgün kuplajlı
 şerit hattın iki örneklenmiş kapsamını toplar: kayıpsız ince PEC modelinde
 karmaşık S ve bağıl çıkış fazı; sabit iletkenlik modelinde karmaşık S, faz ve
 sönüm. İç referans düzlemleri L uzunluğundaki bölümü sınırlar; şeritler bu

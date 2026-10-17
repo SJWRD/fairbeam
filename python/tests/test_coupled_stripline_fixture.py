@@ -70,6 +70,8 @@ def acquire_serial(out,n,rate=40.,control='ordinary',loss_tangent=0.):
     f.save(out/'progress.json',progress)
     for port in range(1,5):
         if source!=f.identity() or runtime!=f.runtime_identity():
+            progress.update(status='rejected',reason='source/runtime changed',qualified=False,active_launcher_pid=None)
+            f.save(out/'progress.json',progress)
             raise RuntimeError('source/runtime changed between excitations')
         destination=out/f'port{port}'
         command=[sys.executable,'-m','tests.test_coupled_stripline_fixture','--fdtd','--worker-case',
@@ -112,7 +114,12 @@ def acquire_serial(out,n,rate=40.,control='ordinary',loss_tangent=0.):
             raise
         progress['ports'].append(dict(port=port,quality=quality))
         f.save(out/'progress.json',progress)
-    _,result=f.matrix(out)
+    try:
+        _,result=f.matrix(out)
+    except BaseException as error:
+        progress.update(status='rejected',reason=repr(error),qualified=False,active_launcher_pid=None)
+        f.save(out/'progress.json',progress)
+        raise
     progress.update(status='complete',active_port=None,active_launcher_pid=None,
                     completed_utc=datetime.now(timezone.utc).isoformat())
     f.save(out/'progress.json',progress)
@@ -563,6 +570,43 @@ class CoupledStriplineControls(unittest.TestCase):
             self.assertEqual(row['status'],'rejected')
             self.assertIsNone(row['active_launcher_pid'])
             self.assertTrue((out/'port1.worker.json').exists())
+
+    def test_final_matrix_rejection_clears_running_worker(self):
+        class Worker:
+            pid,win_job=777,None
+            def wait(self,timeout=None): return 0
+            def poll(self): return 0
+        with tempfile.TemporaryDirectory() as temp:
+            out=Path(temp)/'cohort'
+            def launch(command,**options):
+                dest=Path(command[command.index('--out')+1]);dest.mkdir()
+                f.save(dest/'report.json',{})
+                return Worker()
+            with patch(__name__+'.popen_group',side_effect=launch) as start, \
+                    patch(__name__+'.release_group'),patch(__name__+'.audit_header',return_value={}), \
+                    patch.object(f,'read',return_value=(None,None,None,dict(energy=True))), \
+                    patch.object(f,'matrix',side_effect=ValueError('ill-conditioned matrix')):
+                with self.assertRaisesRegex(ValueError,'ill-conditioned matrix'):
+                    acquire_serial(out,4,40.)
+                self.assertEqual(start.call_count,4)
+            row=json.loads((out/'progress.json').read_text())
+            self.assertEqual(row['status'],'rejected')
+            self.assertIsNone(row['active_launcher_pid'])
+            self.assertFalse(row['qualified'])
+            self.assertEqual(len(row['ports']),4)
+
+    def test_changed_source_clears_prepared_status(self):
+        with tempfile.TemporaryDirectory() as temp:
+            out=Path(temp)/'cohort'
+            with patch.object(f,'identity',side_effect=[{'source':'before'},{'source':'after'}]), \
+                    patch(__name__+'.popen_group') as start:
+                with self.assertRaisesRegex(RuntimeError,'source/runtime changed'):
+                    acquire_serial(out,4,40.)
+                start.assert_not_called()
+            row=json.loads((out/'progress.json').read_text())
+            self.assertEqual(row['status'],'rejected')
+            self.assertIsNone(row['active_launcher_pid'])
+            self.assertFalse(row['qualified'])
 
 
 def main():
