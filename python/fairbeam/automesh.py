@@ -226,7 +226,52 @@ def _point_in_poly(x, y, pts, tol=1e-7):
     return inside
 
 
-def extract(csx):
+def _dispersive_index_bound(prop, band):
+    """Conservative |epsilon| |mu| bound over the whole band, including pole peaks.
+
+    Bound each Lorentz denominator analytically; sampling alone can miss narrow poles.
+    Spatially weighted materials need an explicit mesh rather than a guessed bound.
+    """
+    if band is None or not 0 < band[0] <= band[1] or not np.all(np.isfinite(band)):
+        raise ValueError("auto_mesh: dispersive materials require a finite positive frequency band")
+    w0, w1 = 2 * np.pi * np.asarray(band)
+    bounds = []
+    for prefix, base, loss, vacuum in [('eps', 'epsilon', 'kappa', 8.8541878128e-12),
+                                      ('mue', 'mue', 'sigma', 1.25663706212e-6)]:
+        def material(name):
+            if prop.GetMaterialWeight(name) not in ('', '1'):
+                raise ValueError("auto_mesh: spatially weighted dispersive material requires an explicit mesh")
+            return np.asarray(prop.GetMaterialProperty(name), float)
+        value = np.abs(material(base))
+        scale = value.copy()
+        value = value + np.abs(material(loss)) / (w0 * vacuum)
+        for order in range(prop.GetDispersionOrder()):
+            def pole(name):
+                key = prefix + '_' + name
+                if prop.GetDispersiveMaterialWeight(key, order) not in ('', '1'):
+                    raise ValueError("auto_mesh: spatially weighted dispersive pole requires an explicit mesh")
+                return np.asarray(prop.GetDispersiveMaterialProperty(key, order), float)
+            if prop.GetTypeString() != 'LorentzMaterial':
+                raise ValueError("auto_mesh: native DebyeMaterial requires an explicit mesh; use Simulation.dispersive for fitted Lorentz poles")
+            plasma = pole('plasma')
+            if not np.any(plasma):
+                continue
+            resonance, tau = pole('pole_freq'), pole('relax')
+            active = plasma != 0
+            if np.any(active & (tau <= 0)) or not all(np.all(np.isfinite(x)) for x in (plasma, resonance, tau)):
+                raise ValueError("auto_mesh: unresolved dispersive pole; use an explicit validated mesh")
+            tau = np.where(active, tau, 1.0)
+            wl2 = (2 * np.pi * resonance) ** 2
+            x = np.clip(wl2 - 1 / (2 * tau ** 2), w0 ** 2, w1 ** 2)
+            denom = np.sqrt((x - wl2) ** 2 + x / tau ** 2)
+            value = value + scale * (2 * np.pi * plasma) ** 2 / denom
+        if not np.all(np.isfinite(value)) or np.any(value <= 0):
+            raise ValueError("auto_mesh: no finite dispersive wavelength bound; use an explicit validated mesh")
+        bounds.append(float(np.max(value)))
+    return max(1.0, bounds[0] * bounds[1])
+
+
+def extract(csx, band=None):
     """Shapes of every physical primitive, grouped as (metals, dielectrics, others)."""
     metals, diel, other = [], [], []
     for prim in csx.GetAllPrimitives():
@@ -294,11 +339,12 @@ def extract(csx):
         s = Shape(k, prop, lo, hi, **kw)
         if ptype in METALS or (ptype == "Material" and _conductor(prop)):
             metals.append(s)
-        elif ptype == "Material":
+        elif ptype in ("Material", "LorentzMaterial", "DebyeMaterial"):
             eps = np.atleast_1d(prop.GetMaterialProperty("epsilon")).astype(float)
             mu = np.atleast_1d(prop.GetMaterialProperty("mue")).astype(float)
             # Internal wavelength factor n² = εr μr; default μr=1 preserves existing meshes.
-            s.eps_r = float(eps.max() * mu.max())
+            s.eps_r = (float(eps.max() * mu.max()) if ptype == "Material"
+                       else _dispersive_index_bound(prop, band))
             diel.append(s)
         else:
             other.append(s)   # lumped elements etc.
@@ -438,7 +484,7 @@ def generate(sim, f_max: float | None = None, cells_per_wavelength: float = 20, 
     lam_max = C0 / sim.f_min / unit
     res_feature = lam_min / cells_per_wavelength
     res_air = lam_min / (air_cells_per_wavelength or cells_per_wavelength)
-    metals, diel, other = extract(sim.csx)
+    metals, diel, other = extract(sim.csx, (sim.f_min, f_max))
     if not metals and not diel:
         raise ValueError("auto_mesh: no metal or dielectric geometry to mesh")
     eps_max = max([d.eps_r for d in diel] + [1.0])

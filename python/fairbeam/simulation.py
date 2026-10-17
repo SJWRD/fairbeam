@@ -734,6 +734,7 @@ class Simulation:
         p_meta, p, s11, p_acc = port
         s11_db = 20 * np.log10(np.abs(s11))
         out["bands"] = _bands(f, s11_db, s11_band_db)
+        out["s11_band_db"] = float(s11_band_db)
 
         if self.nf2ff is not None:
             if pattern_freqs is None:

@@ -1122,7 +1122,9 @@ def _mapped_axis(s, axis):
     """Output axis and direction of an input axis under a signed permutation."""
     if not isinstance(s[0], (tuple, list)):
         return axis, s[axis]
-    out = next(i for i in range(3) if s[i][axis])
+    if not _axis_map(s):
+        raise ValueError("axis mapping requires an axis-aligned transform")
+    out = max(range(3), key=lambda i: abs(s[i][axis]))
     return out, s[out][axis]
 
 
@@ -3769,7 +3771,8 @@ _PY_HELPERS = {
         "    return [s[i] * p[i] + t[i] for i in range(3)]", "", "",
         "def _mapped_axis(s, axis):",
         "    if not isinstance(s[0], (tuple, list)):", "        return axis, s[axis]",
-        "    out = next(i for i in range(3) if s[i][axis])", "    return out, s[out][axis]", "", "",
+        "    if not _axis_map(s): raise ValueError('axis mapping requires an axis-aligned transform')",
+        "    out = max(range(3), key=lambda i: abs(s[i][axis]))", "    return out, s[out][axis]", "", "",
         "def _scale_value(s, value):",
         "    factor = max(abs(x) for row in s for x in row) if isinstance(s[0], (tuple, list)) else abs(s[0])",
         "    return factor * value", "", "",
