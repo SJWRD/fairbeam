@@ -66,6 +66,11 @@ Var FairbeamOwnsResources
     FileWrite $0 "fairbeam: this folder also holds other files. The app's installer and uninstaller never remove its subfolders as a whole.$\r$\n"
   ${EndIf}
   FileClose $0
+  ; Tauri 2.11.5 quotes the document argument but not the executable in APP_ASSOCIATE.
+  ; Correct that final command after association creation, including installs into paths with spaces.
+  !if "${BUNDLEID}" == "org.fairbeam.desktop"
+    WriteRegStr SHCTX "Software\Classes\Fairbeam document\shell\open\command" "" '"$INSTDIR\${MAINBINARYNAME}.exe" "%1"'
+  !endif
 !macroend
 
 !macro NSIS_HOOK_POSTUNINSTALL
