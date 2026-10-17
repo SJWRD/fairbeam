@@ -28,11 +28,27 @@ window.__TAURI__ = { core: { invoke: async (command, args) => {
 } } };
 const nativeSaved = await saveDownload("report.csv", "hello", "text/csv");
 assert.deepEqual(nativeSaved, { name: "report.csv", status: "saved", path: "C:/exports/report.csv" });
-assert.deepEqual(calls[0], { command: "save_download", args: { name: "report.csv", bytes: [104, 101, 108, 108, 111], extension: "csv" } });
+assert.deepEqual(calls[0], { command: "save_download", args: { name: "report.csv", text: "hello", extension: "csv" } });
 assert.equal(downloadMessage(nativeSaved), "Saved to C:/exports/report.csv");
 const nativeCancelled = await saveDownloadUrl("cancel.txt", "data:text/plain;base64,eA==");
 assert.deepEqual(nativeCancelled, { name: "cancel.txt", status: "cancelled" });
 assert.equal(downloadMessage(nativeCancelled), "Save cancelled");
+
+// Text IPC must preserve exactly the bytes previously produced by TextEncoder, including
+// a leading BOM, astral Unicode, and replacement of lone UTF-16 surrogates.
+for (const text of ["", "\ufeffİzmir 😀\n", "unpaired: \ud800 end"]) {
+  await saveDownload("unicode.txt", text);
+  const args = calls.at(-1).args;
+  assert.equal(typeof args.text, "string");
+  assert.equal(args.bytes, undefined);
+  assert.deepEqual(new TextEncoder().encode(args.text), new TextEncoder().encode(text));
+}
+for (const data of [new Uint8Array([0, 255, 128]), new Blob([new Uint8Array([0, 255, 128])])]) {
+  await saveDownload("binary.zip", data);
+  assert.deepEqual(calls.at(-1).args, {name: "binary.zip", bytes: [0, 255, 128], extension: "zip"});
+}
+window.__TAURI__.core.invoke = async () => { throw new Error("disk unavailable"); };
+await assert.rejects(saveDownload("failed.txt", "content"), /disk unavailable/);
 
 delete window.__TAURI_INTERNALS__;
 const anchors = [];

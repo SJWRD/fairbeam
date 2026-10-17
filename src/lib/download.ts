@@ -83,7 +83,7 @@ export async function saveDownload(name: string, data: Blob | Uint8Array | strin
   if (typeof data === "string") bytes = new TextEncoder().encode(data);
   else if (data instanceof Blob) bytes = new Uint8Array(await data.arrayBuffer());
   else bytes = data;
-  return invokeSaveDownload(name, bytes);
+  return invokeSaveDownload(name, bytes, typeof data === "string");
 }
 
 /** Save an existing URL through desktop Save As; browsers retain the original anchor behavior. */
@@ -108,12 +108,15 @@ export async function saveDownloadUrl(name: string, href: string): Promise<Downl
   return invokeSaveDownload(name, bytes);
 }
 
-async function invokeSaveDownload(name: string, bytes: Uint8Array): Promise<DownloadResult> {
+async function invokeSaveDownload(name: string, bytes: Uint8Array, asText = false): Promise<DownloadResult> {
   const invoke = window.__TAURI__?.core?.invoke;
   if (!invoke) throw new Error(t("download.error.noDesktop"));
   if (bytes.byteLength > 200 * 1024 * 1024) throw new Error(t("download.error.tooLarge"));
   const extension = name.includes(".") ? name.slice(name.lastIndexOf(".") + 1).toLowerCase() : "";
-  const result = await invoke("save_download", { name, bytes: Array.from(bytes), extension }) as { status?: string; path?: string };
+  // After the size check: preserve TextEncoder's replacement of lone UTF-16 surrogates
+  // and any leading BOM, without expanding text exports into a JSON array of byte numbers.
+  const payload = asText ? { text: new TextDecoder("utf-8", { ignoreBOM: true }).decode(bytes) } : { bytes: Array.from(bytes) };
+  const result = await invoke("save_download", { name, ...payload, extension }) as { status?: string; path?: string };
   if (result?.status === "cancelled") return { name, status: "cancelled" };
   if (result?.status === "saved" && typeof result.path === "string") return { name, status: "saved", path: result.path };
   throw new Error(t("download.error.invalid"));
