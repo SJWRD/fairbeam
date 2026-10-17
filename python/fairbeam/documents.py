@@ -483,7 +483,10 @@ def _publish_new(temporary: Path, destination: Path) -> None:
         os.link(temporary, destination)
     except OSError as exc:
         if exc.errno in unsupported:
-            raise DocumentError("Filesystem cannot atomically create a document without replacement") from exc
+            raise DocumentError(
+                "This drive does not support the atomic file creation required by Fairbeam. "
+                "Save on an internal disk, then copy the .fb file and its adjacent results folder together."
+            ) from exc
         raise
 
 

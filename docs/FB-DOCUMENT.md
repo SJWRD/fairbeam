@@ -79,8 +79,13 @@ On macOS, document saves in the same parent directory share a lock identified by
 device and inode. This intentionally serializes separate documents too, avoiding differences in
 filesystem case and Unicode alias rules. New files use `renamex_np(RENAME_EXCL)` where supported,
 falling back to an exclusive hardlink only when exclusive rename is unavailable. If neither
-operation is supported, creation fails without publishing partial content. Actual volume support,
-including exFAT, requires testing on that volume; it is not implied by the macOS API's availability.
+operation is supported, creation fails without publishing partial content.
+Native macOS checks on APFS passed ordinary saves, concurrent saves through case aliases, Unicode
+result-name collision checks, and safe refusal for ACLs, Finder tags, quarantine metadata, and
+locked files. On the tested exFAT volume, neither exclusive
+rename nor hardlinks was supported, so creation refused without publishing partial content.
+Save on an internal APFS volume, then copy the `.fb` file and its adjacent results folder together.
+Other volumes still need their own checks.
 Other POSIX systems use an exclusive hardlink, and Windows uses a no-replace rename.
 
 The file is flushed before publication, but the parent directory is not fsynced afterward. This

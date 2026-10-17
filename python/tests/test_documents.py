@@ -197,8 +197,13 @@ class Documents(unittest.TestCase):
         with mock.patch.object(doc.sys, "platform", "darwin"), \
                 mock.patch.object(doc, "_macos_rename_exclusive", side_effect=OSError(errno.ENOTSUP, "unsupported")), \
                 mock.patch.object(doc.os, "link", side_effect=OSError(errno.ENOTSUP, "unsupported")):
-            with self.assertRaisesRegex(doc.DocumentError, "atomically create"):
+            with self.assertRaises(doc.DocumentError) as raised:
                 doc.save(self.path, self.document)
+        self.assertEqual(
+            str(raised.exception),
+            "This drive does not support the atomic file creation required by Fairbeam. "
+            "Save on an internal disk, then copy the .fb file and its adjacent results folder together.",
+        )
         self.assertEqual(list(self.root.iterdir()), [])
 
     def test_macos_rename_errors_do_not_fall_back(self):
