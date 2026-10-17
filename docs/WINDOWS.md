@@ -170,6 +170,20 @@ See [DESKTOP.md](DESKTOP.md) for the contract. On Windows:
 
 ## Known limitations
 
+The new `.fb` installer registration preserves existing handlers, including an explicitly empty
+default, and adds Fairbeam to **Open with**. It chooses Fairbeam automatically only when both the
+user and merged system views confirm no default or existing Fairbeam command. In-place updates
+preserve a deleted default while that command exists. An uninstall followed by reinstall can
+choose Fairbeam again after both values have disappeared; no backup history is stored.
+
+The most recently installed path owns the shared Fairbeam registration. Uninstall removes it
+only if its full quoted command still points to that installation, leaving extension defaults
+and other applications' entries unchanged, as described in
+[Microsoft's file-type guidance](https://learn.microsoft.com/en-us/windows/win32/shell/fa-file-types).
+Public 0.7.8 did not register `.fb`. The new policy has source/model checks and installer build
+validation; installed Open with visibility, launch and lifecycle behavior still require a
+disposable Windows test before release.
+
 - The official openEMS build is CPU only. Fairbeam's setup and General settings can install the
   optional NVIDIA build into a separate managed `gpu-runtime` folder, keeping the CPU runtime
   available. The selected runtime takes effect on the next app start; the Run dialog offers
