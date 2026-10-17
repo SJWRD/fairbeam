@@ -437,8 +437,8 @@ def save(path: Path, document: dict, base_hash: str | None = None) -> str:
     return digest(data)
 
 
-def read_result(path: Path, document: dict, reference: dict) -> dict:
-    """Read one referenced result after boundary and checksum checks; missing is recoverable."""
+def _read_result_content(path: Path, document: dict, reference: dict) -> tuple[bytes, dict]:
+    """Return the exact byte snapshot and parsed result that passed every read check."""
     path = _path(path)
     validate(document)
     if reference not in document["results"]:
@@ -457,4 +457,9 @@ def read_result(path: Path, document: dict, reference: dict) -> dict:
     if not isinstance(result, dict) or result.get("schema") != "fairbeam.project/1":
         raise DocumentError("Unsupported result schema")
     _json_bytes(result)
-    return result
+    return data, result
+
+
+def read_result(path: Path, document: dict, reference: dict) -> dict:
+    """Read one referenced result after boundary and checksum checks; missing is recoverable."""
+    return _read_result_content(path, document, reference)[1]

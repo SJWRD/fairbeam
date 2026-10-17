@@ -76,14 +76,10 @@ def _uuid(value: str) -> str:
 
 
 def _result_bytes(path: Path, document: dict, reference: dict) -> bytes:
-    # Validate the boundary, checksum and JSON using the portable storage layer. Read the
-    # exact original bytes for copying, rechecking the checksum after the second read.
-    result = doc.read_result(path, document, reference)
+    # Copy the same immutable byte snapshot whose boundary, checksum and JSON were checked.
+    raw, result = doc._read_result_content(path, document, reference)
     if result.get("model", {}).get("id") != document["design"]["model"]["id"]:
         raise doc.DocumentError("Result model identity does not match this document")
-    raw = doc._read_bytes(path.parent / document["results_directory"] / reference["file"], doc.MAX_RESULT)
-    if doc.digest(raw) != reference["sha256"]:
-        raise doc.DocumentError("Result changed while it was being opened")
     return raw
 
 
