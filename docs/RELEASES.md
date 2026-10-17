@@ -55,7 +55,7 @@ admission. It runs no field propagation and does not establish numerical converg
 receipt outside the checkout or remove the generated receipt before building the tagged release.
 
 1. Bump the version in `package.json`, `src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml` and
-   `python/fairbeam/_meta.py`. The runtime refreshes its copy of the Python package when the bundled
+   `python/fairbeam/_meta.py` and `python/pyproject.toml`. The runtime refreshes its copy of the Python package when the bundled
    version changes.
 2. Regenerate the third-party inventory with `npm run licenses`, review any changed licenses
    and exceptions in `scripts/licenses/exceptions.json`, and run `npm run check:licenses`.

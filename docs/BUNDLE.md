@@ -536,6 +536,10 @@ excitation, the known columns are `S_ij = b_i / a_j`. For equal Z_i these are th
 S-parameters; otherwise they are power-wave S-parameters referenced to each port's own Z_i.
 `results.ports[p].s11_*` stores the driven-run reflection of physical port p;
 `port_numbers` associates it with matrix index k. Do not use a physical port ID as a matrix index.
+Plots, S1p/CSV exports, matched bands and optimizer reflection goals use the matrix diagonal when
+present. The raw driven-run reflection, voltage/current and accepted power remain unchanged for
+the corresponding run's power and far-field accounting. `s11_band_db` records the matched-band
+threshold (older bundles default to -10 dB).
 
 **`qa`.**
 
@@ -544,20 +548,27 @@ S-parameters; otherwise they are power-wave S-parameters referenced to each port
 | `reciprocity_max` | number \| null | max over frequency and pairs of \|S_ij − S_ji\| (both columns known), linear. FDTD typically gives 1e-4..1e-2 |
 | `reciprocity_pairs` | object | The same per pair, keys `"i,j"` with i < j |
 | `column_power_max`, `column_power_min` | object | Per driven port j (key `"j"`): max / min over frequency of Σ_i \|S_ij\|². 1 − column power is the fraction dissipated or radiated |
-| `passivity_max` | number \| null | Largest column power. It must be ≤ 1 for a passive structure |
-| `passive` | boolean | `passivity_max ≤ 1 + passive_tol` |
+| `passivity_max` | number \| null | Maximum squared largest singular value over frequency; null for an incomplete or nonfinite matrix. Older bundles stored largest column power |
+| `passive` | boolean \| null | `passivity_max ≤ 1 + passive_tol`, or unknown when the full finite matrix is unavailable |
+| `passivity_power` | number[] \| null | Squared largest singular value at each sampled frequency |
+| `passivity_violations` | number[] | Zero-based frequency indices exceeding the tolerance |
+| `passivity_method` | string | Identifies the complete-matrix singular-value criterion |
 | `passive_tol` | number | Tolerance, 0.01 |
 
 ### element_patterns
 
-Present for antennas (models with an NF2FF box) when several ports are driven, or when
-`--element-patterns on` is given. It holds the complex far field of each driven port per unit
-incident wave, with all other ports terminated, so mutual coupling is included. See
+Present for antennas (models with an NF2FF box) when every port has an excitation run and element
+patterns are requested. The complex fields use `F = E A^-1`, the same incident-wave basis as the
+S matrix: unit incident wave at one port, zero incident waves at the others. Runs must share port
+order, frequency/angular grids, phase center and radius. Partial excitation, incompatible grids or
+an ill-conditioned incident matrix omit the section and record `results.element_patterns_unavailable`.
+Older bundles used per-run scalar normalization and can contain residual incident-wave leakage. See
 [ARRAYS.md](ARRAYS.md) for how to combine them.
 
 | Field | Type | Description |
 | --- | --- | --- |
 | `normalization` | string | Human-readable normalization note |
+| `basis` | string? | `matched-incident-waves` for the corrected full-matrix basis; absent in older bundles |
 | `radius_m` | number | Far-field radius of the stored E values, in m (1) |
 | `encoding` | string | `"i16le-base64-scaled"` (written since this change) or `"f32le-base64"` (older bundles). Readers accept both; see [Encodings](#element-pattern-encodings) |
 | `shape` | [number, number] | `[n_theta, n_phi]` |
@@ -671,6 +682,10 @@ raw transform (`unit: "arb."`, `normalization: "none"`). The maps come from one 
 | `magnitude` | number[][] | `nv` rows of `nu` values: `magnitude[j][i]` is at `u_range[0] + i·Δu`, `v_range[0] + j·Δv` |
 | `port` | number? | Number of the driven port (absent when unknown) |
 | `phasor` | FieldPlanePhasor? | The complex components behind the map, for its phase and the field over one period. Absent in bundles written before it existed, or when the field is zero: viewers then show the magnitude only |
+
+Despite the legacy `_mm` names, plane positions, ranges and geometry overlays are in drawing
+units. The UI and CSV multiply displayed coordinates by `units.length_m * 1000` to show mm;
+stored geometry coordinates are not rescaled.
 
 **FieldPlanePhasor** (optional). The complex components of the same resampled `nu × nv` grid, so a
 viewer can show the phase and the instantaneous field `Re{F e^(jωt)}` over one period (the designer's
