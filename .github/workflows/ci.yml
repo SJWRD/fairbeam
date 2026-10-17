@@ -62,6 +62,7 @@ jobs:
         run: npm run -s check:telemetry
       - run: npx tsc --noEmit
       - run: npm run -s check:licenses
+      - run: npm run -s check:documents
       - run: npm run -s check:legal
       - run: npm run -s check:no-antenlab
       - run: npm run -s check:installer-info

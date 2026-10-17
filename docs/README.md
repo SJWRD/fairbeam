@@ -54,6 +54,7 @@ translated. To check a locally served site in Chrome, run `npm run check:docs-la
 | [Experimental periodic CPU study](../scripts/experimental-periodic/README.md) | Opt-in native source patch and reproducible zero-phase unit-cell research gates; not production Floquet support |
 | [Lumped resistor in openEMS](openems-lumped-resistor.md) | How the lumped resistor behaves, and why the Wilkinson residual is not a resistor error |
 | [Bundle schema](BUNDLE.md) | `fairbeam.project/1`, field by field |
+| [Portable document foundation](FB-DOCUMENT.md) | Planned `.fb` storage contract and tests; native opening and saving are not integrated yet |
 | [Architecture](ARCHITECTURE.md) | Data flow, run server, project layout, roadmap |
 | [Design](DESIGN.md) | Visual design rules, tokens, layout primitives, keyboard map |
 | [Turkish UI glossary](i18n-glossary.md) | The Turkish/English terms of the interface and the alternatives considered for each term |

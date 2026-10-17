@@ -1,0 +1,28 @@
+{
+  "valid": [
+    {"name": "empty results", "set": {}},
+    {"name": "unicode folder", "set": {"results_directory": "İzmir 😀.results"}},
+    {"name": "verified historical result", "set": {"results": [{"file": "run.json", "sha256": "0000000000000000000000000000000000000000000000000000000000000000", "design_sha256": "1111111111111111111111111111111111111111111111111111111111111111"}]}}
+  ],
+  "invalid": [
+    {"name": "unknown schema", "set": {"schema": "fairbeam.document/2"}},
+    {"name": "unknown field", "set": {"execute": "anything"}},
+    {"name": "invalid identity", "set": {"id": "not-a-uuid"}},
+    {"name": "identity newline", "set": {"id": "abcdef01-1234-5678-9012-abcdef012345\n"}},
+    {"name": "uppercase identity", "set": {"id": "ABCDEF01-1234-5678-9012-ABCDEF012345"}},
+    {"name": "parent traversal", "set": {"results_directory": "../outside"}},
+    {"name": "absolute posix", "set": {"results_directory": "/outside"}},
+    {"name": "absolute windows", "set": {"results_directory": "C:\\outside"}},
+    {"name": "alternate stream", "set": {"results_directory": "data:stream"}},
+    {"name": "device", "set": {"results_directory": "NUL.txt"}},
+    {"name": "superscript device", "set": {"results_directory": "COM¹"}},
+    {"name": "trailing dot", "set": {"results_directory": "folder."}},
+    {"name": "trailing space", "set": {"results_directory": "folder "}},
+    {"name": "results object", "set": {"results": {}}},
+    {"name": "extra result field", "set": {"results": [{"file": "run.json", "sha256": "0000000000000000000000000000000000000000000000000000000000000000", "design_sha256": "1111111111111111111111111111111111111111111111111111111111111111", "execute": true}]}},
+    {"name": "invalid result checksum", "set": {"results": [{"file": "run.json", "sha256": "x", "design_sha256": "1111111111111111111111111111111111111111111111111111111111111111"}]}},
+    {"name": "checksum newline", "set": {"results": [{"file": "run.json", "sha256": "0000000000000000000000000000000000000000000000000000000000000000\n", "design_sha256": "1111111111111111111111111111111111111111111111111111111111111111"}]}},
+    {"name": "missing design checksum", "set": {"results": [{"file": "run.json", "sha256": "0000000000000000000000000000000000000000000000000000000000000000"}]}},
+    {"name": "result traversal", "set": {"results": [{"file": "../run.json", "sha256": "0000000000000000000000000000000000000000000000000000000000000000", "design_sha256": "1111111111111111111111111111111111111111111111111111111111111111"}]}}
+  ]
+}
