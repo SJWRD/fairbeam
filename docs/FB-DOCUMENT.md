@@ -60,7 +60,9 @@ round trip (`32.0` to `32`, for example) retain its design identity. It is not a
 
 Folder and result names cannot contain path separators, traversal, alternate streams, Windows
 device names, or trailing dots/spaces, and are limited to 180 UTF-8 bytes.
-Case-insensitive duplicate result names are refused.
+Result names with the same NFC-normalized lowercase spelling are refused; stored filenames keep
+their original spelling. This catches canonical Unicode and ordinary case duplicates, not every
+filesystem's Unicode alias rule.
 A document is limited to 40 MiB, an individual result to 200 MiB, and the reference list to 10,000.
 The Python reader rejects duplicate JSON keys and non-finite numbers. Browser envelope checks are
 preflight only: the server must validate the complete design and file contents before use.
@@ -72,6 +74,18 @@ preflight only: the server must validate the complete design and file contents b
 the previous successful `save`. Cooperating writers share an OS advisory lock. Writes are staged
 and flushed in the destination directory before publication. A stale revision, deleted file,
 failed flush, or failed replacement must not silently overwrite the previous document.
+
+On macOS, document saves in the same parent directory share a lock identified by the directory's
+device and inode. This intentionally serializes separate documents too, avoiding differences in
+filesystem case and Unicode alias rules. New files use `renamex_np(RENAME_EXCL)` where supported,
+falling back to an exclusive hardlink only when exclusive rename is unavailable. If neither
+operation is supported, creation fails without publishing partial content. Actual volume support,
+including exFAT, requires testing on that volume; it is not implied by the macOS API's availability.
+Other POSIX systems use an exclusive hardlink, and Windows uses a no-replace rename.
+
+The file is flushed before publication, but the parent directory is not fsynced afterward. This
+provides atomic visibility and conflict protection, not a guarantee that the rename survives
+power loss.
 
 Windows replacement first compares the destination and empty staging file's owner and primary
 group SIDs. A mismatch or unreadable identity refuses the save before writing bytes; the app
@@ -116,6 +130,8 @@ Windows cases also exercise matching and mismatched owner/group SIDs, ownership 
 protected and inherited destination DACLs, ACL failures before publication, and cleanup with a
 DACL that denies deletion. Numeric identity cases cover nested
 values, negative zero, exponents, and large integers rounded as browser JSON numbers.
+Platform-independent mocks check the macOS exclusive-rename contract, unsupported-volume refusal,
+competing creates, and parent-directory lock identities; these do not replace tests on a Mac.
 
 ## Remaining release gates
 

@@ -9,7 +9,11 @@ let checks = 0;
 for (const [group, cases] of Object.entries(fixture)) {
   for (const test of cases) {
     const value = {...base, ...test.set};
-    if (group === "valid") assert.equal(documentEnvelope(value), value, test.name);
+    if (group === "valid") {
+      const original = JSON.stringify(value);
+      assert.equal(documentEnvelope(value), value, test.name);
+      assert.equal(JSON.stringify(value), original, `${test.name}: preserves stored spelling`);
+    }
     else assert.throws(() => documentEnvelope(value), undefined, test.name);
     checks++;
   }

@@ -6,6 +6,7 @@ accuracy or convergence. Writers use optimistic concurrency and a shared OS advi
 """
 from __future__ import annotations
 
+import errno
 import hashlib
 import json
 import math
@@ -13,7 +14,9 @@ import os
 from pathlib import Path
 import re
 import stat
+import sys
 import tempfile
+import unicodedata
 import uuid
 
 from ._filelocks import model_lock
@@ -116,9 +119,10 @@ def validate(document: dict) -> None:
         if not isinstance(ref, dict) or set(ref) != {"file", "sha256", "design_sha256"}:
             raise DocumentError("Invalid result reference")
         name = _basename(ref["file"])
-        if not name.endswith(".json") or name.lower() in names:
+        identity = unicodedata.normalize("NFC", name).lower()
+        if not name.endswith(".json") or identity in names:
             raise DocumentError("Result names must be distinct JSON files")
-        names.add(name.lower())
+        names.add(identity)
         if any(not isinstance(ref[k], str) or not _HASH.fullmatch(ref[k])
                for k in ("sha256", "design_sha256")):
             raise DocumentError("Result references require SHA-256 content and design hashes")
@@ -331,6 +335,54 @@ def _windows_discard_staging(fd: int) -> None:
         raise ctypes.WinError(ctypes.get_last_error())
 
 
+def _document_lock_key(path: Path) -> tuple[str, str]:
+    if sys.platform == "darwin":
+        # macOS filesystems have different case/Unicode alias rules. Serializing
+        # documents in one canonical parent avoids approximating those rules,
+        # including when the destination does not exist yet. Model locks keep
+        # their existing identity and behavior.
+        parent = path.parent.stat()
+        return f"{parent.st_dev}:{parent.st_ino}", "fb-document-directory"
+    return os.path.normcase(str(path)), "fb-document"
+
+
+def _macos_rename_exclusive(source: Path, destination: Path) -> None:
+    """Publish without replacement where the macOS filesystem supports RENAME_EXCL."""
+    import ctypes
+
+    try:
+        rename = ctypes.CDLL(None, use_errno=True).renamex_np
+    except AttributeError as exc:
+        raise OSError(errno.ENOSYS, "Exclusive rename is unavailable") from exc
+    rename.argtypes = (ctypes.c_char_p, ctypes.c_char_p, ctypes.c_uint)
+    rename.restype = ctypes.c_int
+    if rename(os.fsencode(source), os.fsencode(destination), 0x00000004) != 0:
+        error = ctypes.get_errno()
+        raise OSError(error, os.strerror(error), str(destination))
+
+
+def _publish_new(temporary: Path, destination: Path) -> None:
+    """Publish complete staged bytes exclusively; FileExistsError means a competing file."""
+    unsupported = {errno.ENOSYS, errno.ENOTSUP, errno.EOPNOTSUPP}
+    if sys.platform == "darwin":
+        try:
+            _macos_rename_exclusive(temporary, destination)
+            return
+        except OSError as exc:
+            if exc.errno not in unsupported:
+                raise
+    elif os.name == "nt":
+        # Windows rename fails if another writer created the destination meanwhile.
+        _retry_busy(lambda: os.rename(temporary, destination))
+        return
+    try:
+        os.link(temporary, destination)
+    except OSError as exc:
+        if exc.errno in unsupported:
+            raise DocumentError("Filesystem cannot atomically create a document without replacement") from exc
+        raise
+
+
 def save(path: Path, document: dict, base_hash: str | None = None) -> str:
     """Atomically create or replace a document; replacing requires its current byte hash."""
     path = _path(path)
@@ -338,7 +390,7 @@ def save(path: Path, document: dict, base_hash: str | None = None) -> str:
     data = _json_bytes(document)
     if len(data) > MAX_DOCUMENT:
         raise DocumentError("Document exceeds its size limit")
-    with model_lock((os.path.normcase(str(path)), "fb-document")):
+    with model_lock(_document_lock_key(path)):
         try:
             previous = _read_bytes(path, MAX_DOCUMENT)
         except FileNotFoundError:
@@ -371,12 +423,11 @@ def save(path: Path, document: dict, base_hash: str | None = None) -> str:
                         if os.name != "nt":
                             os.chmod(temporary, stat.S_IMODE(path.stat().st_mode))
                         _retry_busy(lambda: os.replace(temporary, path))
-                    elif os.name == "nt":
-                        # Windows rename fails if another writer created the destination meanwhile.
-                        _retry_busy(lambda: os.rename(temporary, path))
                     else:
-                        # Publish complete bytes without overwriting another writer.
-                        os.link(temporary, path)
+                        try:
+                            _publish_new(temporary, path)
+                        except FileExistsError as exc:
+                            raise DocumentConflict("Document changed on disk; reopen or save a separate copy") from exc
                 except BaseException:
                     if os.name == "nt":
                         _windows_discard_staging(stream.fileno())
