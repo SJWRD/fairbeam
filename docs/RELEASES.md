@@ -177,6 +177,14 @@ editing them, or the prefill stops working.
 One entry per release, newest first. The installers are on the
 [release page](https://github.com/ismailakdag/fairbeam-releases/releases) of each version.
 
+### 0.7.7, 2026-10-17
+
+- **Geometry and mesh:** fix extrusion axes after composed rotations; include dispersive geometry and whole-band pole bounds in automatic dielectric meshing. Materials without a safe automatic bound require an explicit validated mesh.
+- **Numerical results:** use the full incident-wave basis for embedded element patterns, canonical matrix reflection for S11 consumers, and a singular-value passivity check. Incomplete data no longer produce a definite passivity result.
+- **Optimization:** native candidates require established energy convergence for every driven port. Missing or nonfinite goal metrics cannot become a successful or best candidate.
+- **Editor and display:** keep delayed source/history responses attached to their document, convert field-plane display/export coordinates to mm, and stop presenting unavailable realized gain as a valid quantity.
+- **Existing results:** rerun models affected by composed extrusion or dispersive automatic meshing; re-evaluate old optimizer winners and regenerate matched-basis element patterns where needed. See [the review follow-up](REVIEW-2026-10-17.md) for reproductions and limits. These checks do not establish general antenna accuracy or mesh convergence.
+
 ### 0.7.6, 2026-10-15
 
 - **Editable examples:** convert tilted cylinders and tubes, native coaxial ports and ideal curve wires into Design without replacing their geometry. The helix example can now open as an editable design; ideal wires retain zero radius. Conversion still reports parameters whose expressions cannot be preserved.

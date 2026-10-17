@@ -176,6 +176,8 @@ Kol empedansı (genişlik) optimize edilmemiştir. Direnç tek başına iki hede
 
 ## Sınırlamalar ve sonraki adımlar
 
+- **Native çalıştırma kalitesi.** Bir native değerlendirme ancak her uyarılan portta enerji yakınsaması açıkça doğrulanmışsa aday olabilir. Eksik yakınsama, başarısız portlar ve eksik/sonlu olmayan hedef metrikleri cezalandırılır ve en iyi adayın dışında tutulur. Geçersiz metrikler null olarak yazılır; sonraki geçerli adaylar başarılı olabilir. Bu enerji sönümü kontrolüdür, mesh yakınsaması kanıtı değildir. Genel analitik değerlendiriciler native çalıştırma metaverisi gerektirmez.
+
 - **Kısmi uyarım.** Yalnızca gereken portları uyarmak hızlıdır ancak b_i / a_j kullanır (diğer portlar uyumlu varsayılır). Derin sıfırlar yakınında tam matristen yaklaşık 2 dB farklılaşabilir. Son değerlendirmede `--excite all` kullanın veya bir çalıştırmayla doğrulayın.
 - **İlk uygulanabilir nokta.** Tüm hedefler sağlanınca arama durur. Uygulanabilir nokta yerine en iyi noktayı bulmak için hedefleri sıkılaştırın.
 - **Nelder–Mead yereldir.** Farklı başlangıç farklı uyuma ulaşabilir. Diğer `--method` seçenekleri (bayesian, cma-es, particle-swarm, genetic, trust-region) bu belgede ölçülmemiştir.
