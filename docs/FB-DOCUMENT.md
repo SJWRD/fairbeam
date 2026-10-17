@@ -1,8 +1,38 @@
-# Portable Fairbeam document foundation
+# Portable Fairbeam documents
 
-This is a storage foundation for the planned `.fb` workflow, not a finished desktop feature.
-It does not register a file association, add a Save command, execute a model, or attach results
-to the current workspace. Existing design JSON and result bundles remain unchanged.
+The development desktop shell can open and save editable `.fb` documents, with result bundles
+in an adjacent folder. This work targets 0.8.0 and still needs the platform checks below before
+release. Existing design JSON and result bundles remain supported.
+
+## Desktop workflow
+
+- File > Open selects a `.fb` document or imports legacy JSON. A second launch forwards `.fb`
+  paths to the running window. Unsaved changes are handled before opening a queued document.
+- Save writes the workspace revision first, then the selected `.fb` file. The first save opens
+  a native file picker. Canceling or failing that second step keeps the draft marked unsaved;
+  retry uses the workspace revision that was actually written.
+- Save remains available for an unchanged writable design, so newly completed runs can be added
+  without editing geometry. Completions observed in the current document's workspace mark it
+  unsaved. A successful save acknowledges the results it started with; later completions still
+  need another save. Results skipped by the storage adapter produce a persistent warning.
+- Save As creates a separate document identity and editable workspace copy. Choose a new filename:
+  replacing an existing destination through Save As is currently refused, even if the native
+  picker offered an overwrite confirmation.
+- Reopening a document uses its stable UUID instead of importing another workspace copy. Moving
+  the `.fb` file and its adjacent result folder together preserves relative result references.
+- Project file details in the model tree show the location and each referenced result's status.
+  A result can match the saved design, belong to an earlier design, be missing, or fail validation.
+  Matching the design does not establish mesh convergence or physical accuracy.
+
+The native shell retains the selected path and revision behind an opaque handle. Browser code
+cannot submit arbitrary external paths. The private bridge is restricted to the shell's current
+server session. Browser uploads and drops import the embedded design as a workspace copy and
+do not grant access to adjacent files.
+
+The completion reminder uses a bounded per-window session journal of job identifiers, not result
+contents. It survives a renderer reload, but is not an authoritative attachment ledger and does
+not survive a full app restart. Explicit Open establishes a fresh baseline from the selected
+document; Save can still collect eligible completed runs from that document's workspace history.
 
 ## Format
 
@@ -43,14 +73,18 @@ the previous successful `save`. Cooperating writers share an OS advisory lock. W
 and flushed in the destination directory before publication. A stale revision, deleted file,
 failed flush, or failed replacement must not silently overwrite the previous document.
 
-Windows replacement copies and verifies the destination DACL, including inherited ACEs and
+Windows replacement first compares the destination and empty staging file's owner and primary
+group SIDs. A mismatch or unreadable identity refuses the save before writing bytes; the app
+does not change ownership or request additional privileges. This also keeps owner-relative
+access entries meaningful. Replacement then copies and verifies the destination DACL, including inherited ACEs and
 inheritance protection, on the empty staging file before writing document bytes. If the DACL
 cannot be read, applied, or preserved exactly, saving fails before replacing the destination.
 A retained deletion-capable handle removes a failed stage even when the copied DACL denies
 deletion; cleanup does not restore broader parent permissions onto document bytes. Publication
 continues to use rename/replace, without `ReplaceFileW`'s partial-failure behavior.
-This preserves the DACL, not every item of filesystem metadata: owner/group, SACLs, alternate data
-streams, and other attributes are not copied. POSIX replacement preserves mode bits only.
+This preserves matching owner/group identities and the DACL, not every item of filesystem
+metadata: SACLs, alternate data streams, and other attributes are not copied. POSIX replacement
+preserves mode bits only.
 
 `read(path)` returns `(document, byte_hash)` without opening results or executing Python.
 `read_result(path, document, reference)` checks membership, relative boundaries, regular files,
@@ -59,34 +93,39 @@ are refused. This is not a sandbox against a malicious local process concurrentl
 filesystem entries. A user-selected parent directory is resolved before access.
 
 Missing results do not prevent opening the embedded design. A result with a mismatched checksum
-must be reported as unavailable rather than silently loaded. The format does not include a
-result writer or garbage collector yet, and no sidecar is deleted by this module.
+is reported as unavailable rather than silently loaded. The workspace adapter captures the
+immutable input snapshot and exact completed result bytes, then copies verified bundles into
+the sidecar when saving. Older jobs without that provenance are skipped with a warning.
+Capture assumes exclusive output-directory ownership during the worker's write and completion;
+external writers replacing an output before its first capture are not provenance-attested.
+No sidecar garbage collector runs: unreferenced files are retained.
 
 From the repository root, with its own installed dependencies:
 
 ```sh
 npm run check:documents
 python -m unittest discover -s python/tests -p test_documents.py -v
+python -m unittest discover -s python/tests -p 'test_document_workspace*.py' -v
+python -m unittest discover -s python/tests -p test_native_documents_api.py -v
 ```
 
 The shared cases in `python/tests/fixtures/document_envelopes.json` exercise both languages.
 Filesystem tests cover stale saves, simultaneous writers, Unicode, missing results, corrupted
 checksums, links, size limits, and failed writes. They require neither a solver nor network access.
-Windows cases also exercise protected and inherited destination DACLs, ACL failures before
-publication, and cleanup with a DACL that denies deletion. Numeric identity cases cover nested
+Windows cases also exercise matching and mismatched owner/group SIDs, ownership read failures,
+protected and inherited destination DACLs, ACL failures before publication, and cleanup with a
+DACL that denies deletion. Numeric identity cases cover nested
 values, negative zero, exponents, and large integers rounded as browser JSON numbers.
 
-## Remaining integration gates
+## Remaining release gates
 
-- Native Save/Open and OS file-open events on Windows and macOS, including an already running app.
-- Explicit access to selected files, dirty-draft confirmation, and safe result copying.
-- Stable mapping between document identity and workspace identity; avoid importing a new duplicate
-  on every double-click.
-- UI distinction between missing, changed, and historical results; never present a previous
-  design's result as a freshly computed one.
-- Round-trip desktop checks, path/rename/move checks, and installer association checks on both OSes.
+- Round-trip desktop checks on Windows and macOS: Save/Open/cancel, an already running app,
+  path/rename/move, dirty-draft confirmation, and installed file associations.
+- Review the result-status presentation with missing, corrupt, historical, and newly computed
+  results. Existing JSON import, export, and the openEMS workflow must remain usable.
 - Remaining native filesystem metadata needs an explicit policy before unrestricted overwrites:
-  Windows DACLs and POSIX mode bits are preserved, but owner/group, SACLs, alternate data streams,
-  POSIX extended ACLs, and other platform metadata are not preserved by this layer.
+  Windows owner/group mismatches are refused and DACLs are preserved, but SACLs, alternate data
+  streams, POSIX ownership and extended ACLs, and other platform metadata are not preserved by
+  this layer. POSIX replacement preserves mode bits only.
 
-Do not advertise `.fb` desktop support or promote a release on this foundation alone.
+Do not promote a release on storage and unit checks alone.

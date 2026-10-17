@@ -18,6 +18,121 @@ pub struct Server {
     job: Option<win::Job>,
 }
 
+/// The desktop document channel stays in Rust. In particular, its token is never returned to
+/// the webview, and the only destinations are the two fixed document routes on our child.
+#[derive(Clone, PartialEq, Eq)]
+pub struct DocumentClient {
+    port: u16,
+    token: String,
+}
+
+#[cfg(test)]
+pub(crate) fn test_document_client(port: u16) -> DocumentClient {
+    DocumentClient { port, token: token() }
+}
+
+#[derive(Clone, Copy)]
+pub enum DocumentOperation {
+    Open,
+    Save,
+}
+
+const DOCUMENT_RESPONSE_LIMIT: usize = 64 * 1024 * 1024;
+const DOCUMENT_REQUEST_LIMIT: usize = 16 * 1024;
+const DOCUMENT_REQUEST_TIMEOUT: Duration = Duration::from_secs(120);
+
+impl DocumentClient {
+    pub fn request(
+        &self,
+        operation: DocumentOperation,
+        body: &serde_json::Value,
+    ) -> Result<serde_json::Value, serde_json::Value> {
+        let error = |message: &str| serde_json::json!({"error": message, "status": 503});
+        let body = serde_json::to_vec(body).map_err(|_| error("Invalid document request"))?;
+        if body.len() > DOCUMENT_REQUEST_LIMIT {
+            return Err(error("Document request exceeds its size limit"));
+        }
+        let path = match operation {
+            DocumentOperation::Open => "/api/native-document/open",
+            DocumentOperation::Save => "/api/native-document/save",
+        };
+        let address = SocketAddr::from(([127, 0, 0, 1], self.port));
+        let mut stream = TcpStream::connect_timeout(&address, Duration::from_secs(2))
+            .map_err(|_| error("The document server is unavailable"))?;
+        stream.set_write_timeout(Some(Duration::from_secs(10)))
+            .map_err(|_| error("Could not configure the document connection"))?;
+        let head = format!(
+            "POST {path} HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nContent-Type: application/json\r\nX-Fairbeam-Token: {token}\r\nContent-Length: {length}\r\nConnection: close\r\n\r\n",
+            port = self.port, token = self.token, length = body.len()
+        );
+        stream.write_all(head.as_bytes()).and_then(|_| stream.write_all(&body))
+            .map_err(|_| error("Could not send the document request"))?;
+        let deadline = Instant::now() + DOCUMENT_REQUEST_TIMEOUT;
+        let mut answer = Vec::new();
+        let mut buffer = [0u8; 16 * 1024];
+        loop {
+            let remaining = deadline.saturating_duration_since(Instant::now());
+            if remaining.is_zero() {
+                return Err(error("The document request timed out; reopen the file before retrying"));
+            }
+            stream.set_read_timeout(Some(remaining))
+                .map_err(|_| error("Could not configure the document connection"))?;
+            match stream.read(&mut buffer) {
+                Ok(0) => break,
+                Ok(count) => {
+                    if answer.len() + count > DOCUMENT_RESPONSE_LIMIT {
+                        return Err(error("Document response exceeds its size limit"));
+                    }
+                    answer.extend_from_slice(&buffer[..count]);
+                }
+                Err(e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
+                Err(_) => return Err(error("The document response was interrupted; reopen the file before retrying")),
+            }
+        }
+        parse_document_response(&answer)
+    }
+}
+
+fn parse_document_response(answer: &[u8]) -> Result<serde_json::Value, serde_json::Value> {
+    let invalid = || serde_json::json!({"error": "Invalid document server response", "status": 502});
+    let boundary = answer.windows(4).position(|part| part == b"\r\n\r\n").ok_or_else(invalid)?;
+    if boundary > 16 * 1024 {
+        return Err(invalid());
+    }
+    let head = std::str::from_utf8(&answer[..boundary]).map_err(|_| invalid())?;
+    let mut lines = head.split("\r\n");
+    let mut status_line = lines.next().ok_or_else(invalid)?.split_whitespace();
+    if !matches!(status_line.next(), Some("HTTP/1.0" | "HTTP/1.1")) {
+        return Err(invalid());
+    }
+    let status = status_line.next().and_then(|s| s.parse::<u16>().ok()).ok_or_else(invalid)?;
+    let mut length = None;
+    let mut json = false;
+    for line in lines {
+        let (name, value) = line.split_once(':').ok_or_else(invalid)?;
+        if name.eq_ignore_ascii_case("content-length") {
+            if length.is_some() { return Err(invalid()); }
+            length = Some(value.trim().parse::<usize>().map_err(|_| invalid())?);
+        } else if name.eq_ignore_ascii_case("transfer-encoding") {
+            return Err(invalid());
+        } else if name.eq_ignore_ascii_case("content-type") {
+            json = value.split(';').next().unwrap_or("").trim().eq_ignore_ascii_case("application/json");
+        }
+    }
+    let body = &answer[boundary + 4..];
+    if length != Some(body.len()) || !json {
+        return Err(invalid());
+    }
+    let mut value: serde_json::Value = serde_json::from_slice(body).map_err(|_| invalid())?;
+    let object = value.as_object_mut().ok_or_else(invalid)?;
+    if (200..300).contains(&status) {
+        Ok(value)
+    } else {
+        object.insert("status".into(), serde_json::json!(status));
+        Err(value)
+    }
+}
+
 pub fn free_port() -> Option<u16> {
     TcpListener::bind("127.0.0.1:0").ok()?.local_addr().ok().map(|a| a.port())
 }
@@ -81,6 +196,10 @@ pub fn http_ok(port: u16, path: &str) -> bool {
 }
 
 impl Server {
+    pub fn document_client(&self) -> DocumentClient {
+        DocumentClient { port: self.port, token: self.token.clone() }
+    }
+
     /// Spawn `cmd` (already configured with arguments and output) as the server.
     pub fn spawn(mut cmd: Command, port: u16) -> std::io::Result<Server> {
         let token = token();
@@ -256,6 +375,59 @@ mod tests {
     use super::*;
     use std::net::Shutdown;
     use std::thread::JoinHandle;
+
+    fn document_answer(status: u16, body: &str) -> Vec<u8> {
+        format!("HTTP/1.0 {status} Answer\r\nContent-Type: application/json; charset=utf-8\r\nContent-Length: {}\r\n\r\n{body}", body.len()).into_bytes()
+    }
+
+    #[test]
+    fn document_responses_preserve_conflicts_and_require_complete_json_objects() {
+        let value = parse_document_response(&document_answer(200, r#"{"file":{"id":"example"}}"#)).unwrap();
+        assert_eq!(value["file"]["id"], "example");
+        let conflict = parse_document_response(&document_answer(409, r#"{"error":"changed on disk","status":200}"#)).unwrap_err();
+        assert_eq!(conflict["status"], 409);
+        assert_eq!(conflict["error"], "changed on disk");
+        for body in ["[]", "null", "{", "{\"n\":NaN}"] {
+            assert!(parse_document_response(&document_answer(200, body)).is_err());
+        }
+        let mut truncated = document_answer(200, r#"{"ok":true}"#);
+        truncated.pop();
+        assert!(parse_document_response(&truncated).is_err());
+        assert!(parse_document_response(b"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 2\r\nContent-Length: 2\r\n\r\n{}").is_err());
+        assert!(parse_document_response(b"HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: 2\r\n\r\n{}").is_err());
+        assert!(parse_document_response(b"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 2\r\nTransfer-Encoding: chunked\r\n\r\n{}").is_err());
+    }
+
+    #[test]
+    fn document_channel_uses_only_its_child_and_private_token() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let task = thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            stream.set_read_timeout(Some(Duration::from_secs(3))).unwrap();
+            let mut request = Vec::new();
+            let mut buffer = [0u8; 1024];
+            loop {
+                let count = stream.read(&mut buffer).unwrap();
+                assert_ne!(count, 0);
+                request.extend_from_slice(&buffer[..count]);
+                if let Some(boundary) = request.windows(4).position(|p| p == b"\r\n\r\n") {
+                    let head = std::str::from_utf8(&request[..boundary]).unwrap();
+                    let length = head.split("\r\n").find_map(|line| line.strip_prefix("Content-Length: ")).unwrap().parse::<usize>().unwrap();
+                    if request.len() >= boundary + 4 + length { break; }
+                }
+            }
+            let request = String::from_utf8(request).unwrap();
+            assert!(request.starts_with("POST /api/native-document/open HTTP/1.1\r\n"));
+            assert!(request.contains("\r\nX-Fairbeam-Token: test-private-token\r\n"));
+            assert!(request.ends_with(r#"{"path":"example.fb"}"#));
+            stream.write_all(&document_answer(200, r#"{"file":{"id":"example"}}"#)).unwrap();
+        });
+        let client = DocumentClient { port, token: "test-private-token".into() };
+        let answer = client.request(DocumentOperation::Open, &serde_json::json!({"path":"example.fb"})).unwrap();
+        assert_eq!(answer["file"]["id"], "example");
+        task.join().unwrap();
+    }
 
     /// A one-shot HTTP server on 127.0.0.1: reads the request head, sends `parts` with a pause
     /// between them, closes its side and returns what its next read gives: Ok(0) when the client

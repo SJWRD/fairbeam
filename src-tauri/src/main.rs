@@ -25,6 +25,7 @@ mod i18n;
 #[cfg(target_os = "macos")]
 mod macos_update;
 mod paths;
+mod native_document;
 mod runtime;
 mod seed;
 mod server;
@@ -430,9 +431,13 @@ async fn save_download(
     let filter_name = extension.to_uppercase();
     let dialog_extension = extension.clone();
     let path = tauri::async_runtime::spawn_blocking(move || {
+        let parent = dialog_app
+            .get_webview_window("main")
+            .ok_or_else(|| "The export window is unavailable".to_string())?;
         dialog_app
             .dialog()
             .file()
+            .set_parent(&parent)
             .set_file_name(&name)
             .add_filter(filter_name, &[&dialog_extension])
             .blocking_save_file()
@@ -1921,9 +1926,19 @@ fn app_menu(handle: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
 
 fn main() {
     let builder = tauri::Builder::default()
+        // Register first: a second launch forwards its selected files before starting a server.
+        .plugin(tauri_plugin_single_instance::init(|app, args, cwd| {
+            native_document::queue_forwarded_arguments(app, args, &cwd);
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.show();
+                let _ = window.unminimize();
+                let _ = window.set_focus();
+            }
+        }))
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(Shell::default())
+        .manage(native_document::NativeDocuments::default())
         .on_menu_event(|app, event| {
             let close_window = event.id().as_ref() == "close-window";
             let id = event.id().as_ref();
@@ -1978,8 +1993,9 @@ fn main() {
                 }
             }
         })
-        .invoke_handler(tauri::generate_handler![splash_state, retry, install_runtime, use_managed, set_prefer_gpu, set_gpu_build, choose_python, reveal_download, reveal_design, save_download, get_general_settings, set_update_check_on_start, check_updates_now, set_language, sync_native_menu_availability, open_workspace, pick_workspace_folder, pick_blender_executable, set_workspace_folder, install_gpu_runtime, set_gpu_runtime_enabled, open_external_link, remember_recent_design, telemetry::telemetry_status, telemetry::telemetry_set_consent, telemetry::telemetry_preview, telemetry::telemetry_reset_id, antenlab_import::take_imported_viewer_prefs])
+        .invoke_handler(tauri::generate_handler![splash_state, retry, install_runtime, use_managed, set_prefer_gpu, set_gpu_build, choose_python, reveal_download, reveal_design, save_download, get_general_settings, set_update_check_on_start, check_updates_now, set_language, sync_native_menu_availability, open_workspace, pick_workspace_folder, pick_blender_executable, set_workspace_folder, install_gpu_runtime, set_gpu_runtime_enabled, open_external_link, remember_recent_design, telemetry::telemetry_status, telemetry::telemetry_set_consent, telemetry::telemetry_preview, telemetry::telemetry_reset_id, antenlab_import::take_imported_viewer_prefs, native_document::native_document_open, native_document::native_document_save, native_document::native_document_next_open, native_document::native_document_restore])
         .setup(|app| {
+            native_document::queue_startup_arguments(app.handle());
             // the menu reads the saved recent designs, so it is built once the path resolver exists
             // (Builder::menu runs before setup and panicked: state() called before manage())
             let menu = app_menu(app.handle())?;
@@ -2039,6 +2055,10 @@ fn main() {
         .build(tauri::generate_context!())
         .expect("failed to build the Fairbeam app");
     app.run(|handle, event| {
+        #[cfg(target_os = "macos")]
+        if let RunEvent::Opened { ref urls } = event {
+            native_document::queue_open_paths(handle, urls.iter().filter_map(|url| url.to_file_path().ok()));
+        }
         if let RunEvent::Exit = event {
             stop_server(handle);
         }

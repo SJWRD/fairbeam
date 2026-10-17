@@ -6,6 +6,8 @@ import { DESIGN_ID_RE, RESERVED_DESIGN_ID_RE, suggestDesignId } from "../lib/des
 import { t } from "../i18n";
 import type { Design } from "../designer/types";
 import { createDesign } from "../designer/store";
+import { documentEnvelope } from "../lib/fairbeamDocument";
+import { showToast } from "../lib/toast";
 
 /** The file's JSON when it is a design file (fairbeam.design/1, e.g. Export > Current design JSON), else null (a result
  * file, or anything the result loader reports). */
@@ -52,6 +54,20 @@ export async function openUserProject(file: string | File): Promise<boolean> {
   // before anything is read: a preview that lands meanwhile must not replace what is opened
   invalidatePreview();
   if (typeof file !== "string") {
+    if (/\.fb$/i.test(file.name)) {
+      try {
+        if (file.size > 40 * 1024 * 1024) throw new Error(t("document.tooLarge"));
+        const document = documentEnvelope(JSON.parse(await file.text()));
+        // A browser File has no trusted parent path. Import only the embedded design; the
+        // existing server validates its complete schema before adding it to the workspace.
+        const opened = await importDesign(document.design as unknown as Design, file.name);
+        if (opened) showToast(t("document.browserImport"));
+        return opened;
+      } catch (error) {
+        setLoadError(t("load.designImportFailed", { file: file.name, error: String(error) }));
+        return false;
+      }
+    }
     const design = await designIn(file);
     if (design) return importDesign(design, file.name);
   }

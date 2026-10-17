@@ -19,6 +19,9 @@ export interface DesignerIODependencies {
   restoreModelSelection: (file: DesignFile | null) => void;
   /** a design was opened (and its backup, if any, restored): the 3D view takes the draft's opening view */
   openedDesign?: (file: DesignFile) => void;
+  /** Persist the saved workspace revision in its selected native document. A failed/cancelled
+   * external save keeps the new workspace hash but never marks the draft fully saved. */
+  persistSavedDesign?: (file: DesignFile, hash: string, saveAs: boolean) => Promise<{ file?: DesignFile; warnings?: string[] } | void>;
 }
 /** IO owns no global registration or viewport: dependencies belong to its captured session. */
 export function createDesignerIO(core: Core, deps: DesignerIODependencies) {
@@ -29,8 +32,15 @@ export function createDesignerIO(core: Core, deps: DesignerIODependencies) {
   let navigationTarget: string | null = null;
   /** The draft revision the user chose not to save before a replacement ("Don't save"); any later
    * edit takes the release back. */
-  let released: ReturnType<typeof asyncState.ticket> | null = null;
-  const isReleased = () => !!released && asyncState.isDraftCurrent(released);
+  let released: { draft: ReturnType<typeof asyncState.ticket>; results: string } | null = null;
+  const isReleased = () => !!released && asyncState.isDraftCurrent(released.draft) && released.results === core.pendingResultsToken();
+
+  function savedNotice(note: NonNullable<ReturnType<typeof core.message>>, warnings: readonly string[]) {
+    if (!warnings.length) { showSaveNote(note); return; }
+    core.forgetSaveNote();
+    setMessage({ tone: "warn", text: t("document.saveWarnings", { count: warnings.length }) +
+      (note.text === t("store.saved") ? "" : ` ${note.text}`), sticky: true });
+  }
 
   function take(f: DesignFile) {
     if (!alive()) return;
@@ -64,15 +74,17 @@ export function createDesignerIO(core: Core, deps: DesignerIODependencies) {
     if (!alive()) return;
     const mine = asyncState.navigationTicket();
     const draftAtOpen = asyncState.ticket();
+    const resultsAtOpen = core.pendingResultsToken();
     navigationTarget = id;
     deps.stopPreview();
     setLoading(true);
     setMessage(null);
     const keepNewerEdits = () => {
-      if (asyncState.isDraftCurrent(draftAtOpen)) return false;
+      const newResults = core.pendingResultsToken() !== resultsAtOpen;
+      if (asyncState.isDraftCurrent(draftAtOpen) && !newResults) return false;
       released = null;
       deps.restoreModelSelection(file());
-      setMessage({ tone: "warn", text: t("store.openCancelledByEdit"), sticky: true });
+      setMessage({ tone: "warn", text: t(newResults ? "document.openCancelledByResults" : "store.openCancelledByEdit"), sticky: true });
       if (alive() && asyncState.isOwnedNavigationCurrent(mine)) deps.schedulePreview();
       return true;
     };
@@ -106,8 +118,9 @@ export function createDesignerIO(core: Core, deps: DesignerIODependencies) {
   // Run/Optimize and save-before-navigation must keep using the originally opened version.
   const save = () => saveWithIntent(false);
   const saveExplicit = () => saveWithIntent(true);
+  const saveAs = () => saveWithIntent(false, true);
 
-  async function saveWithIntent(overwriteConflict: boolean): Promise<boolean> {
+  async function saveWithIntent(overwriteConflict: boolean, copy = false): Promise<boolean> {
     const f = file();
     if (!alive() || !f || saving()) return false;
     const ticket = asyncState.ticket();
@@ -120,21 +133,56 @@ export function createDesignerIO(core: Core, deps: DesignerIODependencies) {
       const d = JSON.parse(snapshot()) as Design;
       const res = await deps.transport.saveDesign(f, d, (overwriteConflict ? conflict() : null) ?? f.hash);
       if (!currentSave()) return false;
+      let replacement: DesignFile | void;
+      let warnings: string[] = [];
+      try {
+        const persisted = await deps.persistSavedDesign?.(f, res.hash, copy);
+        replacement = persisted?.file;
+        warnings = persisted?.warnings ?? [];
+      } catch (error) {
+        if (currentSave()) {
+          batch(() => {
+            // The workspace revision really changed. Retain the old saved baseline so retry
+            // writes with the new hash, while the draft/backup and close warning stay intact.
+            setFile({ ...f, hash: res.hash });
+            core.setPersistencePending(true);
+            setConflict(null);
+            setMessage({ tone: "critical", text: (error as Error).message, sticky: true });
+          });
+        }
+        return false;
+      }
+      if (!currentSave()) return false;
+      if (replacement && replacement.id !== f.id) {
+        if (!asyncState.isDraftCurrent(ticket) || core.resultsPending()) {
+          setFile({ ...f, hash: res.hash });
+          core.setPersistencePending(true);
+          savedNotice({ tone: "warn", text: t("document.copySavedNewer") }, warnings);
+          return false;
+        }
+        deps.clearBackup(f);
+        take(replacement);
+        deps.restoreModelSelection(replacement);
+        deps.schedulePreview();
+        savedNotice({ tone: "good", text: t("store.saved") }, warnings);
+        return true;
+      }
       deps.clearBackup(f);
       setFile({ ...f, design: d, hash: res.hash });
+      core.setPersistencePending(false);
       setConflict(null);
       if (!asyncState.isDraftCurrent(ticket)) {
         if (res.validation.model) deps.applyModelEntry(res.validation.model);
-        showSaveNote({ tone: "good", text: t("store.savedNewer") });
+        savedNotice({ tone: "good", text: t("store.savedNewer") }, warnings);
         return false;
       }
       applyValidation(res.validation, ticket);
       const list = res.validation.checks ?? [];
       const errors = list.filter((c) => c.severity === "error").length;
-      const warnings = list.filter((c) => c.severity === "warning").length;
-      showSaveNote(errors || !res.validation.valid
+      const checkWarnings = list.filter((c) => c.severity === "warning").length;
+      savedNotice(errors || !res.validation.valid
         ? { tone: "warn", text: errors ? t("store.savedErrors", { count: errors }) : t("store.savedNoBuild") }
-        : { tone: warnings ? "warn" : "good", text: warnings ? t("store.savedWarnings", { count: warnings }) : t("store.saved") });
+        : { tone: checkWarnings ? "warn" : "good", text: checkWarnings ? t("store.savedWarnings", { count: checkWarnings }) : t("store.saved") }, warnings);
       return true;
     } catch (e) {
       if (!currentSave()) return false;
@@ -183,10 +231,10 @@ export function createDesignerIO(core: Core, deps: DesignerIODependencies) {
     asyncState.invalidatePreview();
     if (!core.isDisposed()) { setLoading(false); setSaving(false); }
   }
-  return { take, openDesign, save, saveExplicit, saveBeforeLeaving, restoreRecoveredDraft, applyValidation, isReleased, dispose,
+  return { take, openDesign, save, saveExplicit, saveAs, saveBeforeLeaving, restoreRecoveredDraft, applyValidation, isReleased, dispose,
     navigationTarget: () => navigationTarget,
     setNavigationTarget: (id: string | null) => { if (alive()) navigationTarget = id; },
-    releaseDraft: () => { if (alive()) released = asyncState.ticket(); },
+    releaseDraft: () => { if (alive()) released = { draft: asyncState.ticket(), results: core.pendingResultsToken() }; },
     forgetRelease: () => { released = null; }, cancelNavigation,
   };
 }

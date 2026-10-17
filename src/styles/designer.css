@@ -300,6 +300,11 @@ textarea.dz-autogrow { resize: none; overflow-y: auto; min-height: 0; max-height
 .dw-file { font-size: var(--al-text-xs); }
 .dw-title > * { min-width: 0; max-width: 100%; overflow-wrap: anywhere; }
 .dw-left .dz-tree { border-right: 0; }
+.fb-document-info { padding: var(--al-space-2) var(--al-space-3); border-bottom: 1px solid var(--al-border); font-size: var(--al-text-xs); overflow-wrap: anywhere; }
+.fb-document-info summary { cursor: pointer; padding-block: var(--al-space-1); }
+.fb-document-info > div { max-height: 32vh; overflow: auto; padding-block: var(--al-space-2); }
+.fb-document-info p { margin: 0; }
+.fb-document-info ul { padding-inline-start: var(--al-space-4); margin: 0; }
 .dw-right .dz-msg { margin: var(--al-space-2) var(--al-space-3) 0; }
 .dz-recovery { margin: var(--al-space-2) var(--al-space-3) 0; font-size: var(--al-text-sm); }
 .dz-recovery > summary { padding: var(--al-space-2) 0; cursor: pointer; color: var(--al-text); }

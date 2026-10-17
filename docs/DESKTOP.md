@@ -9,6 +9,24 @@ runtime installer (`runtime/`) and the platform packaging.
 How to use the app's designer (modeling, simulation settings, running from the model) is in
 [DESIGNER.md](DESIGNER.md).
 
+The development shell uses one process and one main window per application identity. A second launch forwards `.fb`
+arguments to the running process, resolving relative paths against the second launch's working
+directory, then shows and focuses the existing window. The selected files stay queued through
+startup and go through the viewer's Save / Don't save / Cancel decision before opening. It does
+not start another server against the same workspace. The official single-instance plugin runs
+before other plugins; version 2.4.0 is pinned to retain the Tauri 2.11 dependency graph. Installed
+file associations and second-launch behavior still require native round-trip verification on
+Windows and macOS before `.fb` support ships; see [FB-DOCUMENT.md](FB-DOCUMENT.md).
+Opening another project and comparing results use the existing window. Separate native editors
+are still future work; launching the same application with a different workspace does not create
+another independent process. Development previews use a separate application identity.
+
+Reloading the viewer can recover the most recently authorized document binding for the same
+workspace model and running server session. The shell retains only its opaque handle, selected
+path, document identity and revision, and result references and warnings. This lookup does not
+read a file, reopen a document, or restore cached design content. Restarting the server expires
+these bindings; the user must select the document again.
+
 **File › Close Design** (desktop only) returns to the Start screen, asking Save / Don't save /
 Cancel for an edited design. It keeps the app and run server open. Ctrl+W on Windows and Cmd+W on
 macOS belong to the Close Window menu item, which does the same while a design is open and closes

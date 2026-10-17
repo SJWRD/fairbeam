@@ -7,7 +7,7 @@ import { Box, CircuitBoard, CopyPlus, FilePlus2, FileCode, FileUp, FolderOpen, L
 import { ApiError } from "../runner/api";
 import { models, openRunPanel, openExampleCopy, probeServer, refreshModels, serverState } from "../runner/store";
 import { isDesktopShell } from "../lib/telemetry";
-import { confirmReplaceDraft, createDesign, deleteDesign, dirty, enterDesign, file } from "../designer/store";
+import { confirmReplaceDraft, createDesign, deleteDesign, dirty, enterDesign, file, openNativeDocument } from "../designer/store";
 import { openUserProject } from "../runner/openProject";
 import { index } from "../state";
 import { exampleGroups } from "../lib/examplePicker";
@@ -274,6 +274,11 @@ export default function Home() {
                   </button>
                 </form>
                 <div class="home-import">
+                  <Show when={isDesktopShell()}>
+                    <button class="btn btn-ghost" type="button" onClick={() => void openNativeDocument()} disabled={!online()}>
+                      <FolderOpen size={14} aria-hidden="true" /> {t("document.open")}
+                    </button>
+                  </Show>
                   <button class="btn btn-ghost" type="button" onClick={() => setCstImportOpen(true)}
                     title={t("home.importCst.title")}>
                     <FileUp size={14} aria-hidden="true" /> {t("home.importCst.button")}

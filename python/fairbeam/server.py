@@ -86,7 +86,7 @@ from urllib.parse import parse_qs, urlsplit
 
 from .procutil import WINDOWS, popen_group, release_group
 from ._meta import __version__
-from . import blender_find, blender_job, modelfiles, renders, resources, static, usermaterials
+from . import blender_find, blender_job, documents, modelfiles, renders, resources, static, usermaterials
 from .jobs import PACKAGE_ROOT, JobManager, child_env
 
 LOOPBACK_HOSTS = {"127.0.0.1", "localhost", "::1", "[::1]"}
@@ -615,6 +615,12 @@ class App:
         self.render_jobs = blender_job.RenderManager(self.models_dir.parent)
 
         def finished(job):
+            try:
+                self.documents.record_completed(job)
+            except Exception as exc:
+                # Export provenance is optional; it must never stop completion or a study's
+                # next run. Unrecorded results are excluded from .fb saves with a warning.
+                print(f"fairbeam serve: result provenance was not recorded: {type(exc).__name__}", flush=True)
             if job.kind == "research" and not job.bundle:
                 return  # cavity/periodic results have no ordinary viewer bundle
             if self.projects_dir.exists():
@@ -624,6 +630,8 @@ class App:
 
         self.manager = manager or JobManager(self.jobs_dir, self.projects_dir, python=self.python,
                                              sim_root=self.sim_root)
+        from .document_workspace import DocumentWorkspace
+        self.documents = DocumentWorkspace(self.models_dir, self.projects_dir, self.history_dir, self.manager)
         from .convergence import ServerStudies
         self.studies = ServerStudies(self.manager, self.projects_dir)
         self.engines = detect_engines(self.python)
@@ -1185,7 +1193,14 @@ class App:
         return checks
 
     def design_file(self, model_id: str) -> dict:
-        return {**modelfiles.read_design_file(self.models_dir, model_id), "backup_scope": self.backup_scope}
+        file = {**modelfiles.read_design_file(self.models_dir, model_id), "backup_scope": self.backup_scope}
+        try:
+            identity = self.documents.document_id_for(model_id)
+        except (ValueError, OSError, modelfiles.ModelFileError) as exc:
+            raise ApiError(409, f"Document workspace identity could not be read: {exc}") from exc
+        if identity is not None:
+            file["document_id"] = identity
+        return file
 
     def _require_backup_scope(self, body: dict) -> None:
         # Omission preserves old clients. A supplied unknown/mismatched scope is never a fallback.
@@ -1920,6 +1935,8 @@ class Handler(BaseHTTPRequestHandler):
             ("GET", r"/api/health", lambda: self._json(200, app.health())),
             ("POST", r"/api/preflight", lambda: self._json(200, app.preflight(self._body()))),
             ("POST", r"/api/shutdown", self._shutdown),
+            ("POST", r"/api/native-document/open", lambda: self._native_document("open")),
+            ("POST", r"/api/native-document/save", lambda: self._native_document("save")),
             ("GET", r"/api/blender", lambda: self._json(200, app.blender_info((parse_qs(urlsplit(self.path).query).get("path") or [""])[0]))),
             ("POST", r"/api/blender/open-download", lambda: (self._body(), self._json(200, app.open_blender_download()))[1]),
             ("POST", r"/api/render-jobs", lambda: self._json(201, app.submit_render(self._body(MAX_RENDER_JOB_BODY)))),
@@ -2008,6 +2025,57 @@ class Handler(BaseHTTPRequestHandler):
         self._error(405, "method not allowed")
 
     # ---- desktop shell
+
+    def _native_document(self, action):
+        """Only the native file picker/OS-open bridge may grant filesystem paths.
+
+        This token stays in the launching shell and server, never in viewer JavaScript.
+        Ordinary browser API clients cannot open or overwrite arbitrary local files.
+        """
+        import hmac
+
+        token = os.environ.get("FAIRBEAM_SHUTDOWN_TOKEN") or ""
+        if not token:
+            raise ApiError(404, "native document commands require the desktop shell")
+        if not hmac.compare_digest((self.headers.get("X-Fairbeam-Token") or "").encode("utf-8"), token.encode("utf-8")):
+            raise ApiError(403, "native document authorization required")
+        if "Origin" in self.headers or any(name.lower().startswith("sec-fetch-") for name in self.headers):
+            raise ApiError(403, "native document commands are not a browser API")
+        body = self._body(16 * 1024)
+        allowed = {"path"} if action == "open" else {"path", "model_id", "workspace_hash", "base_hash", "document_id", "save_as"}
+        if set(body) - allowed or not isinstance(body.get("path"), str) or not body["path"]:
+            raise ApiError(400, "invalid native document request")
+        if action == "save" and (not isinstance(body.get("model_id"), str)
+                or not isinstance(body.get("workspace_hash"), str)
+                or not re.fullmatch(r"[0-9a-f]{64}", body.get("workspace_hash", ""))
+                or not isinstance(body.get("save_as", False), bool)
+                or (body.get("base_hash") is not None and (not isinstance(body["base_hash"], str)
+                    or not re.fullmatch(r"[0-9a-f]{64}", body["base_hash"])))
+                or (body.get("document_id") is not None and not isinstance(body["document_id"], str))):
+            raise ApiError(400, "invalid native document save request")
+        if not Path(body["path"]).is_absolute():
+            raise ApiError(400, "native document paths must be absolute")
+        try:
+            if action == "open":
+                result = self.app.documents.open(Path(body["path"]))
+            else:
+                result = self.app.documents.save(Path(body["path"]), body["model_id"], body["workspace_hash"],
+                    base_hash=body.get("base_hash"), document_id=body.get("document_id"), save_as=body.get("save_as", False))
+        except documents.DocumentConflict as exc:
+            raise ApiError(409, str(exc)) from exc
+        except documents.DocumentError as exc:
+            raise ApiError(400, str(exc)) from exc
+        except OSError as exc:
+            raise ApiError(409, f"Document file could not be accessed: {exc}") from exc
+        result["file"]["backup_scope"] = self.app.backup_scope
+        from .cli import rebuild_index
+        try:
+            rebuild_index(self.app.projects_dir)
+        except Exception as exc:
+            # The document may already be committed. Return its new revision so a later
+            # Save remains usable; result-index refresh is recoverable independently.
+            result["warnings"].append(f"The result index could not be refreshed: {type(exc).__name__}")
+        self._json(200, result)
 
     def _shutdown(self):
         """Clean stop requested by the desktop shell, which started us with FAIRBEAM_SHUTDOWN_TOKEN

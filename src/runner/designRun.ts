@@ -20,6 +20,7 @@ import { attach, invalidatePreview, jobs, live, meshSource, models, notice, refr
 
 import { designDockTab, setDesignDockTab } from "../designer/dockState";
 import { t } from "../i18n/index.ts";
+import { documentResultFiles, hasDocumentResultScope, nativeDocumentFor } from "../lib/nativeDocuments";
 import { meshStats } from "../designer/meshStats";
 export { designDockTab, setDesignDockTab, type DesignDockTab } from "../designer/dockState";
 export const [runDialogOpen, setRunDialogOpen] = createSignal(false);
@@ -48,6 +49,7 @@ export const designResult = createRoot(() => createMemo(() => {
   const run = storedDesignResult();
   const target = designResultLoading() ?? failedResultLoad()?.file;
   return run && (!target || target === run.file) &&
+    (documentResultFiles(designFile(), jobs())?.has(run.file) ?? true) &&
     matchesResultIndex(index().find(entry => entry.file === run.file), run.bundle) ? run : null;
 }));
 /** A replaced result stays selected while reloading or waiting for an explicit Retry. */
@@ -61,7 +63,7 @@ export const retryResultLoad = () => { const f = failedResultLoad(); if (f) void
 /** The live job when it is the designer's run. */
 export const designJob = (): Job | null => (live.job && live.job.id === designJobId() ? live.job : null);
 const belongsToDesign = (job: Job) => job.model === designFile()?.id ||
-  (job.research?.backend === "elmer" && job.research.settings.analysis === "driven" && job.model_id === designFile()?.design.model.id);
+  (!hasDocumentResultScope(designFile()) && job.research?.backend === "elmer" && job.research.settings.analysis === "driven" && job.model_id === designFile()?.design.model.id);
 
 /** Show a server run in the designer's dock (its Run tab follows it), whoever started it: a run
  * picked in the dock's Queue tab, or a run of the open design another client started (#7, #8). */
@@ -155,6 +157,7 @@ const follower = new ResultFollow();
 export async function loadDesignResult(file: string, jobId?: string, refreshIndex = false): Promise<boolean> {
   const expectedModel = designFile()?.design.model.id;
   if (!expectedModel) return false;
+  if (documentResultFiles(designFile(), jobs())?.has(file) === false) return false;
   const mine = ++resultSeq;
   resultController?.abort();
   const controller = new AbortController();
@@ -198,6 +201,7 @@ export async function loadDesignResult(file: string, jobId?: string, refreshInde
     const entry = index().find(entry => entry.file === file);
     if (resultStamp(entry) !== stamp) return false;
     if (!matchesResultIndex(entry, v.bundle)) throw new Error(t("load.runResultChanged"));
+    if (documentResultFiles(designFile(), jobs())?.has(file) === false) return false;
     requireDesignResult(v.bundle, expectedModel);
     setDesignResult({ file, bundle: v.bundle, jobId });
     // a run that did not converge keeps the dock on its Run tab: that is where the warning is
@@ -271,7 +275,7 @@ createRoot(() => {
     if (mode === "design" && designFile()) { quickPreview(); schedulePreview(0); }
   }));
   // SSE completion refreshes job history; entering a design also picks up external runs.
-  createEffect(on(() => designFile()?.id, () => {
+  createEffect(on([() => designFile()?.id, () => designFile()?.backup_scope, () => nativeDocumentFor(designFile())?.handle], () => {
     const running = designJob();
     const keepJob = running && !isTerminal(running.status) ? running.id : null;
     clearDesignResult();

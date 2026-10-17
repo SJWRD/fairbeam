@@ -69,6 +69,8 @@ export interface DesignFile {
   readonly: boolean;
   /** Captured with this file response; do not substitute a later health response. */
   backup_scope?: string;
+  /** Portable identity only; never grants access to a filesystem path. */
+  document_id?: string;
 }
 
 export interface PythonDesignSource {
