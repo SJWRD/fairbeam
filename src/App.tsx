@@ -268,12 +268,15 @@ export default function App() {
     if (await probe && !disposed) {
       let ready = false, busy = false;
       const attempted = new Set<string>();
+      const hasOpenModal = () => !!document.querySelector(".scrim, [aria-modal='true'], dialog[open]");
       const openPending = async () => {
-        if (!ready || busy || !nativeDocumentsAvailable()) return false;
+        if (!ready || busy || !nativeDocumentsAvailable() || hasOpenModal()) return false;
         busy = true;
         try {
           const pending = await pendingNativeDocument([...attempted]);
-          if (!ready) return false;
+          // A modal can open while the shell is finding the next request. Leave the
+          // request queued until it closes; do not replace its underlying document.
+          if (!ready || hasOpenModal()) return false;
           if (!pending || attempted.has(pending.handle)) return false;
           const opened = await openNativeDocument(pending.handle, pending.displayName);
           // A save or another open may be finishing. Retry that request on the next poll;

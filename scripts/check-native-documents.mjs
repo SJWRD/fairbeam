@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import {build} from 'vite';
 import {fileURLToPath} from 'node:url';
+import {readFileSync} from 'node:fs';
 const root=fileURLToPath(new URL('../',import.meta.url)).replaceAll('\\','/');
 const built=await build({root,configFile:false,logLevel:'silent',resolve:{conditions:['browser']},build:{write:false,minify:false,lib:{entry:root+'src/lib/nativeDocuments.ts',formats:['es']}}});
 globalThis.localStorage={getItem:()=>null,setItem(){},removeItem(){}};
@@ -54,4 +55,34 @@ await assert.rejects(native.persistNativeDocument(original,'snapshot',false),/ch
 delete globalThis.window;
 assert.equal(native.nativeDocumentsAvailable(),false);
 assert.equal(await native.persistNativeDocument(original,'snapshot',false),undefined);
+
+// Exercise the actual App queue body with controlled async shell replies. Browser coverage
+// separately checks the real modal selector; this test needs neither a desktop nor a server.
+const app=readFileSync(root+'src/App.tsx','utf8');
+const queueSource=app.match(/const openPending = async \(\) => \{([\s\S]*?)\n      \};/)?.[1];
+assert.ok(queueSource,'App owns the pending-open queue');
+const deferred=()=>{let resolve;const promise=new Promise(yes=>resolve=yes);return {promise,resolve};};
+let blocked=true,peeks=0,opens=0,reply=true,peek=async()=>({handle:'queued',displayName:'Queued.fb'});
+const queue=Function('nativeDocumentsAvailable','hasOpenModal','pendingNativeDocument','openNativeDocument',`
+  let ready=true,busy=false;const attempted=new Set();
+  const run=async()=>{${queueSource}};
+  return {run,attempted,stop:()=>{ready=false;}};
+`)(()=>true,()=>blocked,async excluded=>{peeks++;return excluded.includes('queued')?null:peek();},async()=>{opens++;return reply;});
+assert.equal(await queue.run(),false);assert.equal(peeks,0);assert.equal(opens,0,'a modal defers the entire request');
+blocked=false;
+const delayedPeek=deferred();peek=()=>delayedPeek.promise;
+const firstOpen=queue.run();blocked=true;
+delayedPeek.resolve({handle:'queued',displayName:'Queued.fb'});
+assert.equal(await firstOpen,false);assert.equal(opens,0);assert.equal(queue.attempted.size,0,'a new modal leaves the handle retryable');
+blocked=false;peek=async()=>({handle:'queued',displayName:'Queued.fb'});
+reply=null;assert.equal(await queue.run(),false);assert.equal(queue.attempted.size,0,'an in-flight designer operation remains retryable');
+reply=false;assert.equal(await queue.run(),false);assert.equal(queue.attempted.has('queued'),true,'explicit cancellation waits for another OS-open event');
+const afterCancel=opens;assert.equal(await queue.run(),false);assert.equal(opens,afterCancel);
+queue.attempted.clear();reply=true;assert.equal(await queue.run(),true);
+queue.attempted.clear();const shutdownPeek=deferred();peek=()=>shutdownPeek.promise;
+const finishing=queue.run();const beforeBusyPeek=peeks;
+assert.equal(await queue.run(),false);assert.equal(peeks,beforeBusyPeek,'concurrent polls do not duplicate the shell request');
+queue.stop();shutdownPeek.resolve({handle:'queued',displayName:'Queued.fb'});
+const beforeShutdown=opens;assert.equal(await finishing,false);assert.equal(opens,beforeShutdown,'a disposed app cannot open a late reply');
 console.log('Native documents: opaque grant payload, scope isolation, cancellation, stale binding, independent Save As, queue exclusions, JSON import and browser fallback pass');
+console.log('Native queue: modal deferral before/after shell reply, retry, cancel, concurrent poll and disposal pass');

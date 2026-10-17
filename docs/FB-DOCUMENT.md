@@ -7,7 +7,8 @@ release. Existing design JSON and result bundles remain supported.
 ## Desktop workflow
 
 - File > Open selects a `.fb` document or imports legacy JSON. A second launch forwards `.fb`
-  paths to the running window. Unsaved changes are handled before opening a queued document.
+  paths to the running window. Queued requests wait while a modal window is open. Unsaved
+  changes are handled before opening a queued document.
 - Save writes the workspace revision first, then the selected `.fb` file. The first save opens
   a native file picker. Canceling or failing that second step keeps the draft marked unsaved;
   retry uses the workspace revision that was actually written.
