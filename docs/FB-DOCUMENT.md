@@ -173,6 +173,18 @@ competing creates, and parent-directory lock identities; these do not replace te
 Metadata mocks cover descriptor query errors, ACLs, attributes, and ownership refusal. Native
 platform tests check Linux xattr refusal and macOS ACL/Finder-tag refusal on temporary fixtures.
 
+For manual local I/O measurements without a solver or network, run
+`python scripts/benchmark-document-io.py --bundles 500 --padding-kib 4 --repeats 3 --output current.json`
+from the repository root. Repeat with the same fixture arguments and either
+`--per-reference-manifest` (a fresh validated reader per reference) or
+`--legacy-result-reader` (an isolated second result read/hash). These are separate cost baselines,
+not complete historical implementations. The default fixture is eight bundles with 8 MiB padding;
+fixtures are limited to 1,000 bundles and 256 MiB total padding. Reports count actual reader bytes,
+result hashes, design hashes, and manifest validations. Each Open must match an unmodified-reader
+control exactly, including references, statuses, and copied bytes; sidecar hashes, sizes, and
+modification times must stay unchanged. Use new report filenames and compare alternating runs;
+cache priming and verification are outside the measured operation.
+
 ## Remaining release gates
 
 - Round-trip desktop checks on Windows and macOS: Save/Open/cancel, an already running app,

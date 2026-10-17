@@ -89,12 +89,17 @@ def _uuid(value: str) -> str:
     return value
 
 
-def _result_bytes(path: Path, document: dict, reference: dict) -> bytes:
-    # Copy the same immutable byte snapshot whose boundary, checksum and JSON were checked.
-    raw, result = doc._read_result_content(path, document, reference)
-    if result.get("model", {}).get("id") != document["design"]["model"]["id"]:
+def _checked_result_model(content: tuple[bytes, dict], model_id: str) -> bytes:
+    raw, result = content
+    if result.get("model", {}).get("id") != model_id:
         raise doc.DocumentError("Result model identity does not match this document")
     return raw
+
+
+def _result_bytes(path: Path, document: dict, reference: dict) -> bytes:
+    # Copy the same immutable byte snapshot whose boundary, checksum and JSON were checked.
+    reader = doc._ResultReader(path, document)
+    return _checked_result_model(reader.read(reference), reader.model_id)
 
 
 class DocumentWorkspace:
@@ -219,13 +224,14 @@ class DocumentWorkspace:
         return value
 
     def _import_results(self, path: Path, document: dict) -> tuple[list[dict], list[dict], list[str]]:
-        current = doc.design_digest(document["design"])
+        reader = doc._ResultReader(path, document)
+        current = reader.design_sha256
         records, statuses, warnings = [], [], []
-        for reference in document["results"]:
+        for reference in reader.references():
             record = dict(reference)
             try:
-                raw = _result_bytes(path, document, reference)
-                name = self._project_name(document["id"], reference["sha256"])
+                raw = _checked_result_model(reader.read(reference), reader.model_id)
+                name = self._project_name(reader.document_id, reference["sha256"])
                 _immutable(self.projects_dir / name, raw)
                 record["project_file"] = name
                 statuses.append(self._status(reference, current, name))

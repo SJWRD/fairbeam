@@ -6,6 +6,8 @@ accuracy or convergence. Writers use optimistic concurrency and a shared OS advi
 """
 from __future__ import annotations
 
+import copy
+from collections.abc import Mapping
 import errno
 import hashlib
 import json
@@ -559,27 +561,72 @@ def save(path: Path, document: dict, base_hash: str | None = None) -> str:
     return digest(data)
 
 
+class _ResultReader:
+    """One owned manifest snapshot; every result still gets fresh filesystem checks."""
+
+    _FIELDS = ("file", "sha256", "design_sha256")
+    _FIELD_SET = frozenset(_FIELDS)
+
+    def __init__(self, path: Path, document: dict):
+        path = _path(path)
+        try:
+            snapshot = copy.deepcopy(document)
+        except (TypeError, ValueError, RecursionError) as exc:
+            raise DocumentError("Document could not be snapshotted") from exc
+        validate(snapshot)
+        self._folder = path.parent / snapshot["results_directory"]
+        self._references = tuple(tuple(ref[field] for field in self._FIELDS)
+                                 for ref in snapshot["results"])
+        self._allowed = frozenset(self._references)
+        self._document_id = snapshot["id"]
+        self._model_id = snapshot["design"]["model"]["id"]
+        self._design_sha256 = design_digest(snapshot["design"])
+
+    @property
+    def document_id(self) -> str:
+        return self._document_id
+
+    @property
+    def model_id(self) -> str:
+        return self._model_id
+
+    @property
+    def design_sha256(self) -> str:
+        return self._design_sha256
+
+    def references(self):
+        # Yield fresh dictionaries without exposing the owned immutable triples.
+        return (dict(zip(self._FIELDS, ref)) for ref in self._references)
+
+    def read(self, reference: dict) -> tuple[bytes, dict]:
+        if not isinstance(reference, Mapping):
+            raise DocumentError("Result does not belong to this document")
+        reference = dict(reference)
+        if reference.keys() != self._FIELD_SET:
+            raise DocumentError("Result does not belong to this document")
+        key = tuple(reference[field] for field in self._FIELDS)
+        if any(not isinstance(value, str) for value in key) or key not in self._allowed:
+            raise DocumentError("Result does not belong to this document")
+        name, checksum, _ = key
+        info = self._folder.lstat()
+        if _linked(info) or not stat.S_ISDIR(info.st_mode):
+            raise DocumentError("Results directory must be a real directory, not a link")
+        data = _read_bytes(self._folder / name, MAX_RESULT)
+        if digest(data) != checksum:
+            raise DocumentError("Result checksum does not match the document")
+        try:
+            result = json.loads(data.decode("utf-8-sig"), object_pairs_hook=_unique_object)
+        except (ValueError, UnicodeError, RecursionError) as exc:
+            raise DocumentError("Result is not valid JSON") from exc
+        if not isinstance(result, dict) or result.get("schema") != "fairbeam.project/1":
+            raise DocumentError("Unsupported result schema")
+        _json_bytes(result)
+        return data, result
+
+
 def _read_result_content(path: Path, document: dict, reference: dict) -> tuple[bytes, dict]:
     """Return the exact byte snapshot and parsed result that passed every read check."""
-    path = _path(path)
-    validate(document)
-    if reference not in document["results"]:
-        raise DocumentError("Result does not belong to this document")
-    folder = path.parent / document["results_directory"]
-    info = folder.lstat()
-    if _linked(info) or not stat.S_ISDIR(info.st_mode):
-        raise DocumentError("Results directory must be a real directory, not a link")
-    data = _read_bytes(folder / reference["file"], MAX_RESULT)
-    if digest(data) != reference["sha256"]:
-        raise DocumentError("Result checksum does not match the document")
-    try:
-        result = json.loads(data.decode("utf-8-sig"), object_pairs_hook=_unique_object)
-    except (ValueError, UnicodeError, RecursionError) as exc:
-        raise DocumentError("Result is not valid JSON") from exc
-    if not isinstance(result, dict) or result.get("schema") != "fairbeam.project/1":
-        raise DocumentError("Unsupported result schema")
-    _json_bytes(result)
-    return data, result
+    return _ResultReader(path, document).read(reference)
 
 
 def read_result(path: Path, document: dict, reference: dict) -> dict:

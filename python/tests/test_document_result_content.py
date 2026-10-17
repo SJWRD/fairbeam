@@ -37,7 +37,9 @@ class DocumentResultContentTests(unittest.TestCase):
             raw = _result_bytes(self.path, self.document, self.reference)
         self.assertEqual(raw, self.raw)
         read.assert_called_once_with(self.result_path, doc.MAX_RESULT)
-        digest.assert_called_once_with(self.raw)
+        # Source identity and result bytes are distinct hashes; result bytes are checked once.
+        self.assertEqual(digest.call_args_list.count(mock.call(self.raw)), 1)
+        self.assertEqual(digest.call_count, 2)
 
     def test_public_reader_still_returns_only_the_parsed_result(self):
         expected = json.loads(self.raw.decode("utf-8-sig"))

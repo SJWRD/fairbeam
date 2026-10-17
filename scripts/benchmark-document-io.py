@@ -1,14 +1,19 @@
-"""Manual document Open/Save I/O benchmark using generated local data, never a solver.
+"""Manual document Open/Save benchmark; generated local data, no solver or network.
 
-Run from a Python environment with this repository's dependencies:
     python scripts/benchmark-document-io.py --trials 3 --output current.json
-    python scripts/benchmark-document-io.py --trials 3 --legacy-result-reader --output legacy.json
+    python scripts/benchmark-document-io.py --legacy-result-reader --output double-read.json
+    python scripts/benchmark-document-io.py --padding-kib 4 --bundles 500 --per-reference-manifest --output per-reference.json
 
-Compare alternating runs when measuring timings. Results are local, cache-warm observations;
-read counters describe logical Python I/O, not physical device reads. All workspaces and
-advisory locks stay in an owned temporary directory. An optional JSON report must be new.
+Compare alternating runs with identical fixture arguments. Baselines isolate one extra cost:
+--legacy-result-reader reads/hashes each result twice; --per-reference-manifest constructs a
+fresh validated manifest reader for every reference. Neither recreates an entire old release.
+Counters describe logical Python I/O, not physical device reads. Timings are local, cache-warm
+observations; parity/fixture checks are outside timings. Workspaces and locks stay in an owned
+temporary directory. The optional JSON report must be new.
 """
 import argparse
+import copy
+import hashlib
 import json
 from pathlib import Path
 import platform
@@ -26,12 +31,22 @@ def main():
     parser.add_argument("--trials", type=int, default=1)
     parser.add_argument("--repeats", type=int, default=3)
     parser.add_argument("--bundles", type=int, default=8)
-    parser.add_argument("--padding-mib", type=int, default=8)
-    parser.add_argument("--legacy-result-reader", action="store_true")
+    padding = parser.add_mutually_exclusive_group()
+    padding.add_argument("--padding-mib", type=int)
+    padding.add_argument("--padding-kib", type=int)
+    modes = parser.add_mutually_exclusive_group()
+    modes.add_argument("--legacy-result-reader", action="store_true")
+    modes.add_argument("--per-reference-manifest", action="store_true")
     args = parser.parse_args()
-    for name, maximum in (("trials", 10), ("repeats", 20), ("bundles", 16), ("padding_mib", 16)):
+    for name, maximum in (("trials", 10), ("repeats", 20), ("bundles", 1000)):
         if not 1 <= getattr(args, name) <= maximum:
-            parser.error(f"{name.replace('_', '-')} must be between 1 and {maximum}")
+            parser.error(f"{name} must be between 1 and {maximum}")
+    padding_bytes = (args.padding_kib * 1024 if args.padding_kib is not None else
+                     (8 if args.padding_mib is None else args.padding_mib) * 1024 * 1024)
+    if not 1024 <= padding_bytes <= 16 * 1024 * 1024:
+        parser.error("padding must be between 1 KiB and 16 MiB per bundle")
+    if padding_bytes * args.bundles > 256 * 1024 * 1024:
+        parser.error("total fixture padding must not exceed 256 MiB")
     if args.output and args.output.exists():
         parser.error("output already exists; choose a new report filename")
     workspace = Path(__file__).resolve().parents[1]
@@ -39,26 +54,44 @@ def main():
     from fairbeam import documents as doc, modelfiles, _filelocks
     from fairbeam.design import blank_design
     from fairbeam.document_workspace import DocumentWorkspace
-    from fairbeam import document_workspace as workspace_module
 
-    if args.legacy_result_reader:
-        def legacy_result_bytes(path, document, reference):
-            result = doc.read_result(path, document, reference)
-            if result.get("model", {}).get("id") != document["design"]["model"]["id"]:
-                raise doc.DocumentError("Result model identity does not match this document")
-            raw = doc._read_bytes(path.parent / document["results_directory"] / reference["file"], doc.MAX_RESULT)
-            if doc.digest(raw) != reference["sha256"]:
+    original_reader = doc._ResultReader
+    mode = ("isolated double result read/hash" if args.legacy_result_reader else
+            "isolated per-reference manifest validation" if args.per_reference_manifest else
+            "current batched reader")
+
+    class BaselineReader(original_reader):
+        def __init__(self, path, document):
+            super().__init__(path, document)
+            if args.per_reference_manifest:
+                self.benchmark_path = path
+                self.benchmark_document = copy.deepcopy(document)
+
+        def read(self, reference):
+            if args.per_reference_manifest:
+                # Reuse production validation/read code, without copying the import loop.
+                fresh = original_reader(self.benchmark_path, self.benchmark_document)
+                return fresh.read(reference)
+            raw, result = super().read(reference)
+            # Isolate the old second I/O/hash pass; validation remains batched in this mode.
+            second = doc._read_bytes(self._folder / reference["file"], doc.MAX_RESULT)
+            if doc.digest(second) != reference["sha256"]:
                 raise doc.DocumentError("Result changed while it was being opened")
-            return raw
-        # This standalone benchmark process owns the imported module for its lifetime.
-        workspace_module._result_bytes = legacy_result_bytes
+            assert second == raw
+            return second, result
+
+    active_reader = original_reader if mode == "current batched reader" else BaselineReader
+
+    def snapshot(folder):
+        return {item.name: (item.stat().st_size, item.stat().st_mtime_ns,
+                            hashlib.sha256(item.read_bytes()).hexdigest())
+                for item in folder.iterdir()}
 
     measurements = []
-    unchanged_sidecars = True
     for trial in range(1, args.trials + 1):
         with tempfile.TemporaryDirectory(prefix="fairbeam-copy-benchmark-") as directory:
-            with mock.patch.object(_filelocks, "_lock_directory", return_value=Path(directory) / "locks"):
-                root = Path(directory).resolve()
+            root = Path(directory).resolve()
+            with mock.patch.object(_filelocks, "_lock_directory", return_value=root / "locks"):
                 models, projects, history = (root / name for name in ("models", "projects", "history"))
                 models.mkdir()
                 projects.mkdir()
@@ -67,106 +100,161 @@ def main():
                 file = modelfiles.read_design_file(models, "copy_benchmark")
                 manager = SimpleNamespace(input_path=lambda job: job.snapshot_path)
                 bridge = DocumentWorkspace(models, projects, history, manager)
-                snapshot = root / "source.design.json"
+                source = root / "source.design.json"
                 source_bytes = json.dumps(design, ensure_ascii=False).encode("utf-8")
-                snapshot.write_bytes(source_bytes)
-                padding = "x" * (args.padding_mib * 1024 * 1024)
+                source.write_bytes(source_bytes)
+                sources = {}
                 for index in range(args.bundles):
                     name = f"result-{index}.json"
                     result = {"schema": "fairbeam.project/1", "model": design["model"],
-                              "results": {"bands": [], "benchmark_index": index, "padding": padding}}
-                    (projects / name).write_bytes(json.dumps(result, separators=(",", ":")).encode("utf-8"))
+                              "results": {"bands": [], "benchmark_index": index,
+                                          "padding": "x" * padding_bytes}}
+                    raw = b"\xef\xbb\xbf" + json.dumps(result, separators=(",", ":")).encode("utf-8") + b"\r\n"
+                    (projects / name).write_bytes(raw)
+                    sources[doc.digest(raw)] = projects / name
                     job = SimpleNamespace(status="done", bundle=name, kind="run", model=file["id"],
                                           input_snapshot={"sha256": doc.digest(source_bytes)},
-                                          id=f"job-{index}", snapshot_path=str(snapshot))
+                                          id=f"job-{index}", snapshot_path=str(source))
                     assert bridge.record_completed(job)
-                del padding, result
+                del result, raw
+                source_snapshot = snapshot(projects)
+                result_bytes = sum(item.stat().st_size for item in sources.values())
+                expected_design_hash = doc.design_digest(design)
 
-                def measured(operation, action):
-                    counters = {"read_calls": 0, "read_bytes": 0, "hash_calls": 0, "hash_bytes": 0}
-                    reader_counters = {"read_calls": 0, "read_bytes": 0, "hash_calls": 0, "hash_bytes": 0}
-                    read, digest = doc._read_bytes, doc.digest
-                    result_reader = workspace_module._result_bytes
-                    in_reader, reader_calls, reader_seconds = False, 0, 0.0
+                def verify(response):
+                    assert not response["warnings"], response["warnings"]
+                    assert response["file"]["design"] == design
+                    document, revision = doc.read(Path(response["document"]["path"]))
+                    assert revision == response["document"]["revision"]
+                    assert document["design"] == design
+                    assert len(document["results"]) == len(response["results"]) == args.bundles
+                    for reference, status in zip(document["results"], response["results"]):
+                        assert reference["design_sha256"] == expected_design_hash
+                        assert status == {**reference, "provenance": "source-design", "status": "current",
+                                          "project_file": status["project_file"]}
+                        expected = sources[reference["sha256"]].read_bytes()
+                        assert (projects / status["project_file"]).read_bytes() == expected
+                        folder = Path(response["document"]["path"]).parent / document["results_directory"]
+                        assert (folder / reference["file"]).read_bytes() == expected
+                    return document["results"]
+
+                def measured(operation, action, expected=None):
+                    counts = dict.fromkeys(("read_calls", "read_bytes", "hash_calls", "hash_bytes",
+                                           "result_reader_calls", "result_reader_read_calls", "result_reader_read_bytes",
+                                           "result_reader_hash_calls", "result_reader_hash_bytes",
+                                           "design_hash_calls", "design_hash_bytes", "manifest_validations"), 0)
+                    counts.update(result_reader_seconds=0.0, manifest_validation_seconds=0.0)
+                    read, digest, design_digest, validate = doc._read_bytes, doc.digest, doc.design_digest, doc.validate
+                    result_read = active_reader.read
+                    in_reader = in_design = False
 
                     def counted_read(*values, **options):
                         raw = read(*values, **options)
-                        counters["read_calls"] += 1
-                        counters["read_bytes"] += len(raw)
+                        counts["read_calls"] += 1
+                        counts["read_bytes"] += len(raw)
                         if in_reader:
-                            reader_counters["read_calls"] += 1
-                            reader_counters["read_bytes"] += len(raw)
+                            counts["result_reader_read_calls"] += 1
+                            counts["result_reader_read_bytes"] += len(raw)
                         return raw
 
                     def counted_digest(raw):
-                        counters["hash_calls"] += 1
-                        counters["hash_bytes"] += len(raw)
-                        if in_reader:
-                            reader_counters["hash_calls"] += 1
-                            reader_counters["hash_bytes"] += len(raw)
+                        counts["hash_calls"] += 1
+                        counts["hash_bytes"] += len(raw)
+                        prefix = "design" if in_design else "result_reader" if in_reader else None
+                        if prefix:
+                            counts[prefix + "_hash_calls"] += 1
+                            counts[prefix + "_hash_bytes"] += len(raw)
                         return digest(raw)
 
-                    def counted_result_reader(*values, **options):
-                        nonlocal in_reader, reader_calls, reader_seconds
-                        in_reader = True
-                        reader_calls += 1
+                    def counted_design(value):
+                        nonlocal in_design
+                        previous, in_design = in_design, True
+                        try:
+                            return design_digest(value)
+                        finally:
+                            in_design = previous
+
+                    def counted_validate(*values, **options):
+                        counts["manifest_validations"] += 1
                         started = time.perf_counter()
                         try:
-                            return result_reader(*values, **options)
+                            return validate(*values, **options)
                         finally:
-                            reader_seconds += time.perf_counter() - started
-                            in_reader = False
+                            counts["manifest_validation_seconds"] += time.perf_counter() - started
 
-                    with mock.patch.object(doc, "_read_bytes", side_effect=counted_read), \
-                            mock.patch.object(doc, "digest", side_effect=counted_digest), \
-                            mock.patch.object(workspace_module, "_result_bytes", side_effect=counted_result_reader):
+                    def counted_result_read(reader, reference):
+                        nonlocal in_reader
+                        previous, in_reader = in_reader, True
+                        counts["result_reader_calls"] += 1
+                        started = time.perf_counter()
+                        try:
+                            return result_read(reader, reference)
+                        finally:
+                            counts["result_reader_seconds"] += time.perf_counter() - started
+                            in_reader = previous
+
+                    with mock.patch.object(doc, "_ResultReader", active_reader), \
+                            mock.patch.object(active_reader, "read", counted_result_read), \
+                            mock.patch.object(doc, "_read_bytes", counted_read), \
+                            mock.patch.object(doc, "digest", counted_digest), \
+                            mock.patch.object(doc, "design_digest", counted_design), \
+                            mock.patch.object(doc, "validate", counted_validate):
                         started = time.perf_counter()
                         response = action()
                         elapsed = time.perf_counter() - started
-                    assert not response["warnings"], response["warnings"]
-                    assert len(response["results"]) == args.bundles
-                    measurements.append({"trial": trial, "operation": operation, "seconds": round(elapsed, 4),
-                                         "read_calls": counters["read_calls"],
-                                         "read_MiB": round(counters["read_bytes"] / 2 ** 20, 2),
-                                         "hash_calls": counters["hash_calls"],
-                                         "hash_MiB": round(counters["hash_bytes"] / 2 ** 20, 2),
-                                         "result_reader_calls": reader_calls,
-                                         "result_reader_seconds": round(reader_seconds, 4),
-                                         "result_reader_read_calls": reader_counters["read_calls"],
-                                         "result_reader_read_MiB": round(reader_counters["read_bytes"] / 2 ** 20, 2),
-                                         "result_reader_hash_calls": reader_counters["hash_calls"],
-                                         "result_reader_hash_MiB": round(reader_counters["hash_bytes"] / 2 ** 20, 2),
-                                         "references": len(response["results"])})
+                    verify(response)
+                    if expected is not None:
+                        assert response == expected, "Open response differs from the unmodified reader control"
+                        factor = 2 if args.legacy_result_reader else 1
+                        assert counts["result_reader_calls"] == args.bundles
+                        for kind in ("read", "hash"):
+                            assert counts[f"result_reader_{kind}_calls"] == args.bundles * factor
+                            assert counts[f"result_reader_{kind}_bytes"] == result_bytes * factor
+                        assert counts["manifest_validations"] >= (args.bundles + 2 if args.per_reference_manifest else 2)
+                        assert counts["design_hash_calls"] > 0
+                    measurements.append({"trial": trial, "operation": operation, "seconds": elapsed,
+                                         **counts, "references": len(response["results"])})
                     return response
 
                 path = root / "benchmark.fb"
                 saved = measured("first save", lambda: bridge.save(path, file["id"], file["hash"]))
+                references = verify(saved)
                 folder = root / saved["document"]["results_directory"]
-                before = {item.name: item.stat().st_mtime_ns for item in folder.iterdir()}
+                before, document_bytes = snapshot(folder), path.read_bytes()
                 for _ in range(args.repeats):
                     saved = measured("unchanged Save", lambda: bridge.save(
                         path, saved["file"]["id"], saved["file"]["hash"],
                         base_hash=saved["document"]["revision"], document_id=saved["document"]["id"]))
-                after = {item.name: item.stat().st_mtime_ns for item in folder.iterdir()}
-                unchanged_sidecars = unchanged_sidecars and before == after
-                measured("bound Save As", lambda: bridge.save(
+                    assert verify(saved) == references
+                    assert path.read_bytes() == document_bytes
+                copied = measured("bound Save As", lambda: bridge.save(
                     root / "copy.fb", saved["file"]["id"], saved["file"]["hash"],
                     document_id=saved["document"]["id"], save_as=True))
-                # _result_bytes runs during Open; healthy cached Save paths do not use it.
+                assert verify(copied) == references
+                copy_folder = root / copied["document"]["results_directory"]
+                copy_before = snapshot(copy_folder)
+                # Prime caches with the unmodified reader and retain its exact reply.
+                control = bridge.open(path)
+                assert verify(control) == references
                 for _ in range(args.repeats):
-                    measured("explicit Open", lambda: bridge.open(path))
-    assert unchanged_sidecars
+                    measured("explicit Open", lambda: bridge.open(path), control)
+                assert path.read_bytes() == document_bytes
+                assert snapshot(folder) == before
+                assert snapshot(copy_folder) == copy_before
+                assert {name: value for name, value in snapshot(projects).items() if name in source_snapshot} == source_snapshot
+
     summaries = {}
     for operation in dict.fromkeys(item["operation"] for item in measurements):
         seconds = [item["seconds"] for item in measurements if item["operation"] == operation]
-        summaries[operation] = {"count": len(seconds), "median_seconds": round(statistics.median(seconds), 4),
+        summaries[operation] = {"count": len(seconds), "median_seconds": statistics.median(seconds),
                                 "min_seconds": min(seconds), "max_seconds": max(seconds)}
     evidence = {"workspace": str(workspace), "python": platform.python_version(), "platform": platform.platform(),
-                "result_reader": "legacy double read" if args.legacy_result_reader else "current",
-                "fixture": f"{args.bundles} generated JSON bundles, each {args.padding_mib} MiB padding; no solver/network; local temporary directory",
-                "unchanged_sidecar_mtimes": unchanged_sidecars, "measurements": measurements,
-                "summary": summaries,
-                "notes": "Counts cover successful documents._read_bytes calls and documents.digest calls during each measured operation. Setup is excluded; results are cache-warm and timings are local observations."}
+                "result_reader": mode, "fixture": {"bundles": args.bundles, "padding_bytes": padding_bytes,
+                "total_padding_bytes": padding_bytes * args.bundles, "result_bytes": result_bytes},
+                "open_response_matches_current_control": True, "exact_reopened_bytes_refs_statuses": True,
+                "unchanged_sidecar_bytes_sizes_mtimes": True, "unchanged_source_results": True,
+                "measurements": measurements, "summary": summaries,
+                "notes": "Counters cover successful documents._read_bytes and documents.digest calls. Reader counters instrument _ResultReader.read; design hashes are counted separately from result hashes. Manifest counts cover documents.validate. Setup, cache priming and exact parity/unchanged-file assertions are excluded. Healthy cached Saves may have zero reader calls; every Open must have the exact nonzero result byte/hash totals for its mode. No solver/network."}
     rendered = json.dumps(evidence, ensure_ascii=False, indent=2) + "\n"
     if args.output:
         with args.output.open("x", encoding="utf-8", newline="\n") as report:
