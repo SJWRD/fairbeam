@@ -2,6 +2,7 @@ import { lumpedLabel } from "../lumped.ts";
 import { For, Show } from "solid-js";
 import { Eye, EyeOff, PenTool } from "lucide-solid";
 import { bundle, fieldPlaneMap, hiddenParts, hoverPart, layers, meshPlane, setFieldPlaneMap, setHiddenParts, setHoverPart, setLayers, setMeshPlane, source, sourceOrigin, type Axis, type Layers } from "../state";
+import { modelToMm } from "../lib/modelUnits";
 import { fieldPlaneLabel } from "../designer/navModel";
 import "../styles/field-map.css";
 import { DEMO } from "../env";
@@ -173,7 +174,7 @@ export default function ModelPanel() {
                 <label class="fm-field"><span>{t("model.fieldPlanes")}</span>
                   <select class="btn btn-ghost btn-sm" title={t("model.fieldPlanes.hint")} onChange={(e) => setFieldPlaneMap(e.currentTarget.value === "" ? null : Number(e.currentTarget.value))}>
                     <option value="" selected={fieldPlaneMap() === null}>{t("model.fieldPlanes.none")}</option>
-                    <For each={b().field_planes}>{(m, i) => <option value={i()} selected={fieldPlaneMap() === i()}>{fieldPlaneLabel(m)}</option>}</For>
+                    <For each={b().field_planes}>{(m, i) => <option value={i()} selected={fieldPlaneMap() === i()}>{fieldPlaneLabel(m, modelToMm(b()))}</option>}</For>
                   </select>
                 </label>
               </Show>

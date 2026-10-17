@@ -45,6 +45,7 @@ export interface SMatrix {
   pairs: [number, number][];
   reciprocity: number | null;
   passivity: number | null;
+  passivityCriterion?: "singular-value" | "column-power";
   /** true when built from the legacy results.ports["1"] fields */
   legacy: boolean;
 }
@@ -105,6 +106,7 @@ export function sMatrix(b: Bundle | null | undefined): SMatrix | null {
         pairs,
         reciprocity: num("reciprocity_max", "reciprocity", "reciprocity_err", "max_reciprocity_error"),
         passivity: num("passivity_max", "passivity", "max_column_power"),
+        passivityCriterion: typeof qa.passivity_method === "string" && qa.passivity_method.includes("singular value") ? "singular-value" : "column-power",
         legacy: false,
       };
     }

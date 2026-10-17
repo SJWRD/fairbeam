@@ -4,6 +4,7 @@
 // ribbon geometry tab taking a result drawn in the 3D view off it. Plus source contracts for the
 // wiring the browser run checks by hand (menus, F2, the ribbon).
 import assert from 'node:assert/strict';
+import './check-editor-save-races.mjs';
 import { readFileSync } from 'node:fs';
 import { build } from 'vite';
 import { fileURLToPath } from 'node:url';

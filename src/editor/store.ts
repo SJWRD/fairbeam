@@ -41,6 +41,7 @@ let sourceSeq = 0;
 
 export async function openSource(id: string) {
   const mine = ++sourceSeq;
+  setSaving(false);
   setLoading(true);
   setMessage(null);
   setConflict(null);
@@ -53,20 +54,23 @@ export async function openSource(id: string) {
     setDocVersion((v) => v + 1);
     refreshHistory();
   } catch (e) {
+    if (mine !== sourceSeq) return;
     setFile(null);
     setMessage({ tone: "critical", text: (e as Error).message });
   } finally {
-    setLoading(false);
+    if (mine === sourceSeq) setLoading(false);
   }
 }
 
 export async function refreshHistory() {
   const f = file();
+  const mine = sourceSeq;
   if (!f || f.readonly) return setVersions([]);
   try {
-    setVersions(await api.modelHistory(f.id));
+    const history = await api.modelHistory(f.id);
+    if (mine === sourceSeq && file()?.id === f.id) setVersions(history);
   } catch {
-    setVersions([]);
+    if (mine === sourceSeq && file()?.id === f.id) setVersions([]);
   }
 }
 
@@ -80,11 +84,14 @@ function applyValidation(v: Validation) {
 export async function save() {
   const f = file();
   if (!f || f.readonly || saving()) return;
+  const mine = sourceSeq;
+  const owns = () => mine === sourceSeq && file()?.id === f.id;
   setSaving(true);
   setMessage(null);
   try {
     const text = draft();
     const res = await api.saveSource(f.id, text, conflict() ?? f.hash);
+    if (!owns()) return;
     setFile({ ...f, source: text, hash: res.hash });
     setConflict(null);
     applyValidation(res.validation);
@@ -96,6 +103,7 @@ export async function save() {
     );
     refreshHistory();
   } catch (e) {
+    if (!owns()) return;
     const err = e as ApiError;
     if (err.status === 409 && typeof err.data.current_hash === "string") {
       setMessage({ tone: "warn", text: t("editor.conflict") });
@@ -104,20 +112,26 @@ export async function save() {
       setMessage({ tone: "critical", text: err.status === 0 ? t("common.serverUnreachable") : err.message });
     }
   } finally {
-    setSaving(false);
+    if (owns()) setSaving(false);
   }
 }
 
 /** Put an older version into the editor as unsaved changes (save to restore it). */
 export async function loadVersion(version: string) {
   const f = file();
+  const mine = sourceSeq;
+  const text = draft();
+  const owns = () => mine === sourceSeq && file()?.id === f?.id && draft() === text;
   if (!f || !(await confirmDiscard())) return;
+  if (!owns()) return;
   try {
     const v = await api.modelVersion(f.id, version);
+    if (!owns()) return;
     setDraft(v.source);
     setDocVersion((n) => n + 1);
     setMessage({ tone: "warn", text: t("editor.loadedVersion", { time: prettyVersion(version) }) });
   } catch (e) {
+    if (!owns()) return;
     setMessage({ tone: "critical", text: (e as Error).message });
   }
 }
@@ -133,6 +147,8 @@ export async function loadTemplates() {
 export async function createModel(body: { id: string; name?: string; template?: string; from?: string }) {
   const res = await api.createModel(body); // errors (422 fields, 409) are shown by the dialog
   await refreshModels();
+  ++sourceSeq;
+  setSaving(false);
   selectModel(res.id);
   setFile({ id: res.id, file: res.file, source: res.source, hash: res.hash, readonly: res.readonly });
   setDraft(res.source);

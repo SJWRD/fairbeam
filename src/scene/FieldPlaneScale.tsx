@@ -3,6 +3,7 @@
 // field-map tab). It sits in the viewport's colour-scale column next to the pattern and current bars.
 import { createMemo, Show } from "solid-js";
 import { bundle, fieldPlaneMap } from "../state";
+import { modelToMm } from "../lib/modelUnits";
 import { fieldPlaneLabel } from "../designer/navModel";
 import { fieldPlaneValues } from "./fieldPlaneModel";
 import { currentFieldPlaneView, FieldPlaneControls, FieldPlaneLegend, valueLabel } from "./FieldPlaneControls";
@@ -21,8 +22,8 @@ export default function FieldPlaneScale() {
           return valueLabel(m(), fieldPlaneValues(m(), v), v.scale);
         });
         return (
-          <div class="colorbar" role="group" aria-label={t("viewport.fieldPlane.aria", { label: fieldPlaneLabel(m()) })} data-field-plane>
-            <div class="colorbar-title">{fieldPlaneLabel(m())}</div>
+          <div class="colorbar" role="group" aria-label={t("viewport.fieldPlane.aria", { label: fieldPlaneLabel(m(), modelToMm(bundle())) })} data-field-plane>
+            <div class="colorbar-title">{fieldPlaneLabel(m(), modelToMm(bundle()))}</div>
             <Show when={m().port !== undefined}>
               <div class="colorbar-port">{t("viewport.fieldPlane.portDriven", { port: m().port })}</div>
             </Show>

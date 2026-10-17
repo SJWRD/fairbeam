@@ -238,7 +238,7 @@ def parse_vary(text: str) -> Vary:
 
 def bundle_metrics(bundle: dict, goals: list[Goal]) -> dict:
     """The quantities the goals need, from a result bundle."""
-    from .study import _excited_key, first_resonance, reactance_zeros
+    from .study import _excited_key, _excited_s11, _matched_bands, first_resonance, reactance_zeros
 
     res = bundle.get("results") or {}
     out: dict = {"f0_ghz": None, "f0_source": None, "s11_min_db": None, "bw_mhz": None,
@@ -248,10 +248,10 @@ def bundle_metrics(bundle: dict, goals: list[Goal]) -> dict:
         return out
     f = np.asarray(res["frequency"]) / 1e9
     pr = res["ports"][key]
-    s = np.hypot(np.asarray(pr["s11_re"]), np.asarray(pr["s11_im"]))
+    s = np.abs(_excited_s11(bundle)[1])
     sdb = 20 * np.log10(np.maximum(s, 1e-9))
     out["s11_min_db"] = round(float(sdb.min()), 3)
-    bands = res.get("bands") or []
+    bands = _matched_bands(bundle)
     if bands:
         out["f0_ghz"], out["f0_source"] = bands[0]["f_center"] / 1e9, "band"
     else:
@@ -304,7 +304,7 @@ def bundle_metrics(bundle: dict, goals: list[Goal]) -> dict:
 PENALTY = 1e4  # a goal that cannot be evaluated (no resonance, no far field)
 
 
-def goal_cost(g: Goal, m: dict, f0_tol_pct: float = 0.25) -> tuple[float, bool, float | None]:
+def _goal_cost(g: Goal, m: dict, f0_tol_pct: float = 0.25) -> tuple[float, bool, float | None]:
     """(cost, met, value) of one goal for the metrics ``m``."""
     if g.kind == "f0":
         v = m.get("f0_ghz")
@@ -319,7 +319,9 @@ def goal_cost(g: Goal, m: dict, f0_tol_pct: float = 0.25) -> tuple[float, bool, 
         excess = max(0.0, v - g.target)
         return (excess / 3.0) ** 2, excess == 0.0, v
     if g.kind == "bw_min":
-        v = m.get("bw_mhz") or 0.0
+        v = m.get("bw_mhz")
+        if v is None:
+            return PENALTY, False, None
         short = max(0.0, (g.target - v) / g.target)
         return (short / 0.1) ** 2, short == 0.0, v
     if g.kind == "dmax_min":
@@ -345,6 +347,16 @@ def goal_cost(g: Goal, m: dict, f0_tol_pct: float = 0.25) -> tuple[float, bool, 
         excess = max(0.0, v - g.target)
         return (excess / 3.0) ** 2, excess == 0.0, v
     raise ValueError(g.kind)
+
+
+def goal_cost(g: Goal, m: dict, f0_tol_pct: float = 0.25) -> tuple[float, bool, float | None]:
+    try:
+        c, met, value = _goal_cost(g, m, f0_tol_pct)
+    except (OverflowError, TypeError, ValueError):
+        return PENALTY, False, None
+    if value is None or not math.isfinite(value) or not math.isfinite(c):
+        return PENALTY, False, None
+    return c, met, value
 
 
 def total_cost(goals: list[Goal], m: dict, f0_tol_pct: float = 0.25) -> tuple[float, list[dict], bool]:
@@ -395,9 +407,13 @@ class Driver:
             r = {"metrics": {}, "error": f"{type(e).__name__}: {e}", "wall_time_s": time.time() - t0}
         m = r.get("metrics") or {}
         if r.get("error"):
-            cost, parts, met = max(PENALTY, float(r.get("cost") or PENALTY)), [], False
+            penalty = float(r.get("cost") or PENALTY)
+            cost, parts, met = max(PENALTY, penalty) if math.isfinite(penalty) else PENALTY, [], False
         else:
             cost, parts, met = total_cost(self.goals, m, self.f0_tol_pct)
+            if any(part['value'] is None for part in parts):
+                r = {**r, 'error': 'required goal metric is missing or non-finite'}
+        m = finite_json(m)
         entry = {"index": len(self.history) + 1, "params": p, "metrics": m, "cost": cost, "goals": parts,
                  "met": met, "file": r.get("file"), "wall_time_s": round(r.get("wall_time_s", time.time() - t0), 3)}
         if r.get("error"):
@@ -406,7 +422,7 @@ class Driver:
             entry["skipped"] = r["skipped"]   # not simulated: the design checks refused the point
         self.history.append(entry)
         self.cache[key] = entry
-        if self.best is None or cost < self.best["cost"]:
+        if not entry.get('error') and (self.best is None or cost < self.best["cost"]):
             self.best = entry
         if self.on_eval:
             self.on_eval(entry)
@@ -470,7 +486,7 @@ def nelder_mead(d: Driver, u0: np.ndarray, step: float = 0.15, tol: float = 2e-3
                         simplex[i] = clip(simplex[0] + sigma * (simplex[i] - simplex[0]))
                         vals[i] = d.cost_u(simplex[i])
         if attempt < restarts:  # restart around the best point with a smaller simplex
-            u0 = d.to_u(d.best["params"])
+            u0 = d.to_u(d.best["params"]) if d.best else simplex[0]
             step *= 0.5
     return "simplex converged"
 
@@ -588,7 +604,7 @@ def tune_f0(d: Driver, goal: Goal, x0: float, max_steps: int = 40) -> str:
         d([x])
         e = d.cache[(v.snap(x),)]
         f0 = e["metrics"].get("f0_ghz")
-        return None if f0 is None else f0 - goal.target, f0
+        return None if e.get('error') or f0 is None else f0 - goal.target, f0
 
     xa = v.snap(x0)
     fa, f0a = err(xa)
@@ -641,7 +657,7 @@ def tune_f0(d: Driver, goal: Goal, x0: float, max_steps: int = 40) -> str:
         else:
             stale += 1
             if stale >= 3:
-                return nelder_mead(d, d.to_u(d.best["params"]), step=0.05)
+                return nelder_mead(d, d.to_u(d.best["params"]) if d.best else d.to_u({v.key: xb}), step=0.05)
     return "secant steps exhausted"
 
 
@@ -727,7 +743,7 @@ def _atomic_json(path: Path, obj, indent=None):
 
 
 def _emit(kind: str, payload: dict):
-    print(f"fairbeam: optimize {kind} {json.dumps(payload, separators=(',', ':'), allow_nan=False, default=str)}",
+    print(f"fairbeam: optimize {kind} {json.dumps(finite_json(payload), separators=(',', ':'), allow_nan=False, default=str)}",
           flush=True)
 
 
@@ -819,8 +835,12 @@ def run_optimization(model_path: str, vary: list[Vary], goals: list[Goal], *, fi
         if not keep:  # the bundle is the product; the far field is already computed from the raw data
             remove_inside(Path(sim_root).absolute(), raw_dir / slug)
             prune_empty_parents(Path(sim_root).absolute(), raw_dir)
-        return {"metrics": bundle_metrics(bundle, goals), "file": f"optimizations/{name}/{slug}.json",
-                "wall_time_s": time.time() - t0}
+        result = {"metrics": bundle_metrics(bundle, goals), "file": f"optimizations/{name}/{slug}.json",
+                  "wall_time_s": time.time() - t0}
+        run = bundle.get('run') or {}
+        if run.get('converged') is not True or any(r.get('converged') is not True for r in run.get('port_runs', [])):
+            result['error'] = 'native energy convergence was not established for every driven port'
+        return result
 
     doc = {
         "schema": OPT_SCHEMA, "name": name, "created": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
@@ -838,7 +858,7 @@ def run_optimization(model_path: str, vary: list[Vary], goals: list[Goal], *, fi
 
     def on_eval(e: dict):
         doc["evaluations"].append(e)
-        best = min(doc["evaluations"], key=lambda x: x["cost"])
+        best = min((x for x in doc["evaluations"] if not x.get('error')), key=lambda x: x["cost"], default=None)
         doc["best"], doc["start"] = best, doc["evaluations"][0]
         doc["wall_time_s"] = round(time.time() - t_start, 2)
         _atomic_json(doc_path, doc, indent=1)
@@ -850,7 +870,8 @@ def run_optimization(model_path: str, vary: list[Vary], goals: list[Goal], *, fi
             log(f"fairbeam optimize [{e['index']}/{max_evals}] {point}"
                 f"  f0 {m.get('f0_ghz')} GHz  S11(f0) {m.get('s11_f0_db')} dB  cost {e['cost']:.4g}"
                 + ("  (goals met)" if e["met"] else ""))
-        _emit("eval", {**e, "best_index": best["index"], "best_cost": best["cost"], "max_evals": max_evals})
+        _emit("eval", {**e, "best_index": best["index"] if best else None,
+                       "best_cost": best["cost"] if best else None, "max_evals": max_evals})
 
     base_start = {v.key: float(base[v.key]) for v in vary}
     try:

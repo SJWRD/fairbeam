@@ -209,9 +209,9 @@ class SectionTest(unittest.TestCase):
         def sim(n, gain):
             et = [gain * (np.cos(np.deg2rad(theta))[:, None] + 0j) * np.ones(len(phi))]
             res = SimpleNamespace(E_theta=et, E_phi=[0.5j * et[0]], r=1.0)
-            port = SimpleNamespace(uf_inc=np.full(len(f), 2.0 + 0j), Z_ref=50.0)
-            return SimpleNamespace(_nf2ff={"theta": theta, "phi": phi, "freqs": [1.5e9], "res": res}, _port_objs=[port],
-                                   ports=[{"number": n, "start": [n, 0, 0], "stop": [n, 0, 1]}],
+            ports = [SimpleNamespace(uf_inc=np.full(len(f), 2.0 + 0j if j == n else 0j), Z_ref=50.0) for j in (1, 2)]
+            return SimpleNamespace(_nf2ff={"theta": theta, "phi": phi, "freqs": [1.5e9], "res": res}, _port_objs=ports,
+                                   ports=[{"number": j, "start": [j, 0, 0], "stop": [j, 0, 1]} for j in (1, 2)],
                                    boundaries=["MUR"] * 6, nf2ff_center=[0, 0, 0])
         sims = [(1, sim(1, 1.0)), (2, sim(2, 3.0))]
         a = 2.0 / np.sqrt(50.0)

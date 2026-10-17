@@ -55,7 +55,7 @@ admission. It runs no field propagation and does not establish numerical converg
 receipt outside the checkout or remove the generated receipt before building the tagged release.
 
 1. Bump the version in `package.json`, `src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml` and
-   `python/fairbeam/_meta.py`. The runtime refreshes its copy of the Python package when the bundled
+   `python/fairbeam/_meta.py` and `python/pyproject.toml`. The runtime refreshes its copy of the Python package when the bundled
    version changes.
 2. Regenerate the third-party inventory with `npm run licenses`, review any changed licenses
    and exceptions in `scripts/licenses/exceptions.json`, and run `npm run check:licenses`.
@@ -176,6 +176,14 @@ editing them, or the prefill stops working.
 
 One entry per release, newest first. The installers are on the
 [release page](https://github.com/ismailakdag/fairbeam-releases/releases) of each version.
+
+### 0.7.7, 2026-10-17
+
+- **Geometry and mesh:** fix extrusion axes after composed rotations; include dispersive geometry and whole-band pole bounds in automatic dielectric meshing. Materials without a safe automatic bound require an explicit validated mesh.
+- **Numerical results:** use the full incident-wave basis for embedded element patterns, canonical matrix reflection for S11 consumers, and a singular-value passivity check. Incomplete data no longer produce a definite passivity result.
+- **Optimization:** native candidates require established energy convergence for every driven port. Missing or nonfinite goal metrics cannot become a successful or best candidate.
+- **Editor and display:** keep delayed source/history responses attached to their document, convert field-plane display/export coordinates to mm, and stop presenting unavailable realized gain as a valid quantity.
+- **Existing results:** rerun models affected by composed extrusion or dispersive automatic meshing; re-evaluate old optimizer winners and regenerate matched-basis element patterns where needed. See [the review follow-up](REVIEW-2026-10-17.md) for reproductions and limits. These checks do not establish general antenna accuracy or mesh convergence.
 
 ### 0.7.6, 2026-10-15
 

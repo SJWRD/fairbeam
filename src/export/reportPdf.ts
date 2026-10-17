@@ -404,7 +404,7 @@ export function reportPages(bundle: Bundle, opt: ReportOptions): string[] {
       ["Reference impedances", S.ports.map((p, i) => `P${p} ${S.zRef[i]} Ω`).join(", ")],
       ["Excited ports", S.excited.map((p) => `P${p}`).join(", ") || "—"],
       ["Reciprocity (max |S_ij − S_ji|)", S.reciprocity === null ? "—" : S.reciprocity.toExponential(2)],
-      ["Passivity (max column power)", S.passivity === null ? "—" : `${fx(S.passivity, 4)}${S.passivity > 1.001 ? " (> 1: not passive)" : ""}`],
+      [S.passivityCriterion === "singular-value" ? "Passivity (max singular value squared)" : "Column power (legacy check)", S.passivity === null ? "—" : `${fx(S.passivity, 4)}${S.passivity > 1.01 ? " (> 1.01)" : ""}`],
     ], 60);
   }
   // steered array pattern at the current weights

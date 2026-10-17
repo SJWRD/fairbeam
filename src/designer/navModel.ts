@@ -241,20 +241,20 @@ export interface RunContent { farfield: number[]; currents: number[]; fieldPlane
 
 /** A field-plane map's name in the tree and on the colour bar: "E-field (z = 1.5 mm, 2.45 GHz)",
  * "Ex (z = 1.5 mm, 2.45 GHz)" for one component. */
-export function fieldPlaneLabel(m: { quantity?: unknown; component?: unknown; normal?: unknown; position_mm?: unknown; f?: unknown }): string {
+export function fieldPlaneLabel(m: { quantity?: unknown; component?: unknown; normal?: unknown; position_mm?: unknown; f?: unknown }, mm = 1): string {
   const q = m.quantity === "H" ? "H" : "E";
   const name = typeof m.component === "string" && m.component !== "abs" ? `${q}${m.component}` : t(q === "H" ? "tree.result.hField" : "tree.result.eField");
-  const pos = typeof m.position_mm === "number" ? fmt.num(+m.position_mm.toPrecision(4), 9) : "?";
+  const pos = typeof m.position_mm === "number" ? fmt.num(+(m.position_mm * mm).toPrecision(4), 9) : "?";
   const f = typeof m.f === "number" ? ghz(m.f) : "? GHz";
   return `${name} (${typeof m.normal === "string" ? m.normal : "?"} = ${pos} mm, ${f})`;
 }
 
 /** Read from a bundle (or its raw JSON): tolerant, it only lists what is there. */
 export function runContent(b: unknown): RunContent {
-  const o = (b ?? {}) as { results?: { farfield?: { f?: unknown }[] } | null; fields?: { planes?: { frequencies?: { f_target?: unknown; f?: unknown }[] }[] }; field_planes?: unknown };
+  const o = (b ?? {}) as { units?: { length_m?: number }; results?: { farfield?: { f?: unknown }[] } | null; fields?: { planes?: { frequencies?: { f_target?: unknown; f?: unknown }[] }[] }; field_planes?: unknown };
   const uniq = (xs: unknown[]) => [...new Set(xs.filter((x): x is number => typeof x === "number" && Number.isFinite(x)))];
   const fieldPlanes = (Array.isArray(o.field_planes) ? o.field_planes as Record<string, unknown>[] : [])
-    .flatMap((m, map) => (m && typeof m.f === "number" && Number.isFinite(m.f) ? [{ map, f: m.f, label: fieldPlaneLabel(m) }] : []));
+    .flatMap((m, map) => (m && typeof m.f === "number" && Number.isFinite(m.f) ? [{ map, f: m.f, label: fieldPlaneLabel(m, (o.units?.length_m ?? 1e-3) * 1000) }] : []));
   return {
     farfield: uniq((o.results?.farfield ?? []).map((f) => f.f)),
     currents: uniq((o.fields?.planes?.[0]?.frequencies ?? []).map((f) => f.f_target ?? f.f)),

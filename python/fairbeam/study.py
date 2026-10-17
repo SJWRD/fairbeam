@@ -32,10 +32,13 @@ def first_resonance(bundle: dict) -> dict | None:
     res = bundle.get("results") or {}
     if not res.get("ports"):
         return None
-    if res.get("bands"):
-        b = res["bands"][0]
+    bands = _matched_bands(bundle)
+    if bands:
+        b = bands[0]
         return {"f": b["f_center"], "s11_db": b["s11_min_db"], "matched": True}
     f, s = _excited_s11(bundle)
+    if not len(f) or not np.all(np.isfinite(s)):
+        return None
     k = int(np.argmin(np.abs(s)))
     return {"f": float(f[k]), "s11_db": round(float(20 * np.log10(max(np.abs(s[k]), 1e-6))), 3), "matched": False}
 
@@ -49,6 +52,11 @@ def reactance_zeros(bundle: dict) -> list[dict]:
     pr = res["ports"][key]
     f = np.asarray(res["frequency"])
     r, x = np.asarray(pr["zin_re"]), np.asarray(pr["zin_im"])
+    if len((res.get("sparams") or {}).get("ports", [])) > 1:
+        _, reflection = _excited_s11(bundle)
+        with np.errstate(divide="ignore", invalid="ignore"):
+            z = np.asarray(pr.get("z_ref_f", pr["z_ref"])) * (1 + reflection) / (1 - reflection)
+        r, x = z.real, z.imag
     out = []
     for i in np.where((x[:-1] < 0) & (x[1:] >= 0))[0]:
         t = -x[i] / (x[i + 1] - x[i])
@@ -78,7 +86,7 @@ def summarize(bundle: dict) -> dict:
     return {
         "sparams": sp_summary,
         "bands": [{k: b[k] for k in ("f_lo", "f_hi", "f_center", "s11_min_db", "edge_lo", "edge_hi")}
-                  for b in res.get("bands", [])],
+                  for b in _matched_bands(bundle)],
         "first_resonance": fr,
         "reactance_zeros": reactance_zeros(bundle),
         "farfield": [{"f": e["f"], "dmax_dbi": e["dmax_dbi"], "dmax_pattern_dbi": e.get("dmax_pattern_dbi"),
@@ -255,8 +263,31 @@ def _excited_key(bundle):
 
 def _excited_s11(bundle):
     res = bundle["results"]
-    pr = res["ports"][_excited_key(bundle)]
+    key = _excited_key(bundle)
+    sp = res.get("sparams")
+    if sp and sp.get("s"):
+        ids = sp.get("port_numbers", sp["ports"])
+        if key is None or int(key) not in ids:
+            return np.asarray(res["frequency"]), np.full(len(res["frequency"]), np.nan, complex)
+        index = sp["ports"][ids.index(int(key))]
+        pair = sp["s"].get(f"{index},{index}")
+        values = (np.asarray(pair["re"], float) + 1j * np.asarray(pair["im"], float) if pair else
+                  np.full(len(res["frequency"]), np.nan, complex))
+        return np.asarray(res["frequency"]), values
+    pr = res["ports"][key]
     return np.asarray(res["frequency"]), np.asarray(pr["s11_re"]) + 1j * np.asarray(pr["s11_im"])
+
+
+def _matched_bands(bundle):
+    """Matched bands use the same reflection as plots/exports; legacy bundles retain their bands."""
+    res = bundle.get("results") or {}
+    if not res.get("sparams") or _excited_key(bundle) is None:
+        return res.get("bands") or []
+    from .simulation import _bands
+    f, s = _excited_s11(bundle)
+    if not np.all(np.isfinite(s)):
+        return []
+    return _bands(f, 20 * np.log10(np.maximum(np.abs(s), 1e-15)), res.get("s11_band_db", -10.0))
 
 
 def parse_axes(items: list[str]) -> list[tuple[str, list[str]]]:

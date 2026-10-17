@@ -22,8 +22,8 @@ Definitions (docs/BUNDLE.md, ``results.sparams``)
 QA metrics (``results.sparams.qa``)
     - reciprocity: max over frequency of |S_ij - S_ji| over all pairs with both columns known
       (0 for a reciprocal structure; FDTD typically gives 1e-3..1e-2).
-    - passivity: the column power sum_i |S_ij|^2 (power leaving the ports when port j is driven;
-      1 - column power = fraction dissipated or radiated). Must be <= 1.
+    - passivity: largest singular value squared of the complete finite power-wave matrix.
+      Column power is also reported, but cannot establish passivity for coherent excitation.
 """
 
 from __future__ import annotations
@@ -73,16 +73,23 @@ def qa_metrics(s: np.ndarray, excited: list[int], passive_tol: float = 1e-2) -> 
     for i in range(n):
         for j in range(n):
             if i < j and i in known and j in known:
-                pairs[f"{i + 1},{j + 1}"] = round(float(np.max(np.abs(s[:, i, j] - s[:, j, i]))), 6)
+                v = np.abs(s[:, i, j] - s[:, j, i])
+                pairs[f"{i + 1},{j + 1}"] = round(float(v.max()), 6) if v.size and np.all(np.isfinite(v)) else None
     col = {str(j + 1): np.sum(np.abs(s[:, :, j]) ** 2, axis=1) for j in known}
-    colmax = {k: round(float(v.max()), 6) for k, v in col.items()}
+    colmax = {k: round(float(v.max()), 6) if v.size and np.all(np.isfinite(v)) else None for k, v in col.items()}
+    complete = bool(s.shape[0]) and known == list(range(n)) and np.all(np.isfinite(s))
+    powers = np.linalg.svd(s, compute_uv=False)[:, 0] ** 2 if complete else None
+    peak = float(powers.max()) if powers is not None and powers.size else None
     return {
-        "reciprocity_max": max(pairs.values()) if pairs else None,
+        "reciprocity_max": max(pairs.values()) if pairs and all(v is not None for v in pairs.values()) else None,
         "reciprocity_pairs": pairs,
         "column_power_max": colmax,
-        "column_power_min": {k: round(float(v.min()), 6) for k, v in col.items()},
-        "passivity_max": max(colmax.values()) if colmax else None,
-        "passive": all(v <= 1 + passive_tol for v in colmax.values()),
+        "column_power_min": {k: round(float(v.min()), 6) if v.size and np.all(np.isfinite(v)) else None for k, v in col.items()},
+        "passivity_max": round(peak, 6) if peak is not None else None,
+        "passive": peak <= 1 + passive_tol if peak is not None else None,
+        "passivity_power": powers.tolist() if powers is not None else None,
+        "passivity_violations": np.flatnonzero(powers > 1 + passive_tol).tolist() if powers is not None else [],
+        "passivity_method": "largest singular value squared; complete finite power-wave matrix required",
         "passive_tol": passive_tol,
     }
 
@@ -300,6 +307,11 @@ def merge(primary, sims, numbers: list[int], element_patterns: bool):
     s = assemble_s(a, b, excited_idx, len(numbers))
     method = "B A^-1" if len(sims) == len(numbers) else "b_i / a_j"
     res["sparams"] = sparams_section(f, s, excited_idx, z_ref, method)
+    from .simulation import _bands
+    # Public matched bands belong to the same Sii shown in plots and Touchstone exports.
+    diagonal = s[:, idx[sims[0][0]], idx[sims[0][0]]]
+    res["bands"] = (_bands(f, 20 * np.log10(np.maximum(np.abs(diagonal), 1e-15)), res.get("s11_band_db", -10.0))
+                    if np.all(np.isfinite(diagonal)) else [])
     if numbers != list(range(1, len(numbers) + 1)):
         res["sparams"]["port_numbers"] = numbers
     # keep the per-port reflection data only for ports that were actually driven
@@ -325,7 +337,11 @@ def merge(primary, sims, numbers: list[int], element_patterns: bool):
         primary.run_stats["port_runs"] = runs
         primary.run_stats["converged"] = all(r["converged"] for r in runs)
     if element_patterns and all(getattr(sim, "_nf2ff", None) for _, sim in sims):
-        res["element_patterns"] = element_pattern_section(primary, sims, f)
+        try:
+            res["element_patterns"] = element_pattern_section(primary, sims, f)
+        except ValueError as exc:
+            res.pop("element_patterns", None)
+            res["element_patterns_unavailable"] = str(exc)
 
 
 def element_pattern_section(primary, sims, f, max_bytes: float = 2.5e6, encoding: str = ENC_I16) -> dict:
@@ -333,6 +349,41 @@ def element_pattern_section(primary, sims, f, max_bytes: float = 2.5e6, encoding
     (``encoding``: ENC_I16 by default, ENC_F32 for the older float32 form)."""
     nf = sims[0][1]._nf2ff
     theta, phi, freqs = np.asarray(nf["theta"]), np.asarray(nf["phi"]), list(nf["freqs"])
+    numbers = [p["number"] for p in primary.ports]
+    if sorted(pn for pn, _ in sims) != sorted(numbers):
+        raise ValueError("Matched element patterns require one excitation run for every port")
+    # E = F A: the same incident-wave basis used by S = B A^-1 must be used for F.
+    # Dividing each run by its driven wave alone leaves leakage from the other incident waves.
+    ordered = [next(sim for pn, sim in sims if pn == number) for number in numbers]
+    center = primary.nf2ff_center if primary.nf2ff_center is not None else _center(primary)
+    radius = float(np.atleast_1d(getattr(nf["res"], "r", 1.0))[0])
+    waves = []
+    for sim in ordered:
+        other = sim._nf2ff
+        other_center = sim.nf2ff_center if sim.nf2ff_center is not None else _center(sim)
+        if ([p["number"] for p in sim.ports] != numbers or
+                any(not np.array_equal(other[key], nf[key]) for key in ("theta", "phi", "freqs")) or
+                not np.array_equal(center, other_center) or
+                float(np.atleast_1d(getattr(other["res"], "r", 1.0))[0]) != radius):
+            raise ValueError("Element-pattern runs must share port order, angular/frequency grids, phase center and radius")
+        run_waves = []
+        for port in sim._port_objs:
+            zr = np.broadcast_to(np.real(np.asarray(port.Z_ref, complex)), np.shape(f))
+            inc = np.asarray(port.uf_inc) / np.sqrt(zr)
+            if not np.all(np.isfinite(inc)) or any(fk < f[0] or fk > f[-1] for fk in freqs):
+                raise ValueError("Element patterns require finite incident waves within the sampled frequency band")
+            run_waves.append(np.interp(freqs, f, inc.real) + 1j * np.interp(freqs, f, inc.imag))
+        waves.append(run_waves)
+    incident = np.transpose(np.asarray(waves), (2, 1, 0))  # frequency, port, run
+    if np.any(np.linalg.cond(incident) > 1e10):
+        raise ValueError("Incident-wave matrix is singular or ill-conditioned; matched element patterns unavailable")
+    transformed = []
+    for k, _ in enumerate(freqs):
+        fields = []
+        for component in ("E_theta", "E_phi"):
+            raw = np.stack([np.asarray(getattr(sim._nf2ff["res"], component)[k]) for sim in ordered], axis=-1)
+            fields.append(np.linalg.solve(incident[k].T, raw.reshape(-1, len(numbers)).T).T.reshape(raw.shape))
+        transformed.append(fields)
     # decimate the angular grid if the section would get too large (4 arrays x 4 bytes x 4/3 base64;
     # the float32 budget is kept for int16 too, so the default grid does not change with the encoding)
     step = 1
@@ -344,16 +395,10 @@ def element_pattern_section(primary, sims, f, max_bytes: float = 2.5e6, encoding
     mirrors = mirror_planes(primary.boundaries)
     out_ports = []
     for pn, sim in sims:
-        port_obj = sim._port_objs[[p["number"] for p in sim.ports].index(pn)]
         meta = sim.ports[[p["number"] for p in sim.ports].index(pn)]
         fields = []
-        r = sim._nf2ff["res"]
         for k, fk in enumerate(freqs):
-            a = np.interp(fk, f, np.real(port_obj.uf_inc)) + 1j * np.interp(fk, f, np.imag(port_obj.uf_inc))
-            zr = np.real(np.asarray(port_obj.Z_ref, dtype=complex))
-            a /= np.sqrt(float(zr) if zr.ndim == 0 else float(np.interp(fk, f, zr)))
-            et = np.asarray(r.E_theta[k])[np.ix_(ti, pi)] / a
-            ep = np.asarray(r.E_phi[k])[np.ix_(ti, pi)] / a
+            et, ep = [component[:, :, numbers.index(pn)][np.ix_(ti, pi)] for component in transformed[k]]
             fields.append((float(fk), et, ep))
         centre = [(s + e) / 2 for s, e in zip(meta["start"], meta["stop"])]
         out_ports.append({"port": pn, "position": [round(v, 6) for v in centre], "fields": fields})
@@ -365,7 +410,8 @@ def element_pattern_section(primary, sims, f, max_bytes: float = 2.5e6, encoding
     radius = float(np.atleast_1d(getattr(sims[0][1]._nf2ff["res"], "r", 1.0))[0])
     return {
         "normalization": "far-field E (V/m) at radius_m per unit incident power wave a = 1 sqrt(W) at the port "
-                         "(a = U_inc / sqrt(Z_ref), peak phasor); all other ports terminated",
+                         "(a = U_inc / sqrt(Z_ref), peak phasor); all other incident waves zero; F = E A^-1",
+        "basis": "matched-incident-waves",
         "radius_m": radius, "encoding": enc, "shape": [int(len(ti)), int(len(pi))],
         "theta": _r(theta[ti], 3), "phi": _r(phi[pi], 3), "frequencies": [float(v) for v in freqs],
         "decimation": step, "mirror_planes": mirrors,

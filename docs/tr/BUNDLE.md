@@ -432,22 +432,28 @@ S etiketleri matris indislerini korur: `port_numbers: [2, 5]` olduğunda S22, mo
 
 **`qa`.**
 
+Grafikler, S1p/CSV dışa aktarımları, uyumlu bantlar ve optimizasyonun yansıma hedefleri varsa matris köşegenini kullanır. Ham çalıştırma yansıması, gerilim/akım ve kabul edilen güç, ilgili çalıştırmanın güç ve uzak alan hesabı için korunur. `s11_band_db` uyumlu bant eşiğini kaydeder; eski paketlerde varsayılan -10 dB'dir.
+
 | Alan | Tür | Açıklama |
 | --- | --- | --- |
 | `reciprocity_max` | number \| null | Frekanslar/çiftler boyunca maksimum \|S_ij − S_ji\| (iki sütun da biliniyor), doğrusal. FDTD tipik olarak 1e-4..1e-2 verir |
 | `reciprocity_pairs` | object | Çift başına aynı değer; i < j olacak şekilde `"i,j"` anahtarları |
 | `column_power_max`, `column_power_min` | object | Uyarılan j portu başına (`"j"` anahtarı): frekans boyunca Σ_i \|S_ij\|² maksimum/minimumu. 1 − sütun gücü, kaybolan veya ışınan paydır |
-| `passivity_max` | number \| null | En büyük sütun gücü. Pasif yapıda ≤ 1 olmalıdır |
-| `passive` | boolean | `passivity_max ≤ 1 + passive_tol` |
+| `passivity_max` | number \| null | Frekans boyunca en büyük tekil değerin karesinin maksimumu; eksik veya sonlu olmayan matriste null. Eski paketler en büyük sütun gücünü saklar |
+| `passive` | boolean \| null | `passivity_max ≤ 1 + passive_tol`; tam sonlu matris yoksa bilinmiyor |
+| `passivity_power` | number[] \| null | Her frekansta en büyük tekil değerin karesi |
+| `passivity_violations` | number[] | Toleransı aşan sıfır tabanlı frekans indisleri |
+| `passivity_method` | string | Tam matrisin tekil değer ölçütünü tanımlar |
 | `passive_tol` | number | Tolerans, 0,01 |
 
 ### element_patterns
 
-Antenlerde (NF2FF kutulu modeller), birden fazla port uyarıldığında veya `--element-patterns on` verildiğinde bulunur. Diğer tüm portlar sonlandırılmışken her uyarılan portun birim gelen dalga başına karmaşık uzak alanını tutar; karşılıklı kuplaj dahildir. Birleştirme için [ARRAYS.md](ARRAYS.md) sayfasına bakın.
+Antenlerde (NF2FF kutulu modeller), her port için bir uyarım çalıştırması varsa ve eleman örüntüleri istendiyse bulunur. Karmaşık alanlar S matrisiyle aynı gelen dalga bazını, `F = E A^-1`, kullanır: bir portta birim gelen dalga, diğerlerinde sıfır gelen dalga. Çalıştırmalar aynı port sırasını, frekans/açı ızgaralarını, faz merkezini ve yarıçapı kullanmalıdır. Kısmi uyarım, uyumsuz ızgara veya kötü koşullu gelen dalga matrisi varsa bölüm eklenmez ve neden `results.element_patterns_unavailable` içinde kaydedilir. Eski paketlerde çalıştırma başına skaler normalizasyon kullanılmıştır; artık gelen dalga sızıntısı bulunabilir. Birleştirme için [ARRAYS.md](ARRAYS.md) sayfasına bakın.
 
 | Alan | Tür | Açıklama |
 | --- | --- | --- |
 | `normalization` | string | Okunabilir normalizasyon notu |
+| `basis` | string? | Düzeltilmiş tam matris bazı için `matched-incident-waves`; eski paketlerde bulunmaz |
 | `radius_m` | number | Kayıtlı E değerlerinin uzak alan yarıçapı, m (1) |
 | `encoding` | string | `"i16le-base64-scaled"` (bu değişiklikten beri yazılır) veya `"f32le-base64"` (eski paketler). Okuyucular ikisini de kabul eder; bkz. [Kodlamalar](#element-pattern-encodings) |
 | `shape` | [number, number] | `[n_theta, n_phi]` |
@@ -530,6 +536,8 @@ Tepe metal kenarlarındadır; burada akım tekildir ve yalnızca mesh'in izin ve
 | `magnitude` | number[][] | `nu` değerli `nv` satır: `magnitude[j][i]`, `u_range[0] + i·Δu`, `v_range[0] + j·Δv` konumundadır |
 | `port` | number? | Uyarılan port numarası (bilinmiyorsa yok) |
 | `phasor` | FieldPlanePhasor? | Haritanın fazı ve bir dönem boyunca alanı için karmaşık bileşenler. Alan eklenmeden önceki paketlerde veya sıfır alanda bulunmaz; görüntüleyici yalnızca büyüklüğü gösterir |
+
+Eski `_mm` adlarına rağmen düzlem konumları, aralıklar ve geometri katmanları çizim birimindedir. Arayüz ve CSV, mm göstermek için koordinatları `units.length_m * 1000` ile çarpar; saklanan geometri koordinatları yeniden ölçeklenmez.
 
 **FieldPlanePhasor** (isteğe bağlı). Aynı yeniden örneklenmiş `nu × nv` ızgaranın karmaşık bileşenleri; görüntüleyici fazı ve bir dönem boyunca anlık `Re{F e^(jωt)}` alanını gösterebilir (tasarımcının 2B alan haritası sekmesi ve 3B görünüm animasyon yapar).
 

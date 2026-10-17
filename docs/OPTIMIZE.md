@@ -177,6 +177,7 @@ The arm impedance (width) was not optimized. The resistor alone already met both
 ## Limitations and next steps
 
 - **Partial excitation.** Driving only the needed ports is cheap but uses b_i / a_j (other ports assumed matched). It can differ from the complete matrix by about 2 dB near deep nulls. Use `--excite all` for the final evaluation, or confirm with a run.
+- **Native run quality.** A native evaluation is eligible only when energy convergence is explicitly established for every driven port. Missing convergence, failed ports and missing/nonfinite goal metrics are penalized and excluded from the best candidate. Invalid metrics are serialized as null; later valid candidates can still succeed. This is an energy-decay check, not proof of mesh convergence. Generic analytic evaluators do not require native run metadata.
 - **First feasible point.** The search stops once every goal is met. To find the optimum rather than a feasible point, tighten the targets.
 - **Nelder–Mead is local.** A different start point can reach a different match. The other `--method` choices (bayesian, cma-es, particle-swarm, genetic, trust-region) are not evaluated in this document.
 - **Coarse metrics.** Metrics come from 801 frequency points, and f0 cannot be resolved finer than that grid.

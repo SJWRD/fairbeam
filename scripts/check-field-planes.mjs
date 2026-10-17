@@ -462,3 +462,14 @@ const circ = () => map({ phasor: phasorOf([ex, ey, ez], ['x', 'y', 'z']) });
 }
 
 console.log('check-field-planes: ok');
+
+// Equivalent physical maps in mm, cm and m keep geometry in model coordinates, but export mm.
+for (const unit of [1e-3, 1e-2, 1]) {
+  const scale = unit * 1000;
+  const m = map({position_mm: 2.5/scale, u_range: [-10/scale,10/scale], v_range: [-5/scale,5/scale]});
+  const b = {...withMaps([m]), units: {...patch.units, length_m: unit}};
+  assert.equal(navModel.runContent(b).fieldPlanes[0].label, 'E-field (z = 2.5 mm, 2.450 GHz)');
+  const table = data.resultDataTable(b, 'fieldmap');
+  assert.deepEqual(table.rows.map(r => [r[3],r[5]]), [[-10,-5],[0,-5],[10,-5],[-10,5],[0,5],[10,5]]);
+}
+console.log('Field-plane units: mm/cm/m labels and CSV agree for identical physical maps.');

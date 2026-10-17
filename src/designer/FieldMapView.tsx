@@ -14,6 +14,7 @@ import { setFieldMapTabOpen } from "../scene/fieldPlaneClock";
 import { fieldPlaneRgba, fieldPlaneValues, planeOutline, readoutAt, sampleIndex, samplePosition, type Readout } from "../scene/fieldPlaneModel";
 import type { Bundle, FieldPlaneMap } from "../types";
 import { fmt, t } from "../i18n";
+import { modelToMm } from "../lib/modelUnits";
 import { fieldPlaneLabel } from "./navModel";
 import { focusResult, resultFocus } from "./resultFocus";
 
@@ -40,6 +41,7 @@ export default function FieldMapView(props: { b: Bundle }) {
 }
 
 function FieldMapPlane(props: { b: Bundle; map: FieldPlaneMap; index: number }) {
+  const mm = () => modelToMm(props.b);
   let host!: HTMLDivElement;
   let canvas!: HTMLCanvasElement;
   const size = useSize(() => host);
@@ -125,7 +127,7 @@ function FieldMapPlane(props: { b: Bundle; map: FieldPlaneMap; index: number }) 
 
   return (
     <div class="fm">
-      <div class="fm-plot" ref={host} tabindex="0" role="group" aria-label={t("fieldMap.plotAria", { label: fieldPlaneLabel(props.map) })}
+      <div class="fm-plot" ref={host} tabindex="0" role="group" aria-label={t("fieldMap.plotAria", { label: fieldPlaneLabel(props.map, mm()) })}
         aria-describedby="fm-hint" onKeyDown={onKey} onBlur={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setProbe(null); }}>
         <canvas ref={canvas} class="fm-canvas" style={{ left: `${geom().ox}px`, top: `${geom().oy}px`, width: `${geom().pw}px`, height: `${geom().ph}px` }} />
         <svg class="fm-svg" width={size().w} height={size().h} aria-hidden="true">
@@ -134,11 +136,11 @@ function FieldMapPlane(props: { b: Bundle; map: FieldPlaneMap; index: number }) 
             <rect class="fm-frame" x={geom().ox} y={geom().oy} width={geom().pw} height={geom().ph} />
             <For each={xTicks()}>{(v) => (
               <g><line x1={px(v)} x2={px(v)} y1={geom().oy + geom().ph} y2={geom().oy + geom().ph + 4} />
-                <text x={px(v)} y={geom().oy + geom().ph + 16} text-anchor="middle">{axisLabel(v, tickStep(xTicks()))}</text></g>
+                <text x={px(v)} y={geom().oy + geom().ph + 16} text-anchor="middle">{axisLabel(v * mm(), tickStep(xTicks()) * mm())}</text></g>
             )}</For>
             <For each={yTicks()}>{(v) => (
               <g><line x1={geom().ox - 4} x2={geom().ox} y1={py(v)} y2={py(v)} />
-                <text x={geom().ox - 7} y={py(v) + 4} text-anchor="end">{axisLabel(v, tickStep(yTicks()))}</text></g>
+                <text x={geom().ox - 7} y={py(v) + 4} text-anchor="end">{axisLabel(v * mm(), tickStep(yTicks()) * mm())}</text></g>
             )}</For>
             <text class="fm-title" x={geom().ox + geom().pw / 2} y={geom().oy + geom().ph + 34} text-anchor="middle">{axisName(props.map.u_axis)} (mm)</text>
             <text class="fm-title" transform={`translate(${Math.max(12, geom().ox - 40)} ${geom().oy + geom().ph / 2}) rotate(-90)`} text-anchor="middle">{axisName(props.map.v_axis)} (mm)</text>
@@ -164,11 +166,11 @@ function FieldMapPlane(props: { b: Bundle; map: FieldPlaneMap; index: number }) 
         <Show when={maps().length > 1}>
           <label class="fm-field"><span>{t("fieldMap.map")}</span>
             <select class="btn btn-ghost btn-sm" onChange={(e) => pick(Number(e.currentTarget.value))}>
-              <For each={maps()}>{(m, k) => <option value={k()} selected={k() === props.index}>{fieldPlaneLabel(m)}</option>}</For>
+              <For each={maps()}>{(m, k) => <option value={k()} selected={k() === props.index}>{fieldPlaneLabel(m, mm())}</option>}</For>
             </select>
           </label>
         </Show>
-        <div class="colorbar-title">{fieldPlaneLabel(props.map)}</div>
+        <div class="colorbar-title">{fieldPlaneLabel(props.map, mm())}</div>
         <Show when={props.map.port !== undefined}><div class="colorbar-port">{t("viewport.fieldPlane.portDriven", { port: props.map.port })}</div></Show>
         <FieldPlaneControls map={props.map} />
         <FieldPlaneLegend map={props.map} height={150} />
@@ -181,8 +183,8 @@ function FieldMapPlane(props: { b: Bundle; map: FieldPlaneMap; index: number }) 
         <dl class="kv fm-readout" aria-live="off">
           <Show when={read()} fallback={<><dt>{t("fieldMap.probe")}</dt><dd id="fm-hint" class="muted">{t("fieldMap.probeHint")}</dd></>}>{(r) => (
             <>
-              <dt id="fm-hint">{axisName(props.map.u_axis)}</dt><dd class="mono">{sig(r().u)} mm</dd>
-              <dt>{axisName(props.map.v_axis)}</dt><dd class="mono">{sig(r().v)} mm</dd>
+              <dt id="fm-hint">{axisName(props.map.u_axis)}</dt><dd class="mono">{sig(r().u * mm())} mm</dd>
+              <dt>{axisName(props.map.v_axis)}</dt><dd class="mono">{sig(r().v * mm())} mm</dd>
               <Show when={r().kind === "phase"} fallback={
                 <>
                   <dt>{r().kind === "signed" ? t("fieldMap.instant") : t("fieldMap.value")}</dt>

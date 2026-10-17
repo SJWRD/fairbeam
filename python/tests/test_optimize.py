@@ -219,7 +219,7 @@ class DesignPrecheck(unittest.TestCase):
                 self.values = values
 
             def to_bundle(self, model, params, name=None):
-                return {"schema": "fake", "W": self.values["W"]}
+                return {"schema": "fake", "W": self.values["W"], "run": {"converged": True}}
 
         def fake_run(module, values, **_):
             simulated.append(dict(values))

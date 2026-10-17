@@ -34,6 +34,7 @@ assert.match(readFileSync('scripts/publish-release.mjs','utf8'), /checksums.set\
 for (const lang of ['en','tr']) assert.ok(JSON.parse(readFileSync(`src/i18n/${lang}.json`))['about.thirdPartyLicenses']);
 const version = JSON.parse(readFileSync('package.json')).version;
 assert.equal(config.version, version);
+assert.equal(readFileSync("python/pyproject.toml", "utf8").match(/^version\s*=\s*"([^"]+)"/m)?.[1], version, "Python package version must match the app");
 assert.match(readFileSync('landing/index.html','utf8'), /blob\/main\/THIRD-PARTY-NOTICES\.md/);
 assert.match(readFileSync('src-tauri/src/main.rs','utf8'), /"licenses" => concat!\("https:\/\/github.com\/ismailakdag\/fairbeam\/blob\/v", env!\("CARGO_PKG_VERSION"\)/);
 console.log('License checks: missing licenses/texts, exact-version exceptions, preserved notices and distribution wiring pass.');
