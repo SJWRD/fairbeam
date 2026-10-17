@@ -335,6 +335,73 @@ def _windows_discard_staging(fd: int) -> None:
         raise ctypes.WinError(ctypes.get_last_error())
 
 
+def _macos_has_metadata(fd: int) -> bool:
+    """Query descriptor metadata directly: COPYFILE_CHECK can hide query errors."""
+    import ctypes
+
+    try:
+        api = ctypes.CDLL(None, use_errno=True)
+        attributes, acl_get, acl_free = api.flistxattr, api.acl_get_fd_np, api.acl_free
+    except AttributeError as exc:
+        raise OSError(errno.ENOSYS, "Metadata queries are unavailable") from exc
+    attributes.argtypes = (ctypes.c_int, ctypes.c_void_p, ctypes.c_size_t, ctypes.c_int)
+    attributes.restype = ctypes.c_ssize_t
+    acl_get.argtypes = (ctypes.c_int, ctypes.c_int)
+    acl_get.restype = ctypes.c_void_p
+    acl_free.argtypes = (ctypes.c_void_p,)
+    acl_free.restype = ctypes.c_int
+    ctypes.set_errno(0)
+    size = attributes(fd, None, 0, 0x0020)  # XATTR_SHOWCOMPRESSION includes compression metadata.
+    if size < 0:
+        error = ctypes.get_errno() or errno.EIO
+        raise OSError(error, os.strerror(error))
+    if size:
+        return True
+    ctypes.set_errno(0)
+    acl = acl_get(fd, 0x00000100)  # ACL_TYPE_EXTENDED
+    if acl:
+        if acl_free(acl) != 0:
+            error = ctypes.get_errno() or errno.EIO
+            raise OSError(error, os.strerror(error))
+        return True  # Even an empty explicit ACL can carry inheritance flags.
+    error = ctypes.get_errno()
+    # Darwin's filesec_get_property reports ENOENT for an absent ACL. Querying
+    # a valid open descriptor avoids confusing this with a missing pathname.
+    if error == errno.ENOENT:
+        return False
+    raise OSError(error or errno.EIO, os.strerror(error or errno.EIO))
+
+
+def _posix_plain_metadata(path: Path):
+    """Refuse metadata this replacement layer cannot preserve; never strip it."""
+    try:
+        _regular(path)
+        fd = os.open(path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+        try:
+            info = os.fstat(fd)
+            if not stat.S_ISREG(info.st_mode):
+                raise DocumentError("Document metadata requires a regular file")
+            if info.st_mode & (stat.S_ISUID | stat.S_ISGID | stat.S_ISVTX):
+                raise DocumentError("Cannot preserve document special mode bits; save a separate copy")
+            if getattr(info, "st_flags", 0):
+                raise DocumentError("Cannot preserve document file flags; save a separate copy")
+            extended = _macos_has_metadata(fd) if sys.platform == "darwin" else bool(os.listxattr(fd))
+            if extended:
+                raise DocumentError("Cannot preserve document ACLs or extended attributes; save a separate copy")
+            return info
+        finally:
+            os.close(fd)
+    except (OSError, AttributeError) as exc:
+        raise DocumentError("Cannot verify document ACLs and extended attributes; save a separate copy") from exc
+
+
+def _posix_prepare_staging(path: Path, expected) -> None:
+    actual = _posix_plain_metadata(path)
+    if (actual.st_uid, actual.st_gid) != (expected.st_uid, expected.st_gid):
+        raise DocumentError("Cannot preserve the document owner and group; save a separate copy")
+    os.chmod(path, stat.S_IMODE(expected.st_mode))
+
+
 def _document_lock_key(path: Path) -> tuple[str, str]:
     if sys.platform == "darwin":
         # macOS filesystems have different case/Unicode alias rules. Serializing
@@ -402,6 +469,7 @@ def save(path: Path, document: dict, base_hash: str | None = None) -> str:
             return digest(data)
         dacl = _windows_read_dacl(path) if previous is not None and os.name == "nt" else None
         owner_group = _windows_read_owner_group(path) if dacl is not None else None
+        posix_metadata = _posix_plain_metadata(path) if previous is not None and os.name != "nt" else None
         fd, name = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".tmp", dir=path.parent)
         temporary = Path(name)
         try:
@@ -415,13 +483,12 @@ def save(path: Path, document: dict, base_hash: str | None = None) -> str:
                         _windows_require_owner_group(temporary, owner_group)
                         # Restrict the empty staging file before any document bytes are written.
                         _windows_apply_dacl(temporary, dacl)
+                    if posix_metadata is not None:
+                        _posix_prepare_staging(temporary, posix_metadata)
                     stream.write(data)
                     stream.flush()
                     os.fsync(stream.fileno())
                     if previous is not None:
-                        # Windows chmod copies only the readonly bit; keep the stage writable.
-                        if os.name != "nt":
-                            os.chmod(temporary, stat.S_IMODE(path.stat().st_mode))
                         _retry_busy(lambda: os.replace(temporary, path))
                     else:
                         try:

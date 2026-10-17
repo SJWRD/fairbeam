@@ -96,9 +96,19 @@ cannot be read, applied, or preserved exactly, saving fails before replacing the
 A retained deletion-capable handle removes a failed stage even when the copied DACL denies
 deletion; cleanup does not restore broader parent permissions onto document bytes. Publication
 continues to use rename/replace, without `ReplaceFileW`'s partial-failure behavior.
-This preserves matching owner/group identities and the DACL, not every item of filesystem
-metadata: SACLs, alternate data streams, and other attributes are not copied. POSIX replacement
-preserves mode bits only.
+SACLs, alternate data streams, and other attributes are not copied.
+
+POSIX replacement preserves ordinary mode bits and requires the empty staging file's owner/group to match
+the destination before writing bytes. It refuses replacement when the destination or stage has
+setuid/setgid/sticky mode bits, extended ACLs, listed extended attributes, or BSD file flags, or
+when those metadata queries fail.
+macOS queries the open file descriptor with `flistxattr` (including compression attributes) and
+`acl_get_fd_np`; Linux uses `os.listxattr`, which also lists POSIX ACL attributes. Metadata is never
+stripped or permissions escalated. The error directs the user to save a separate copy.
+Finder tags, quarantine attributes, and inherited stage ACLs therefore cause refusal too: even a
+downloaded document with quarantine metadata needs Save As to a new file. An identical-byte save
+does not replace the file and needs no metadata changes. Queries cover metadata exposed to the
+current user, within the existing advisory-lock and static-boundary guarantees described below.
 
 `read(path)` returns `(document, byte_hash)` without opening results or executing Python.
 `read_result(path, document, reference)` checks membership, relative boundaries, regular files,
@@ -125,9 +135,11 @@ From the repository root, with its own installed dependencies:
 
 ```sh
 npm run check:documents
-python -m unittest discover -s python/tests -p test_documents.py -v
-python -m unittest discover -s python/tests -p 'test_document_workspace*.py' -v
-python -m unittest discover -s python/tests -p test_native_documents_api.py -v
+cd python
+python -m unittest discover -s tests -p 'test_document*.py' -v
+python -m unittest discover -s tests -p test_native_documents_api.py -v
+python -m unittest discover -s tests -p test_research_documents.py -v
+cd ..
 ```
 
 The shared cases in `python/tests/fixtures/document_envelopes.json` exercise both languages.
@@ -139,6 +151,8 @@ DACL that denies deletion. Numeric identity cases cover nested
 values, negative zero, exponents, and large integers rounded as browser JSON numbers.
 Platform-independent mocks check the macOS exclusive-rename contract, unsupported-volume refusal,
 competing creates, and parent-directory lock identities; these do not replace tests on a Mac.
+Metadata mocks cover descriptor query errors, ACLs, attributes, and ownership refusal. Native
+platform tests check Linux xattr refusal and macOS ACL/Finder-tag refusal on temporary fixtures.
 
 ## Remaining release gates
 
@@ -147,8 +161,8 @@ competing creates, and parent-directory lock identities; these do not replace te
 - Review the result-status presentation with missing, corrupt, historical, and newly computed
   results. Existing JSON import, export, and the openEMS workflow must remain usable.
 - Remaining native filesystem metadata needs an explicit policy before unrestricted overwrites:
-  Windows owner/group mismatches are refused and DACLs are preserved, but SACLs, alternate data
-  streams, POSIX ownership and extended ACLs, and other platform metadata are not preserved by
-  this layer. POSIX replacement preserves mode bits only.
+  Windows DACLs and owner/group identities and POSIX owner/group and ordinary mode bits are preserved.
+  POSIX extended metadata causes refusal; Windows SACLs, alternate data streams, and other metadata
+  still need a preservation policy.
 
 Do not promote a release on storage and unit checks alone.
