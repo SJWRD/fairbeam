@@ -48,6 +48,36 @@ def dead_pid() -> int:
 
 
 class Markers(unittest.TestCase):
+    def test_another_process_cannot_take_over_a_live_marker(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            run = Path(tmp) / "sim" / "dipole"
+            with mark_running(run):
+                before = marker_path(run).read_text(encoding="utf-8")
+                child = subprocess.run(
+                    [sys.executable, "-c",
+                     "import sys; from fairbeam.simdata import mark_running; "
+                     "ctx = mark_running(sys.argv[1]); ctx.__enter__(); ctx.__exit__(None, None, None)",
+                     str(run)], cwd=Path(__file__).resolve().parents[1],
+                    capture_output=True, text=True, timeout=15)
+                self.assertNotEqual(child.returncode, 0, "a competing run must not enter the folder")
+                self.assertIn("already in use", child.stderr)
+                self.assertEqual(marker_path(run).read_text(encoding="utf-8"), before)
+
+    def test_dead_marker_can_be_reclaimed(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            run = Path(tmp) / "dipole"
+            marker_path(run).write_text(str(dead_pid()), encoding="utf-8")
+            with mark_running(run):
+                self.assertEqual(marker_path(run).read_text(encoding="utf-8").strip(), str(os.getpid()))
+            self.assertFalse(marker_path(run).exists())
+
+    def test_exit_does_not_remove_a_replaced_marker(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            run = Path(tmp) / "dipole"
+            with mark_running(run):
+                marker_path(run).write_text("replacement", encoding="utf-8")
+            self.assertEqual(marker_path(run).read_text(encoding="utf-8"), "replacement")
+
     def test_marker_next_to_the_folder_nested_and_removed(self):
         with tempfile.TemporaryDirectory() as tmp:
             run = Path(tmp) / "sim" / "dipole"

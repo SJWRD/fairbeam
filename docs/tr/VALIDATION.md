@@ -788,3 +788,20 @@ komutlarını bağlar; galeri modeli, üretilmiş paket veya kitap içeriği ekl
 Durdurma, ardışık mesh ve hava açıklığı kontrolleri sağlanır; ancak ince mesh
 frekans hatası %1,017947 ile değişmeyen %1 hedefini aşar. Bu kapsam kabul
 edilmez; bölüm kaydı PR #81'deki tam ölçümlere bağlantı verir.
+
+## 23. Bölüm 7 karşılaştırma kapsamları
+
+[Bölüm 7 kaydı](https://github.com/ismailakdag/fairbeam/blob/main/docs/benchmarks/pozar-chapter-07.md), Örnek 7.7 için düzgün kuplajlı
+şerit hattın iki örneklenmiş kapsamını toplar: kayıpsız ince PEC modelinde
+karmaşık S ve bağıl çıkış fazı; sabit iletkenlik modelinde karmaşık S, faz ve
+sönüm. İç referans düzlemleri L uzunluğundaki bölümü sınırlar; şeritler bu
+düzlemlerin ötesinde devam eder. Bunlar elektriksel bölüm sınırlarıdır, üretilmiş
+geçişler değildir. İki ardışık mesh karşılaştırması ve beş bağımsız kontrol sabit
+sınırlarını sağlar. Sönüm hedef hataları monoton değildir; asimptotik yakınsama
+sırası iddia edilmez.
+
+Hacimsel bakır, geniş bantta frekanstan bağımsız kayıp tanjantı, gerçek besleme
+geçişleri ve sonsuz yönlendiricilik kapsam dışında kalır. Bölüm 7'de simüle edilen
+diğer uygulamalar kabul edilmez; fikstür PR'ları başarısız, bekleyen ve ertelenen
+kontrolleri korur. Kayıt sabit kaynak commit'lerini ve çoğaltma komutlarını
+bağlar. Galeri modeli, üretilmiş paket veya kitap içeriği eklenmez.

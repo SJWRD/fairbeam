@@ -48,6 +48,65 @@ from .simdata import remove_inside
 PACKAGE_ROOT = Path(__file__).resolve().parent.parent  # the folder that contains fairbeam/
 
 
+def _drain_output(proc, handle_line, idle_timeout: float = 5.0) -> bool:
+    """Process all captured output on the caller thread before deciding job status.
+
+    Readers only enqueue bytes: they cannot mutate a finished job or write a closed
+    log. After the child exits, an inherited pipe with no output is bounded by an
+    idle timeout; slow parsing/log writes do not consume that timeout.
+    """
+    output = queue.Queue(maxsize=1024)
+    stop = threading.Event()
+
+    def send(item):
+        while not stop.is_set():
+            try:
+                output.put(item, timeout=0.1)
+                return
+            except queue.Full:
+                pass
+
+    def read(stream, name):
+        try:
+            for raw in iter(stream.readline, b""):
+                if stop.is_set():
+                    break
+                send((name, raw))
+        except OSError as exc:
+            send((name, exc))
+        finally:
+            stream.close()
+            send((name, None))
+
+    for stream, name in ((proc.stdout, "stdout"), (proc.stderr, "stderr")):
+        threading.Thread(target=read, args=(stream, name), daemon=True).start()
+    pending, idle_since, released, complete = 2, None, False, True
+    try:
+        while pending:
+            if not released and proc.poll() is not None:
+                release_group(proc)
+                released = True
+            try:
+                name, raw = output.get(timeout=0.1)
+            except queue.Empty:
+                if released:
+                    if idle_since is None:
+                        idle_since = time.monotonic()
+                    elif time.monotonic() - idle_since >= idle_timeout:
+                        return False
+                continue
+            idle_since = None
+            if raw is None:
+                pending -= 1
+            elif isinstance(raw, OSError):
+                complete = False
+            else:
+                handle_line(raw.decode("utf-8", errors="replace").rstrip("\r\n"), name)
+        return complete
+    finally:
+        stop.set()
+
+
 def now_iso(t: float | None = None) -> str:
     return time.strftime("%Y-%m-%dT%H:%M:%S%z", time.localtime(t if t is not None else time.time()))
 
@@ -852,40 +911,33 @@ class JobManager:
         job.save()
         self._changed()
         stderr_tail: list[str] = []
-        write_lock = threading.Lock()
 
-        def pump(stream, name):
-            # keep draining whatever happens (a full disk, a parser bug): a pipe nobody reads
-            # would block the child and leave the job "running" forever
-            for raw in iter(stream.readline, b""):
-                line = raw.decode("utf-8", errors="replace").rstrip("\r\n")
-                with write_lock:
-                    try:
-                        log.write(("! " if name == "stderr" else "") + line + "\n")
-                    except (OSError, ValueError):
-                        pass
-                    if name == "stderr" and line.strip():
-                        stderr_tail.append(line)
-                        del stderr_tail[:-40]
-                    try:
-                        self._handle(job, parser, line, name)
-                    except Exception as e:  # noqa: BLE001 - report once, keep the pipe flowing
-                        if not getattr(job, "_handle_error", None):
-                            job._handle_error = f"{type(e).__name__}: {e}"
-                            stderr_tail.append(f"fairbeam: progress handling failed: {job._handle_error}")
-            stream.close()
+        def handle_line(line, name):
+            try:
+                log.write(("! " if name == "stderr" else "") + line + "\n")
+            except (OSError, ValueError):
+                pass
+            if name == "stderr" and line.strip():
+                stderr_tail.append(line)
+                del stderr_tail[:-40]
+            try:
+                self._handle(job, parser, line, name)
+            except Exception as e:  # noqa: BLE001 - report once, keep the pipe flowing
+                if not getattr(job, "_handle_error", None):
+                    job._handle_error = f"{type(e).__name__}: {e}"
+                    stderr_tail.append(f"fairbeam: progress handling failed: {job._handle_error}")
 
-        threads = [threading.Thread(target=pump, args=(job.proc.stdout, "stdout"), daemon=True),
-                   threading.Thread(target=pump, args=(job.proc.stderr, "stderr"), daemon=True)]
-        for t in threads:
-            t.start()
+        drained = _drain_output(job.proc, handle_line)
         code = job.proc.wait()
         release_group(job.proc)  # Windows: whatever the run left behind goes with its job object
-        for t in threads:
-            t.join(timeout=5)
         log.write(f"[exit code {code}]\n")
         log.close()
         job.exit_code = code
+
+        if not drained and not job.cancel_requested:
+            self._finish(job, "failed", error="run output capture was incomplete after the process exited",
+                         stderr_tail=stderr_tail[-20:])
+            return
 
         if job.kind == "research" and not job.cancel_requested:
             from .research import load_result, completed_result

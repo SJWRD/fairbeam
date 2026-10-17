@@ -1179,3 +1179,20 @@ The three approved long boxed-microstrip refinements for 6.2 are complete.
 Their stopping, successive mesh and air-clearance controls pass, but the fine
 frequency error is 1.017947%, above the unchanged 1% target. This scope remains
 excluded; the chapter record links the full measurements in PR #81.
+
+## 23. Chapter 7 comparison scopes
+
+The [Chapter 7 record](benchmarks/pozar-chapter-07.md) collects two sampled
+uniform coupled-stripline scopes for Example 7.7: lossless thin-PEC complex S
+and relative output phase, and constant-conductivity complex S, phase and
+attenuation. Internal reference planes delimit the length-L section; the strips
+continue beyond them. These are electrical section boundaries, not fabricated
+transitions. Both successive mesh comparisons and all five independent controls
+pass their frozen limits. Attenuation target errors are nonmonotonic; no
+asymptotic order is claimed.
+
+Finite copper, frequency-flat wideband loss tangent, fabricated launches and
+infinite directivity remain excluded. The other simulated Chapter 7 applications
+are not qualified; their fixture PRs retain failed, pending and deferred controls.
+The record links pinned source snapshots and reproduction commands. No gallery
+model, generated bundle or textbook content is added.
