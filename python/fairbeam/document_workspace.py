@@ -48,10 +48,7 @@ def _immutable(path: Path, data: bytes) -> None:
             stream.flush()
             os.fsync(stream.fileno())
         try:
-            if os.name == "nt":
-                modelfiles._retry_busy(lambda: os.rename(temporary, path))
-            else:
-                os.link(temporary, path)
+            doc._publish_new(temporary, path)
         except FileExistsError:
             if doc._read_bytes(path, doc.MAX_RESULT) != data:
                 raise doc.DocumentConflict("A document result filename contains different data") from None
