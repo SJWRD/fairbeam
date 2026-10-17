@@ -11,7 +11,7 @@ import { useModal } from "../lib/dialog";
 import NumberField from "./NumberField";
 import { api, ApiError, type PcbLayer, type PcbImportReport } from "../runner/api";
 import { models } from "../runner/store";
-import { createDesign } from "../designer/store";
+import { createDesign, file as designFile } from "../designer/store";
 import { openPortTool } from "../designer/DesignWorkspace";
 import { libraryLabel } from "../designer/MaterialLibrary";
 import { MATERIAL_LIBRARY } from "../designer/materials";
@@ -201,6 +201,10 @@ export default function PcbImportDialog() {
       const { files, built } = request();
       const res = await createDesign({ id: id(), name: name().trim(), pcb: { files, options: built.options } });
       if (res) {
+        if (designFile()?.id !== res.id || designFile()?.backup_scope !== res.backup_scope) {
+          setPcbImportOpen(false);
+          return;
+        }
         // the importer cannot know the feed: without a port, the next step is to add one
         if (res.design.ports.length) setPcbImportOpen(false);
         else setCreated(res.file);

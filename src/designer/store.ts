@@ -381,6 +381,7 @@ export function releaseDraft() {
 export async function createDesign(body: { id: string; name?: string; from?: string; template?: TemplateKey; python?: { source_model: string; model?: Design["model"] }; cst?: { source: string; filename?: string };
   pcb?: { files: PcbFile[]; options?: PcbOptions }; design?: Design }) {
   if (!(await confirmReplaceDraft("create", body.name || body.id))) return null;
+  const sourceTicket = asyncState.ticket(), sourceResults = defaultDesignerSession.pendingResultsToken();
   const mine = asyncState.navigationTicket();
   defaultDesignerIO.setNavigationTarget(body.id);
   stopPreview();
@@ -402,7 +403,16 @@ export async function createDesign(body: { id: string; name?: string; from?: str
       }
     }
     await refreshModels();
-    if (!asyncState.isOwnedNavigationCurrent(mine)) return res;
+    if (!asyncState.isOwnedNavigationCurrent(mine) || !asyncState.isDocumentCurrent(sourceTicket)) return res;
+    if (!asyncState.isDraftCurrent(sourceTicket) || defaultDesignerSession.pendingResultsToken() !== sourceResults) {
+      defaultDesignerIO.forgetRelease();
+      selectModel(file()?.id ?? "");
+      const text = t("document.createdNewer");
+      if (appMode() === "design") setMessage({ tone: "warn", text, sticky: true });
+      else showToast(text, { key: "create-retained-source" });
+      schedulePreview(0);
+      return res;
+    }
     selectModel(res.id);
     take({ id: res.id, file: res.file, design: res.design, hash: res.hash, readonly: res.readonly, backup_scope: res.backup_scope });
     const createdDocument = asyncState.ticket();
