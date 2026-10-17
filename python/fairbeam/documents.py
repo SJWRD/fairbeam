@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import os
 from pathlib import Path
 import re
@@ -46,8 +47,31 @@ def digest(data: bytes) -> str:
 
 
 def design_digest(design: dict) -> str:
+    """Hash a design snapshot using the same finite-double number identity as the browser."""
     _check_design(design)
-    return digest(_json_bytes(design))
+    try:
+        return digest(_json_bytes(_design_numbers(design)))
+    except (OverflowError, RecursionError) as exc:
+        raise DocumentError("Design must contain finite JSON numbers") from exc
+
+
+def _design_numbers(value):
+    # Python's 32.0 and JavaScript's JSON 32 describe the same design. Normalize all
+    # numbers to IEEE-754 doubles first, matching design.evaluate and JSON.parse;
+    # integral doubles (including negative zero) then have one integer spelling.
+    # This is only the design identity: result hashes still cover their exact bytes.
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        number = float(value)
+        if not math.isfinite(number):
+            raise DocumentError("Design must contain finite JSON numbers")
+        return int(number) if number.is_integer() else number
+    if isinstance(value, dict):
+        return {key: _design_numbers(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_design_numbers(item) for item in value]
+    return value
 
 
 def _check_design(design) -> None:
@@ -165,6 +189,103 @@ def read(path: Path) -> tuple[dict, str]:
     return _parse(data), digest(data)
 
 
+def _windows_read_dacl(path: Path) -> bytes:
+    """Read a self-relative descriptor containing only the destination's DACL."""
+    import ctypes
+    from ctypes import wintypes
+
+    api = ctypes.WinDLL("advapi32", use_last_error=True)
+    get = api.GetFileSecurityW
+    get.argtypes = (wintypes.LPCWSTR, wintypes.DWORD, ctypes.c_void_p,
+                    wintypes.DWORD, ctypes.POINTER(wintypes.DWORD))
+    get.restype = wintypes.BOOL
+    size = wintypes.DWORD()
+    if get(str(path), 4, None, 0, ctypes.byref(size)) or ctypes.get_last_error() != 122:
+        raise ctypes.WinError(ctypes.get_last_error())
+    data = ctypes.create_string_buffer(size.value)
+    if not get(str(path), 4, data, len(data), ctypes.byref(size)):
+        raise ctypes.WinError(ctypes.get_last_error())
+    return data.raw[:size.value]
+
+
+def _windows_apply_dacl(path: Path, descriptor: bytes) -> None:
+    """Copy and verify the DACL, including inherited ACEs and inheritance protection."""
+    if _windows_read_dacl(path) == descriptor:
+        return  # Do not change Windows' automatic-inheritance flags on an identical ACL.
+    import ctypes
+    from ctypes import wintypes
+
+    api = ctypes.WinDLL("advapi32", use_last_error=True)
+    api.GetSecurityDescriptorControl.argtypes = (ctypes.c_void_p,
+        ctypes.POINTER(wintypes.WORD), ctypes.POINTER(wintypes.DWORD))
+    api.GetSecurityDescriptorControl.restype = wintypes.BOOL
+    api.GetSecurityDescriptorDacl.argtypes = (ctypes.c_void_p,
+        ctypes.POINTER(wintypes.BOOL), ctypes.POINTER(ctypes.c_void_p),
+        ctypes.POINTER(wintypes.BOOL))
+    api.GetSecurityDescriptorDacl.restype = wintypes.BOOL
+    api.SetNamedSecurityInfoW.argtypes = (wintypes.LPWSTR, ctypes.c_int,
+        wintypes.DWORD, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p)
+    api.SetNamedSecurityInfoW.restype = wintypes.DWORD
+    data = ctypes.create_string_buffer(descriptor)
+    control, revision = wintypes.WORD(), wintypes.DWORD()
+    present, defaulted, dacl = wintypes.BOOL(), wintypes.BOOL(), ctypes.c_void_p()
+    if not api.GetSecurityDescriptorControl(data, ctypes.byref(control), ctypes.byref(revision)):
+        raise ctypes.WinError(ctypes.get_last_error())
+    if not api.GetSecurityDescriptorDacl(data, ctypes.byref(present), ctypes.byref(dacl),
+                                       ctypes.byref(defaulted)):
+        raise ctypes.WinError(ctypes.get_last_error())
+    if not present.value:
+        raise DocumentError("Cannot preserve a destination without a DACL")
+    protection = 0x80000000 if control.value & 0x1000 else 0x20000000
+    error = api.SetNamedSecurityInfoW(str(path), 1, 4 | protection, None, None, dacl, None)
+    if error:
+        raise ctypes.WinError(error)
+    if _windows_read_dacl(path) != descriptor:
+        raise DocumentError("Cannot preserve the destination DACL exactly")
+
+
+def _windows_staging_fd(fd: int, path: Path) -> int:
+    """Retain deletion rights before restricting the empty staging file's DACL."""
+    import ctypes
+    from ctypes import wintypes
+    import msvcrt
+
+    # CRT-opened files do not share deletion. Reopen the still-empty staging file
+    # with a handle that can be renamed while open and removed after an error,
+    # even when the copied DACL denies the current user DELETE or WRITE_DAC.
+    os.close(fd)
+    api = ctypes.WinDLL("kernel32", use_last_error=True)
+    api.CreateFileW.argtypes = (wintypes.LPCWSTR, wintypes.DWORD, wintypes.DWORD,
+        ctypes.c_void_p, wintypes.DWORD, wintypes.DWORD, wintypes.HANDLE)
+    api.CreateFileW.restype = wintypes.HANDLE
+    api.CloseHandle.argtypes = (wintypes.HANDLE,)
+    api.CloseHandle.restype = wintypes.BOOL
+    handle = api.CreateFileW(str(path), 0x40000000 | 0x10000, 7, None, 3, 0x80, None)
+    if handle == ctypes.c_void_p(-1).value:
+        raise ctypes.WinError(ctypes.get_last_error())
+    try:
+        return msvcrt.open_osfhandle(handle, os.O_WRONLY | os.O_BINARY)
+    except BaseException:
+        api.CloseHandle(handle)
+        raise
+
+
+def _windows_discard_staging(fd: int) -> None:
+    """Delete through the retained handle, without relaxing permissions on saved bytes."""
+    import ctypes
+    from ctypes import wintypes
+    import msvcrt
+
+    api = ctypes.WinDLL("kernel32", use_last_error=True)
+    api.SetFileInformationByHandle.argtypes = (wintypes.HANDLE, ctypes.c_int,
+                                               ctypes.c_void_p, wintypes.DWORD)
+    api.SetFileInformationByHandle.restype = wintypes.BOOL
+    delete = ctypes.c_ubyte(1)  # FILE_DISPOSITION_INFO.DeleteFile is BOOLEAN, not BOOL.
+    if not api.SetFileInformationByHandle(msvcrt.get_osfhandle(fd), 4,
+                                         ctypes.byref(delete), ctypes.sizeof(delete)):
+        raise ctypes.WinError(ctypes.get_last_error())
+
+
 def save(path: Path, document: dict, base_hash: str | None = None) -> str:
     """Atomically create or replace a document; replacing requires its current byte hash."""
     path = _path(path)
@@ -182,25 +303,35 @@ def save(path: Path, document: dict, base_hash: str | None = None) -> str:
             raise DocumentConflict("Document changed on disk; reopen or save a separate copy")
         if previous == data:
             return digest(data)
+        dacl = _windows_read_dacl(path) if previous is not None and os.name == "nt" else None
         fd, name = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".tmp", dir=path.parent)
         temporary = Path(name)
         try:
+            if os.name == "nt":
+                fd = _windows_staging_fd(fd, temporary)
             with os.fdopen(fd, "wb") as stream:
-                stream.write(data)
-                stream.flush()
-                os.fsync(stream.fileno())
-            if previous is not None:
-                # POSIX permissions survive replacement. On Windows chmod copies only the
-                # readonly bit: a refused replacement would also make our temp undeletable.
-                if os.name != "nt":
-                    os.chmod(temporary, stat.S_IMODE(path.stat().st_mode))
-                _retry_busy(lambda: os.replace(temporary, path))
-            elif os.name == "nt":
-                # Windows rename fails when another writer created the destination meanwhile.
-                _retry_busy(lambda: os.rename(temporary, path))
-            else:
-                # An exclusive link publishes a complete file without overwriting another writer.
-                os.link(temporary, path)
+                try:
+                    if dacl is not None:
+                        # Restrict the empty staging file before any document bytes are written.
+                        _windows_apply_dacl(temporary, dacl)
+                    stream.write(data)
+                    stream.flush()
+                    os.fsync(stream.fileno())
+                    if previous is not None:
+                        # Windows chmod copies only the readonly bit; keep the stage writable.
+                        if os.name != "nt":
+                            os.chmod(temporary, stat.S_IMODE(path.stat().st_mode))
+                        _retry_busy(lambda: os.replace(temporary, path))
+                    elif os.name == "nt":
+                        # Windows rename fails if another writer created the destination meanwhile.
+                        _retry_busy(lambda: os.rename(temporary, path))
+                    else:
+                        # Publish complete bytes without overwriting another writer.
+                        os.link(temporary, path)
+                except BaseException:
+                    if os.name == "nt":
+                        _windows_discard_staging(stream.fileno())
+                    raise
         finally:
             temporary.unlink(missing_ok=True)
     return digest(data)

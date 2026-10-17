@@ -43,6 +43,30 @@ class Documents(unittest.TestCase):
         self.assertEqual(restored["design"]["model"]["name"], "İzmir patch 😀")
         self.assertFalse((self.root / self.document["results_directory"]).exists())
 
+    def test_design_digest_normalizes_browser_numbers_without_mutating_design(self):
+        design = copy.deepcopy(self.design)
+        design["extra_metadata"] = json.loads(
+            '[32.0, -0.0, 1e20, 1e-7, 1.25, 9007199254740993, true, {"nested": [-6.0, 1e100]}]')
+        browser = copy.deepcopy(design)
+        browser["extra_metadata"] = json.loads(
+            '[32, 0, 100000000000000000000, 0.0000001, 1.25, 9007199254740992, true, '
+            '{"nested": [-6, 1e100]}]')
+        before = json.dumps(design)
+        self.assertEqual(doc.design_digest(design), doc.design_digest(browser))
+        self.assertEqual(json.dumps(design), before)
+        browser["extra_metadata"][6] = 1  # Boolean metadata is not the number one.
+        self.assertNotEqual(doc.design_digest(design), doc.design_digest(browser))
+
+    def test_design_digest_rejects_nonfinite_numbers_in_nested_metadata(self):
+        for number in (float("nan"), float("inf"), -float("inf"), 10 ** 400):
+            with self.subTest(number=str(number)[:30]):
+                design = dict(self.design, extra_metadata={"nested": [number]})
+                with self.assertRaises(doc.DocumentError):
+                    doc.design_digest(design)
+
+    def test_result_byte_digest_keeps_json_number_spelling(self):
+        self.assertNotEqual(doc.digest(b'{"value":32.0}'), doc.digest(b'{"value":32}'))
+
     def test_shared_envelope_fixtures(self):
         fixtures = json.loads((Path(__file__).parent / "fixtures/document_envelopes.json").read_text(encoding="utf-8"))
         for group, cases in fixtures.items():
@@ -105,6 +129,120 @@ class Documents(unittest.TestCase):
             with self.assertRaises(PermissionError):
                 doc.save(self.path, self.document, initial)
         self.assertEqual(doc.read(self.path)[1], initial)
+        self.assertEqual(list(self.root.iterdir()), [self.path])
+
+    def windows_acl(self, path, sddl, protected):
+        """Install an independent native ACL fixture, including normal parent inheritance."""
+        import ctypes
+        from ctypes import wintypes
+        api = ctypes.WinDLL("advapi32", use_last_error=True)
+        api.ConvertStringSecurityDescriptorToSecurityDescriptorW.argtypes = (
+            wintypes.LPCWSTR, wintypes.DWORD, ctypes.POINTER(ctypes.c_void_p), ctypes.c_void_p)
+        api.ConvertStringSecurityDescriptorToSecurityDescriptorW.restype = wintypes.BOOL
+        api.GetSecurityDescriptorDacl.argtypes = (ctypes.c_void_p,
+            ctypes.POINTER(wintypes.BOOL), ctypes.POINTER(ctypes.c_void_p),
+            ctypes.POINTER(wintypes.BOOL))
+        api.GetSecurityDescriptorDacl.restype = wintypes.BOOL
+        api.SetNamedSecurityInfoW.argtypes = (wintypes.LPWSTR, ctypes.c_int,
+            wintypes.DWORD, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p)
+        api.SetNamedSecurityInfoW.restype = wintypes.DWORD
+        kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+        kernel.LocalFree.argtypes = (ctypes.c_void_p,)
+        kernel.LocalFree.restype = ctypes.c_void_p
+        descriptor = ctypes.c_void_p()
+        if not api.ConvertStringSecurityDescriptorToSecurityDescriptorW(
+                sddl, 1, ctypes.byref(descriptor), None):
+            raise ctypes.WinError(ctypes.get_last_error())
+        try:
+            present, defaulted, dacl = wintypes.BOOL(), wintypes.BOOL(), ctypes.c_void_p()
+            if not api.GetSecurityDescriptorDacl(descriptor, ctypes.byref(present),
+                                                ctypes.byref(dacl), ctypes.byref(defaulted)):
+                raise ctypes.WinError(ctypes.get_last_error())
+            flags = 4 | (0x80000000 if protected else 0x20000000)
+            error = api.SetNamedSecurityInfoW(str(path), 1, flags, None, None, dacl, None)
+            if error:
+                raise ctypes.WinError(error)
+        finally:
+            kernel.LocalFree(descriptor)
+
+    @unittest.skipUnless(os.name == "nt", "Windows destination DACL preservation")
+    def test_windows_replacement_preserves_protected_and_inherited_dacls(self):
+        initial = doc.save(self.path, self.document)
+        for protected in (True, False):
+            with self.subTest(protected=protected):
+                self.windows_acl(self.path, "D:(A;;FA;;;OW)", protected)
+                before = doc._windows_read_dacl(self.path)
+                self.document["design"]["model"]["name"] = f"edited {protected}"
+                initial = doc.save(self.path, self.document, initial)
+                self.assertEqual(doc._windows_read_dacl(self.path), before)
+                self.assertEqual(doc.read(self.path)[0], self.document)
+        self.assertEqual(list(self.root.iterdir()), [self.path])
+
+    @unittest.skipUnless(os.name == "nt", "Windows DACL failure handling")
+    def test_windows_acl_failure_never_publishes_and_cleans_empty_stage(self):
+        initial = doc.save(self.path, self.document)
+        self.document["design"]["model"]["name"] = "edited"
+        original_acl = doc._windows_read_dacl(self.path)
+        for helper in ("_windows_read_dacl", "_windows_apply_dacl"):
+            with self.subTest(helper=helper):
+                def refused(*args):
+                    for staging in self.root.glob("*.tmp"):
+                        self.assertEqual(staging.stat().st_size, 0)
+                    raise PermissionError("ACL refused")
+                with mock.patch.object(doc, helper, side_effect=refused):
+                    with self.assertRaisesRegex(PermissionError, "ACL refused"):
+                        doc.save(self.path, self.document, initial)
+                self.assertEqual(doc.read(self.path)[1], initial)
+                self.assertEqual(doc._windows_read_dacl(self.path), original_acl)
+                self.assertEqual(list(self.root.iterdir()), [self.path])
+
+    @unittest.skipUnless(os.name == "nt", "Windows staging permissions")
+    def test_windows_stage_gets_destination_dacl_before_document_bytes(self):
+        initial = doc.save(self.path, self.document)
+        self.windows_acl(self.path, "D:(A;;FA;;;OW)", True)
+        before = doc._windows_read_dacl(self.path)
+        apply = doc._windows_apply_dacl
+        def restrict(path, descriptor):
+            self.assertEqual(path.stat().st_size, 0)
+            self.assertEqual(descriptor, before)
+            apply(path, descriptor)
+            self.assertEqual(doc._windows_read_dacl(path), before)
+        self.document["design"]["model"]["name"] = "edited"
+        with mock.patch.object(doc, "_windows_apply_dacl", side_effect=restrict) as applied:
+            doc.save(self.path, self.document, initial)
+        applied.assert_called_once()
+
+    @unittest.skipUnless(os.name == "nt", "Windows DACL verification failure")
+    def test_windows_unverifiable_dacl_keeps_original_and_cleans_empty_stage(self):
+        initial = doc.save(self.path, self.document)
+        self.windows_acl(self.path, "D:(A;;FA;;;OW)", True)
+        before = doc._windows_read_dacl(self.path)
+        read = doc._windows_read_dacl
+        def unverifiable(path):
+            if path == self.path:
+                return read(path)
+            self.assertEqual(path.stat().st_size, 0)
+            return b"different staging DACL"
+        self.document["design"]["model"]["name"] = "edited"
+        with mock.patch.object(doc, "_windows_read_dacl", side_effect=unverifiable):
+            with self.assertRaisesRegex(doc.DocumentError, "DACL exactly"):
+                doc.save(self.path, self.document, initial)
+        self.assertEqual(doc.read(self.path)[1], initial)
+        self.assertEqual(doc._windows_read_dacl(self.path), before)
+        self.assertEqual(list(self.root.iterdir()), [self.path])
+
+    @unittest.skipUnless(os.name == "nt", "Windows cleanup with restrictive DACL")
+    def test_windows_replace_failure_removes_stage_even_if_dacl_denies_delete(self):
+        initial = doc.save(self.path, self.document)
+        self.windows_acl(self.path, "D:(D;;SD;;;OW)(A;;FA;;;OW)", True)
+        self.addCleanup(lambda: self.windows_acl(self.path, "D:(A;;FA;;;OW)", True))
+        before = doc._windows_read_dacl(self.path)
+        self.document["design"]["model"]["name"] = "edited"
+        with mock.patch.object(doc.os, "replace", side_effect=OSError("disk error")):
+            with self.assertRaisesRegex(OSError, "disk error"):
+                doc.save(self.path, self.document, initial)
+        self.assertEqual(doc.read(self.path)[1], initial)
+        self.assertEqual(doc._windows_read_dacl(self.path), before)
         self.assertEqual(list(self.root.iterdir()), [self.path])
 
     @unittest.skipIf(os.name == "nt", "POSIX permission preservation")
@@ -256,14 +394,19 @@ class Documents(unittest.TestCase):
     def test_directory_reparse_flag_refused(self):
         _, reference = self.result()
         real_lstat = Path.lstat
-        folder = self.root / self.document["results_directory"]
+        # Windows hosted runners can expose TEMP through an 8.3 name. The reader
+        # canonicalizes the selected parent; intercept that same directory.
+        folder = (self.root / self.document["results_directory"]).resolve()
+        inspected = []
         def lstat(path, *args, **kwargs):
             info = real_lstat(path, *args, **kwargs)
             if path == folder:
+                inspected.append(path)
                 return mock.Mock(st_mode=info.st_mode, st_file_attributes=0x400)
             return info
         with mock.patch.object(Path, "lstat", lstat), self.assertRaisesRegex(doc.DocumentError, "link"):
             doc.read_result(self.path, self.document, reference)
+        self.assertEqual(inspected, [folder])
 
 
 if __name__ == "__main__":

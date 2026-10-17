@@ -21,6 +21,13 @@ hash identifies the design snapshot used for that run, and can differ from the c
 It must not be recomputed from the current geometry when attaching an older run. Hashes establish
 identity, not physical accuracy, solver equivalence, or convergence.
 
+`design_sha256` uses the Python `design_digest` helper. For this identity only, JSON numbers are
+rounded to finite IEEE-754 doubles, then integral values and negative zero are written as integers.
+Normalization is recursive; booleans remain booleans. The normalized snapshot is serialized as
+sorted-key, two-space-indented UTF-8 JSON with a final newline. This makes an unchanged browser
+round trip (`32.0` to `32`, for example) retain its design identity. It is not a hash of browser
+`JSON.stringify` output. Result-file `sha256` continues to hash the exact original bytes.
+
 Folder and result names cannot contain path separators, traversal, alternate streams, Windows
 device names, or trailing dots/spaces, and are limited to 180 UTF-8 bytes.
 Case-insensitive duplicate result names are refused.
@@ -35,6 +42,15 @@ preflight only: the server must validate the complete design and file contents b
 the previous successful `save`. Cooperating writers share an OS advisory lock. Writes are staged
 and flushed in the destination directory before publication. A stale revision, deleted file,
 failed flush, or failed replacement must not silently overwrite the previous document.
+
+Windows replacement copies and verifies the destination DACL, including inherited ACEs and
+inheritance protection, on the empty staging file before writing document bytes. If the DACL
+cannot be read, applied, or preserved exactly, saving fails before replacing the destination.
+A retained deletion-capable handle removes a failed stage even when the copied DACL denies
+deletion; cleanup does not restore broader parent permissions onto document bytes. Publication
+continues to use rename/replace, without `ReplaceFileW`'s partial-failure behavior.
+This preserves the DACL, not every item of filesystem metadata: owner/group, SACLs, alternate data
+streams, and other attributes are not copied. POSIX replacement preserves mode bits only.
 
 `read(path)` returns `(document, byte_hash)` without opening results or executing Python.
 `read_result(path, document, reference)` checks membership, relative boundaries, regular files,
@@ -56,6 +72,9 @@ python -m unittest discover -s python/tests -p test_documents.py -v
 The shared cases in `python/tests/fixtures/document_envelopes.json` exercise both languages.
 Filesystem tests cover stale saves, simultaneous writers, Unicode, missing results, corrupted
 checksums, links, size limits, and failed writes. They require neither a solver nor network access.
+Windows cases also exercise protected and inherited destination DACLs, ACL failures before
+publication, and cleanup with a DACL that denies deletion. Numeric identity cases cover nested
+values, negative zero, exponents, and large integers rounded as browser JSON numbers.
 
 ## Remaining integration gates
 
@@ -66,7 +85,8 @@ checksums, links, size limits, and failed writes. They require neither a solver 
 - UI distinction between missing, changed, and historical results; never present a previous
   design's result as a freshly computed one.
 - Round-trip desktop checks, path/rename/move checks, and installer association checks on both OSes.
-- Native destination permissions/ACLs and file metadata must be reviewed before exposing saves
-  outside the managed workspace; the prototype only preserves POSIX mode bits on replacement.
+- Remaining native filesystem metadata needs an explicit policy before unrestricted overwrites:
+  Windows DACLs and POSIX mode bits are preserved, but owner/group, SACLs, alternate data streams,
+  POSIX extended ACLs, and other platform metadata are not preserved by this layer.
 
 Do not advertise `.fb` desktop support or promote a release on this foundation alone.
