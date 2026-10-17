@@ -177,6 +177,12 @@ editing them, or the prefill stops working.
 One entry per release, newest first. The installers are on the
 [release page](https://github.com/ismailakdag/fairbeam-releases/releases) of each version.
 
+### 0.7.8, 2026-10-17
+
+- **Simulation reliability:** serialize claims on simulation directories so competing CLI processes cannot overwrite a live run. Process captured stdout/stderr before finalizing results, preserving delayed final bundle messages and reporting incomplete capture.
+- **Runtime maintenance:** after a successful verified install or refresh, remove obsolete download archives and orphan partial files. Preserve the pinned engine and uv archives for repair; keep CPU/GPU caches separate and skip linked paths. Cleanup failures do not fail an otherwise successful installation.
+- **Research and documentation:** add the opt-in thin-PEC coupled-stripline test fixture and its bounded lossless/constant-conductivity comparison record. Fix rejected-cohort status reporting and the Turkish validation link. The fixture is not a gallery model or a new solver capability; finite copper and general antenna convergence remain outside its scope.
+
 ### 0.7.7, 2026-10-17
 
 - **Geometry and mesh:** fix extrusion axes after composed rotations; include dispersive geometry and whole-band pole bounds in automatic dielectric meshing. Materials without a safe automatic bound require an explicit validated mesh.
