@@ -5,6 +5,7 @@ import errno
 import json
 import os
 from pathlib import Path
+import stat
 import sys
 import tempfile
 import threading
@@ -231,6 +232,193 @@ class Documents(unittest.TestCase):
         doc.validate(self.document)
         doc.save(self.path, self.document)
         self.assertEqual(doc.read(self.path)[0]["results"], [reference])
+
+    def macos_metadata_api(self, attributes=0, acl=None):
+        def absent(*args):
+            ctypes.set_errno(errno.ENOENT)
+            return None
+        return mock.Mock(flistxattr=mock.Mock(return_value=attributes),
+                         acl_get_fd_np=mock.Mock(side_effect=absent) if acl is None else mock.Mock(return_value=acl),
+                         acl_free=mock.Mock(return_value=0))
+
+    def test_macos_plain_metadata_ffi_uses_descriptor_and_checks_absent_acl(self):
+        api = self.macos_metadata_api()
+        with mock.patch.object(ctypes, "CDLL", return_value=api) as library:
+            self.assertFalse(doc._macos_has_metadata(17))
+        library.assert_called_once_with(None, use_errno=True)
+        api.flistxattr.assert_called_once_with(17, None, 0, 0x20)
+        self.assertEqual(api.flistxattr.argtypes, (ctypes.c_int, ctypes.c_void_p, ctypes.c_size_t, ctypes.c_int))
+        self.assertEqual(api.flistxattr.restype, ctypes.c_ssize_t)
+        api.acl_get_fd_np.assert_called_once_with(17, 0x100)
+        self.assertEqual(api.acl_get_fd_np.restype, ctypes.c_void_p)
+        api.acl_free.assert_not_called()
+
+    def test_macos_extended_attributes_and_explicit_acl_are_detected(self):
+        for attributes, acl in ((12, None), (0, 1234)):
+            with self.subTest(attributes=attributes, acl=acl):
+                api = self.macos_metadata_api(attributes, acl)
+                with mock.patch.object(ctypes, "CDLL", return_value=api):
+                    self.assertTrue(doc._macos_has_metadata(17))
+                if attributes:
+                    api.acl_get_fd_np.assert_not_called()
+                else:
+                    api.acl_free.assert_called_once_with(acl)
+
+    def test_macos_metadata_query_errors_are_not_treated_as_absence(self):
+        for operation, error in (("flistxattr", errno.EACCES), ("flistxattr", errno.ENOTSUP),
+                                 ("acl_get_fd_np", errno.EIO), ("acl_get_fd_np", errno.ENOTSUP),
+                                 ("acl_get_fd_np", 0),
+                                 ("acl_free", errno.EINVAL)):
+            with self.subTest(operation=operation, error=error):
+                api = self.macos_metadata_api(acl=1234 if operation == "acl_free" else None)
+                def failed(*args):
+                    ctypes.set_errno(error)
+                    return None if operation == "acl_get_fd_np" else -1
+                getattr(api, operation).side_effect = failed
+                with mock.patch.object(ctypes, "CDLL", return_value=api):
+                    with self.assertRaises(OSError) as raised:
+                        doc._macos_has_metadata(17)
+                self.assertEqual(raised.exception.errno, error or errno.EIO)
+        with mock.patch.object(ctypes, "CDLL", return_value=object()):
+            with self.assertRaises(OSError) as raised:
+                doc._macos_has_metadata(17)
+        self.assertEqual(raised.exception.errno, errno.ENOSYS)
+
+    def test_posix_plain_file_metadata_is_read_from_open_descriptor(self):
+        self.path.write_bytes(b"original")
+        with mock.patch.object(doc.sys, "platform", "linux"), \
+                mock.patch.object(doc.os, "listxattr", return_value=[], create=True) as attributes:
+            info = doc._posix_plain_metadata(self.path)
+        self.assertTrue(stat.S_ISREG(info.st_mode))
+        self.assertIsInstance(attributes.call_args.args[0], int)
+        self.assertEqual(self.path.read_bytes(), b"original")
+
+    def test_posix_xattrs_acls_and_query_errors_refuse_without_mutation(self):
+        self.path.write_bytes(b"original")
+        for names in (["user.tag"], ["system.posix_acl_access"]):
+            with self.subTest(names=names), mock.patch.object(doc.sys, "platform", "linux"), \
+                    mock.patch.object(doc.os, "listxattr", return_value=names, create=True):
+                with self.assertRaisesRegex(doc.DocumentError, "save a separate copy"):
+                    doc._posix_plain_metadata(self.path)
+        for error in (PermissionError("denied"), OSError(errno.ENOTSUP, "unsupported"), AttributeError("unavailable")):
+            with self.subTest(error=error), mock.patch.object(doc.sys, "platform", "linux"), \
+                    mock.patch.object(doc.os, "listxattr", side_effect=error, create=True):
+                with self.assertRaisesRegex(doc.DocumentError, "Cannot verify"):
+                    doc._posix_plain_metadata(self.path)
+        self.assertEqual(self.path.read_bytes(), b"original")
+        self.assertEqual(list(self.root.iterdir()), [self.path])
+
+    def test_posix_file_flags_refuse_without_metadata_changes(self):
+        self.path.write_bytes(b"original")
+        with mock.patch.object(doc.os, "fstat", return_value=mock.Mock(st_mode=stat.S_IFREG, st_flags=2)), \
+                mock.patch.object(doc.os, "listxattr", create=True) as attributes:
+            with self.assertRaisesRegex(doc.DocumentError, "file flags; save a separate copy"):
+                doc._posix_plain_metadata(self.path)
+        attributes.assert_not_called()
+        self.assertEqual(self.path.read_bytes(), b"original")
+
+    def test_posix_special_mode_bits_refuse_before_permission_changes_or_content(self):
+        self.path.write_bytes(b"original")
+        for mode in (stat.S_ISUID, stat.S_ISGID, stat.S_ISVTX):
+            with self.subTest(mode=mode), \
+                    mock.patch.object(doc.os, "fstat", return_value=mock.Mock(st_mode=stat.S_IFREG | mode, st_flags=0)), \
+                    mock.patch.object(doc.os, "listxattr", create=True) as attributes, \
+                    mock.patch.object(doc.os, "chmod") as chmod:
+                with self.assertRaisesRegex(doc.DocumentError, "special mode bits; save a separate copy"):
+                    doc._posix_plain_metadata(self.path)
+                attributes.assert_not_called()
+                chmod.assert_not_called()
+            self.assertEqual(self.path.read_bytes(), b"original")
+
+    def test_posix_owner_group_mismatch_refuses_empty_stage_before_chmod(self):
+        self.path.write_bytes(b"")
+        expected = mock.Mock(st_uid=501, st_gid=20, st_mode=stat.S_IFREG | 0o640)
+        for uid, gid in ((502, 20), (501, 21)):
+            with self.subTest(uid=uid, gid=gid), \
+                    mock.patch.object(doc, "_posix_plain_metadata", return_value=mock.Mock(st_uid=uid, st_gid=gid)), \
+                    mock.patch.object(doc.os, "chmod") as chmod:
+                with self.assertRaisesRegex(doc.DocumentError, "owner and group; save a separate copy"):
+                    doc._posix_prepare_staging(self.path, expected)
+                chmod.assert_not_called()
+                self.assertEqual(self.path.stat().st_size, 0)
+
+    @unittest.skipIf(os.name == "nt", "POSIX replacement metadata policy")
+    def test_posix_metadata_failure_preserves_original_and_cleans_empty_stage(self):
+        initial = doc.save(self.path, self.document)
+        self.document["design"]["model"]["name"] = "edited"
+        plain = doc._posix_plain_metadata
+        for target in ("destination", "stage"):
+            with self.subTest(target=target):
+                def refused(path):
+                    if (path == self.path) == (target == "destination"):
+                        if path != self.path:
+                            self.assertEqual(path.stat().st_size, 0)
+                        raise doc.DocumentError("Cannot verify metadata; save a separate copy")
+                    return plain(path)
+                with mock.patch.object(doc, "_posix_plain_metadata", side_effect=refused), \
+                        mock.patch.object(doc.os, "replace") as replace:
+                    with self.assertRaisesRegex(doc.DocumentError, "save a separate copy"):
+                        doc.save(self.path, self.document, initial)
+                    replace.assert_not_called()
+                self.assertEqual(doc.read(self.path)[1], initial)
+                self.assertEqual(list(self.root.iterdir()), [self.path])
+
+    @unittest.skipUnless(sys.platform.startswith("linux"), "Linux native extended attribute refusal")
+    def test_linux_replacement_preserves_existing_xattr_by_refusing(self):
+        initial = doc.save(self.path, self.document)
+        try:
+            os.setxattr(self.path, "user.fairbeam-test", b"kept")
+        except OSError as exc:
+            if exc.errno in (errno.ENOTSUP, errno.EOPNOTSUPP):
+                self.skipTest("Test volume does not support extended attributes")
+            raise
+        self.document["design"]["model"]["name"] = "edited"
+        with self.assertRaisesRegex(doc.DocumentError, "save a separate copy"):
+            doc.save(self.path, self.document, initial)
+        self.assertEqual(doc.read(self.path)[1], initial)
+        self.assertEqual(os.getxattr(self.path, "user.fairbeam-test"), b"kept")
+        self.assertEqual(list(self.root.iterdir()), [self.path])
+
+    @unittest.skipIf(os.name == "nt", "POSIX owner/group replacement refusal")
+    def test_posix_save_owner_mismatch_preserves_original_and_removes_empty_stage(self):
+        initial = doc.save(self.path, self.document)
+        self.document["design"]["model"]["name"] = "edited"
+        plain = doc._posix_plain_metadata
+        def different_owner(path):
+            info = plain(path)
+            if path == self.path:
+                return mock.Mock(st_uid=info.st_uid + 1, st_gid=info.st_gid, st_mode=info.st_mode)
+            self.assertEqual(path.stat().st_size, 0)
+            return info
+        with mock.patch.object(doc, "_posix_plain_metadata", side_effect=different_owner), \
+                mock.patch.object(doc.os, "replace") as replace:
+            with self.assertRaisesRegex(doc.DocumentError, "owner and group"):
+                doc.save(self.path, self.document, initial)
+            replace.assert_not_called()
+        self.assertEqual(doc.read(self.path)[1], initial)
+        self.assertEqual(list(self.root.iterdir()), [self.path])
+
+    @unittest.skipUnless(sys.platform == "darwin", "macOS native ACL and Finder tag refusal")
+    def test_macos_replacement_preserves_acl_and_finder_tags_by_refusing(self):
+        import plistlib
+        import subprocess
+        initial = doc.save(self.path, self.document)
+        subprocess.run(["chmod", "+a", "group:staff allow read,readattr", str(self.path)], check=True)
+        before = subprocess.check_output(["ls", "-le", str(self.path)])
+        self.document["design"]["model"]["name"] = "edited"
+        with self.assertRaisesRegex(doc.DocumentError, "save a separate copy"):
+            doc.save(self.path, self.document, initial)
+        self.assertEqual(subprocess.check_output(["ls", "-le", str(self.path)]), before)
+        subprocess.run(["chmod", "-N", str(self.path)], check=True)
+        tag = "com.apple.metadata:_kMDItemUserTags"
+        value = plistlib.dumps(["Fairbeam\n6"], fmt=plistlib.FMT_BINARY).hex()
+        subprocess.run(["xattr", "-wx", tag, value, str(self.path)], check=True)
+        before = subprocess.check_output(["xattr", "-px", tag, str(self.path)])
+        with self.assertRaisesRegex(doc.DocumentError, "save a separate copy"):
+            doc.save(self.path, self.document, initial)
+        self.assertEqual(subprocess.check_output(["xattr", "-px", tag, str(self.path)]), before)
+        self.assertEqual(doc.read(self.path)[1], initial)
+        self.assertEqual(list(self.root.iterdir()), [self.path])
 
     @unittest.skipUnless(os.name == "nt", "Windows readonly replacement semantics")
     def test_readonly_replacement_keeps_original_without_temporary_file(self):
