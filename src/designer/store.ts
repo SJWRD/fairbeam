@@ -451,8 +451,10 @@ export async function createDesign(body: { id: string; name?: string; from?: str
     }
     selectModel(res.id);
     take({ id: res.id, file: res.file, design: res.design, hash: res.hash, readonly: res.readonly, backup_scope: res.backup_scope });
-    const createdDocument = asyncState.ticket();
-    if (meshChanged) await save();
+    let createdDocument = asyncState.ticket();
+    // First native Save may fork the JSON workspace into a portable document.
+    // Follow only that save's owned replacement, never an unrelated later Open.
+    if (meshChanged) await defaultDesignerIO.saveBeforeLeaving(() => { createdDocument = asyncState.ticket(); });
     if (!asyncState.isOwnedNavigationCurrent(mine) || !asyncState.isDocumentCurrent(createdDocument)) return res;
     applyValidation(res.validation);
     const report = res.import_report;

@@ -434,4 +434,32 @@ await openA();
   store.closeDesign(); assert.equal(storage.get(aKey), beforeA); assert.ok(storage.has(bKey));
 }
 
+// A first native Save forks the created JSON workspace. Its new identity must
+// still enter Design, while a later Open must retain navigation ownership.
+for (const laterOpen of [false, true]) {
+  store.closeDesign(); workspace.setAppMode('home'); createdMesh = 'auto';
+  let finish;
+  const saved = new Promise(resolve => { finish = resolve; });
+  let request;
+  window.__TAURI_INTERNALS__ = {invoke: async (command, args) => {
+    assert.equal(command, 'native_document_save'); request = args.request;
+    return saved;
+  }};
+  const id = uniqueId(), creating = store.createDesign({id, template:'empty'});
+  for (let i=0; i<100 && !request; i++) await sleep(0);
+  assert.ok(request, 'preferred mesh save reaches native picker');
+  assert.equal(request.draftDesign.mesh.mode, 'design');
+  const nativeId = `fb_${laterOpen ? 'b' : 'a'}`;
+  const nativeFile = {id:nativeId,file:`${nativeId}.design.json`,hash:'native',readonly:false,
+    backup_scope:scope,design:request.draftDesign,document_id:nativeId};
+  if (laterOpen) { await store.openDesign('c'); workspace.setAppMode('home'); }
+  finish({status:'saved',handle:nativeId,path:`/${id}.fb`,file:nativeFile,
+    document:{id:nativeId,path:`/${id}.fb`,revision:'one',results_directory:`${id}.results`},results:[],warnings:[]});
+  await creating;
+  assert.equal(store.file().id, laterOpen ? 'c' : nativeId);
+  assert.equal(workspace.appMode(), laterOpen ? 'home' : 'design', 'native fork must enter Design unless another Open won');
+  assert.equal(store.loading(), false);
+  delete window.__TAURI_INTERNALS__; createdMesh = undefined;
+}
+
 console.log("check-draft-lifecycle: ok");
