@@ -1,13 +1,16 @@
 // Checks for the multi-port / array code (src/lib/sparams.ts, src/lib/array.ts) and the related
-// exports, with analytic synthetic data. Also (re)writes the SYNTHETIC test bundle
-// examples/synthetic/array2x1.json (not a simulation; never listed in public/projects/index.json).
+// exports, with analytic synthetic data. Checks that the committed SYNTHETIC test bundle
+// examples/synthetic/array2x1.json matches the generator (not a simulation; never listed in
+// public/projects/index.json). --write-examples explicitly regenerates that fixture.
 //
 //   node --experimental-strip-types scripts/check-array.mjs
+//   node --experimental-strip-types scripts/check-array.mjs --write-examples
 
 import "./check-port-mapping.mjs";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { isDeepStrictEqual } from "node:util";
 import { decodeF32Grid, decodeI16Grid, elementPatterns, ENC_F32, ENC_I16, encodeI16Grids, I16_FULL, magDb, pairLabel, parsePair, sMatrix, zFromGamma } from "../src/lib/sparams.ts";
 import { activeReflection, arrayFarField, C0, combine, directivity, gammaDb, mainBeam, solidAngleWeights, steeringPhases, uniformWeights } from "../src/lib/array.ts";
 import { figureSet, sparamFigure } from "../src/drawing/charts.ts";
@@ -16,6 +19,8 @@ import { packageFiles } from "../src/export/package.ts";
 import { reportPages } from "../src/export/reportPdf.ts";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+if (process.argv.slice(2).some(arg => arg !== "--write-examples")) throw new Error("Usage: node --experimental-strip-types scripts/check-array.mjs [--write-examples]");
+const writeExamples = process.argv.includes("--write-examples");
 let checks = 0;
 let failures = 0;
 const check = (cond, where, msg) => {
@@ -402,8 +407,15 @@ function syntheticArray() {
 {
   const where = "synthetic array";
   const b = syntheticArray();
-  mkdirSync(join(root, "examples/synthetic"), { recursive: true });
-  writeFileSync(join(root, "examples/synthetic/array2x1.json"), JSON.stringify(b));
+  const fixture = join(root, "examples/synthetic/array2x1.json");
+  const serialized = JSON.stringify(b);
+  if (writeExamples) {
+    mkdirSync(dirname(fixture), { recursive: true });
+    writeFileSync(fixture, serialized);
+  } else {
+    check(isDeepStrictEqual(JSON.parse(serialized), JSON.parse(readFileSync(fixture, "utf8"))), where,
+      "examples/synthetic/array2x1.json is stale: node --experimental-strip-types scripts/check-array.mjs --write-examples");
+  }
   const index = readFileSync(join(root, "public/projects/index.json"), "utf8");
   check(!index.includes("synthetic"), where, "a synthetic bundle is listed in public/projects/index.json");
   const S = sMatrix(b);

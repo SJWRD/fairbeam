@@ -1,9 +1,11 @@
-// Check the drawing, figure and package exports for every example bundle, and write example SVGs.
+// Check the drawing, figure and package exports for every example bundle in memory.
 //
 //   node --experimental-strip-types scripts/check-exports.mjs
+//   node --experimental-strip-types scripts/check-exports.mjs --write-examples
 //
-// Writes examples/drawings/<bundle-stem>_{A3,A4,figure}.svg, <bundle-stem>_{s11,zin,smith,pattern_*}.svg
-// and examples/reports/patch-antenna.pdf. Exits non-zero if any check fails: well-formed XML,
+// --write-examples writes examples/drawings/<bundle-stem>_{A3,A4,figure}.svg,
+// <bundle-stem>_{s11,zin,smith,pattern_*}.svg and examples/reports/patch-antenna.pdf.
+// Exits non-zero if any check fails: well-formed XML,
 // expected dimension values, no NaN/undefined, Touchstone round trip, CSV columns and values, PDF structure
 // and embedded glyphs, zip contents.
 
@@ -32,11 +34,15 @@ import { pngChunks, pngDpi, withPngDpi } from "../src/drawing/png.ts";
 import { zlibSync } from "fflate";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+if (process.argv.slice(2).some(arg => arg !== "--write-examples")) throw new Error("Usage: node --experimental-strip-types scripts/check-exports.mjs [--write-examples]");
+const writeExamples = process.argv.includes("--write-examples");
 const projects = join(root, "public", "projects");
 const outDir = join(root, "examples", "drawings");
-mkdirSync(outDir, { recursive: true });
 const reportDir = join(root, "examples", "reports");
-mkdirSync(reportDir, { recursive: true });
+if (writeExamples) {
+  mkdirSync(outDir, { recursive: true });
+  mkdirSync(reportDir, { recursive: true });
+}
 const fonts = {
   regular: new Uint8Array(readFileSync(join(root, "src/assets/fonts/IBMPlexSans-Regular.woff"))),
   semibold: new Uint8Array(readFileSync(join(root, "src/assets/fonts/IBMPlexSans-SemiBold.woff"))),
@@ -221,7 +227,7 @@ for (const entry of index.projects) {
       // equal values are legitimate (60 × 60); the same interval on the same axis twice is not
       check(r.dimensionKeys.length === new Set(r.dimensionKeys).size, where, `duplicate dimensions ${r.dimensions}`);
     }
-    if (write) writeFileSync(join(outDir, `${stem}_${name}.svg`), r.svg);
+    if (writeExamples && write) writeFileSync(join(outDir, `${stem}_${name}.svg`), r.svg);
     console.log(`  drawing ${name.padEnd(15)} scale ${r.scaleLabel.padEnd(6)} dims ${r.dimensions.join(", ")}`);
   }
   // the title block: every value whole (a long one is set smaller, the drawing number on two lines if need be)
@@ -250,7 +256,7 @@ for (const entry of index.projects) {
     for (const f of figs) {
       checkSvg(`${stem} figure ${w} ${f.name}`, f.svg);
       check(f.svg.includes(`width="${w}mm"`), `${stem} figure ${f.name}`, `not ${w} mm wide`);
-      if (w === 88) writeFileSync(join(outDir, `${stem}_${f.name}`), f.svg);
+      if (writeExamples && w === 88) writeFileSync(join(outDir, `${stem}_${f.name}`), f.svg);
     }
   }
 
@@ -354,7 +360,7 @@ for (const entry of index.projects) {
   check(info.pages === pages.length, `${stem} report.pdf`, `${info.pages} pages, expected ${pages.length}`);
   check(info.embedded, `${stem} report.pdf`, "font not embedded");
   for (const ch of ["Ω", "ε", "δ", "θ", "φ", "−", "≤"]) check(info.codes.has(ch.codePointAt(0)), `${stem} report.pdf`, `glyph "${ch}" not mapped in the embedded font`);
-  if (stem === "patch-antenna") writeFileSync(join(reportDir, `${stem}.pdf`), pdf);
+  if (writeExamples && stem === "patch-antenna") writeFileSync(join(reportDir, `${stem}.pdf`), pdf);
   console.log(`  report ${pages.length} pages, ${(pdf.length / 1024).toFixed(0)} KiB, ${info.codes.size} glyphs mapped`);
   const drawingPdf = await svgPagesToPdf([technicalDrawing(b, { sheet: "A3", date }).svg], fonts, { title: b.name, date: now });
   check(pdfInfo(drawingPdf).pages === 1, `${stem} drawing_A3.pdf`, "page count");
@@ -516,7 +522,7 @@ for (const entry of index.projects) {
   console.log(`reproduce: ${cmd}`);
 }
 
-console.log(`\n${checks} checks, ${failures} failed. Examples in ${outDir}`);
+console.log(`\n${checks} checks, ${failures} failed.${writeExamples ? ` Examples written to ${outDir} and ${reportDir}` : " No example files written."}`);
 if (failures) process.exit(1);
 
 await import("./check-array-pattern-export.mjs");

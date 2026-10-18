@@ -37,7 +37,17 @@ Sayı olarak kalanlar pencerede ("Sayı olarak yazılanlar") ve makronun üst yo
 - **Yayın şekilleri.** Örnekler görüntüleyicisinin alt panel çubuğundaki *Şekil*, siyah beyaz |S11|, Zin, Smith abağı ve kutupsal örüntü grafiklerini 8,8 cm (tek sütun) veya 18 cm (çift sütun) genişlikte SVG/PDF olarak aktarır.
 - **Dışa aktarma paketi.** Üst bölümdeki *Paketi dışa aktar* (tasarımcıda ayrıca Son işlem › Rapor ve dışa aktarma › **Paket**), `<model-id>_<yyyymmdd-hhmm>.zip` indirir. Seçilen gruplara ve mevcut verilere göre `project.json`, `README.md` raporu (kurulum, çalıştırma, sonuçlar, yeniden üretme komutu), Touchstone ve CSV verileri, çizimler, şekiller, VBA makrosu, 3B görünüm PNG'si ve `report.pdf` içerir. Oluşturulan README, pakete gerçekten eklenen dosyaları listeler.
 - **PDF raporu.** Paket penceresindeki *Raporu dışa aktar (PDF)* (tasarımcıda ayrıca Son işlem › Rapor ve dışa aktarma › **PDF raporu**) çok sayfalı A4 vektör PDF oluşturur: temel sonuçlarla özet, ölçülü çizim, parametre/çözücü/mesh/çalıştırma tabloları, |S11|, Zin, Smith abağı, her uzak alan frekansı için örüntü sayfası ve yeniden üretme komutu. Sayfalar SVG olarak oluşturulur, `src/drawing/svgpdf.ts` tarafından jsPDF ile çizilir; aynı kod Node'da da çalışır.
-- `npm run check:exports` bunları örnek paketlerde doğrular ve [examples/drawings/](../examples/drawings/) ile [examples/reports/patch-antenna.pdf](../examples/reports/patch-antenna.pdf) çıktılarını yazar.
+- `npm run check:exports` bunları örnek paketlerde bellekte doğrular; depodaki örnek dosyalarını yeniden yazmaz. Üretilen sentetik dizinin depodaki test verisiyle eşleştiğini de denetler.
+
+Depodaki örnekleri bilerek yeniden üretmek için depo kökünde şu komutları çalıştırın:
+
+```bash
+node --experimental-strip-types scripts/check-array.mjs --write-examples
+node --experimental-strip-types scripts/check-exports.mjs --write-examples
+node --experimental-strip-types scripts/check-fab.mjs --write-examples
+```
+
+Bu komutlar denetimleri de çalıştırır. [Sentetik diziyi](../examples/synthetic/array2x1.json), [çizimleri ve grafikleri](../examples/drawings/), [PDF raporunu](../examples/reports/patch-antenna.pdf) ve [üretim örneklerini](../examples/fab/) günceller. Üretim komutu yama anten ve Wilkinson bölücü örnek klasörlerini yeniden oluşturur. Değişiklikleri commit etmeden önce üretilen farkları inceleyin.
 
 ## Touchstone ve içe aktarılan faz bilgisi
 
@@ -96,4 +106,4 @@ Dışa aktarma paketindeki *Üretim dosyaları*, baskı devre tasarımlarına (y
 
 Baskı devre olmayan tasarımlar (serbest uzaydaki dipol, sonsuz PEC toprak üzerindeki Sierpinski monopol) için üretim çıktısı yoktur; pencere nedenini belirtir. Sonsuz PEC toprakla simüle edilen tasarım alt bakır olmadan ve bir notla dışa aktarılır.
 
-Sınırlar: simülasyon sıfır kalınlıklı mükemmel iletken kullandığından README'deki 35 µm bakır, simülasyon sonucu değil varsayımdır. Lehim maskesi, baskı yazısı veya pasta katmanı yazılmaz. Açıklıkları, minimum hat ve aralıkları, toleransları ve konnektör ayak izini üreticinizin kurallarıyla kontrol edin. Siparişten önce her dosyayı KiCad GerbView gibi bir Gerber görüntüleyicide açın. `npm run check:fab` (`check:exports` kapsamındadır), seçilmiş Gerber, delik ve DXF örneklerini geri okur; bakır alanlarını, sınırlayıcı kutuları ve delik konumlarını paket geometrisiyle 1 µm içinde karşılaştırır. Yama anten ve Wilkinson bölücü için [examples/fab/](../examples/fab/) yazar; her birinde okunan dosyalardan çizilen `render.svg` bulunur.
+Sınırlar: simülasyon sıfır kalınlıklı mükemmel iletken kullandığından README'deki 35 µm bakır, simülasyon sonucu değil varsayımdır. Lehim maskesi, baskı yazısı veya pasta katmanı yazılmaz. Açıklıkları, minimum hat ve aralıkları, toleransları ve konnektör ayak izini üreticinizin kurallarıyla kontrol edin. Siparişten önce her dosyayı KiCad GerbView gibi bir Gerber görüntüleyicide açın. `npm run check:fab` (`check:exports` kapsamındadır), üretilen Gerber, delik ve DXF verilerini bellekte geri okur; bakır alanlarını, sınırlayıcı kutuları ve delik konumlarını paket geometrisiyle 1 µm içinde karşılaştırır. Yukarıdaki açık yeniden üretim komutları, yama anten ve Wilkinson bölücü için [examples/fab/](../examples/fab/) dosyalarını günceller; her birinde okunan dosyalardan çizilen `render.svg` bulunur.

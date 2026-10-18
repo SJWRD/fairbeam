@@ -1,7 +1,8 @@
 // Check the fabrication export (Gerber X2, Excellon, DXF R12) against the bundle geometry, and
-// write example outputs.
+// validate the generated files in memory.
 //
 //   node --experimental-strip-types scripts/check-fab.mjs
+//   node --experimental-strip-types scripts/check-fab.mjs --write-examples
 //
 // For every example bundle: printed boards must export; the Gerbers are parsed back with a small
 // independent reader (FS/MO/AD/LP/G36/G37/D01/D02/D03) and compared with copper geometry taken
@@ -10,7 +11,7 @@
 // well-formed (group-code pairs, closed polylines) with the same copper area. Non-PCB designs must
 // report why there is no fabrication export.
 //
-// Writes examples/fab/<bundle-stem>/ (all fab files + render.svg, a picture drawn from the parsed
+// --write-examples replaces examples/fab/<bundle-stem>/ (all fab files + render.svg, a picture drawn from the parsed
 // Gerbers and drill file) for the patch antenna and the Wilkinson divider.
 
 import { mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -22,6 +23,8 @@ import { technicalDrawing } from "../src/drawing/drawing.ts";
 import { APP_VERSION, bundleWriter, releasedVersion } from "../src/lib/appVersion.ts";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+if (process.argv.slice(2).some(arg => arg !== "--write-examples")) throw new Error("Usage: node --experimental-strip-types scripts/check-fab.mjs [--write-examples]");
+const writeExamples = process.argv.includes("--write-examples");
 const projects = join(root, "public", "projects");
 const outRoot = join(root, "examples", "fab");
 const EXAMPLES = ["patch-antenna", "wilkinson-divider"];
@@ -451,13 +454,16 @@ for (const file of bundles) {
   if (drills.length) console.log(`  ${stem} drill: ${drills.map((h) => `Ø${h.d} @ (${h.x}, ${h.y})`).join(", ")} = probe port positions`);
 
   if (EXAMPLES.includes(stem)) {
-    const dir = join(outRoot, stem);
-    // written afresh: a file of an earlier export under another name does not stay behind
-    rmSync(dir, { recursive: true, force: true });
-    mkdirSync(dir, { recursive: true });
-    for (const f of files) writeFileSync(join(dir, f.path), f.data);
-    writeFileSync(join(dir, "render.svg"), renderSvg(`${b.name.replace(/&/g, "&amp;").replace(/</g, "&lt;")}: fabrication preview`, parsedLayers, loops, drills));
-    console.log(`  wrote examples/fab/${stem}/ (${files.length + 1} files)`);
+    const preview = renderSvg(`${b.name.replace(/&/g, "&amp;").replace(/</g, "&lt;")}: fabrication preview`, parsedLayers, loops, drills);
+    if (writeExamples) {
+      const dir = join(outRoot, stem);
+      // written afresh: a file of an earlier export under another name does not stay behind
+      rmSync(dir, { recursive: true, force: true });
+      mkdirSync(dir, { recursive: true });
+      for (const f of files) writeFileSync(join(dir, f.path), f.data);
+      writeFileSync(join(dir, "render.svg"), preview);
+      console.log(`  wrote examples/fab/${stem}/ (${files.length + 1} files)`);
+    }
   }
 }
 
@@ -479,5 +485,5 @@ for (const file of bundles) {
   console.log(`  version stamps: Fairbeam ${APP_VERSION} in the fab files and drawings; examples written by ${example.generator.version} name no version`);
 }
 
-console.log(`\n${checks} fabrication checks, ${failures} failed. Examples in ${outRoot}`);
+console.log(`\n${checks} fabrication checks, ${failures} failed.${writeExamples ? ` Examples written to ${outRoot}` : " No example files written."}`);
 if (failures) process.exit(1);
