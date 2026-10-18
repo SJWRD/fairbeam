@@ -4750,5 +4750,6 @@
   "elmerDesign.path": "Yönetilen Elmer kurulumunu kullanmak için boş bırakın. Kurulu değilse Elmer kurulumunu açın.",
   "elmerDesign.pec": "Kapalı hacmin altı yüzünde ve PEC katılarda PEC sınır koşulu kullan.",
   "elmerDesign.setup": "Elmer kurulumu ve geçmiş",
-  "elmerDesign.resultHint": "Hedefe yakın iki özfrekans; en düşük modlar olmak zorunda değildir. Sonuçlar çözücü geçmişinde görünür. Mesh yakınsaması ve fiziksel doğruluk onaylanmamıştır."
+  "elmerDesign.resultHint": "Hedefe yakın iki özfrekans; en düşük modlar olmak zorunda değildir. Sonuçlar çözücü geçmişinde görünür. Mesh yakınsaması ve fiziksel doğruluk onaylanmamıştır.",
+  "document.autoSaveFailed": "Sonuçlar proje yanına otomatik kaydedilemedi. Sonuçlar çalışma alanında duruyor; yeniden denemek için Kaydet kullanın. {error}"
 }

@@ -1,0 +1,47 @@
+import json
+from pathlib import Path
+import tempfile
+import unittest
+from unittest import mock
+
+from fairbeam import documents as doc
+from fairbeam.design import blank_design
+from fairbeam.document_exports import export_sections
+from fairbeam.document_workspace import _directory, _immutable
+
+
+class DocumentExportsTests(unittest.TestCase):
+    def test_sections_preserve_data_and_repeat_without_overwrite(self):
+        design = blank_design('patch', 'Patch')
+        raw = doc._json_bytes({'schema': 'fairbeam.project/1', 'model': design['model'],
+                              'results': {'frequency': [1, 2], 'sparams': {'s': [0.1, 0.2]},
+                                          'farfield': [{'f': 1, 'dmax_dbi': 6}]}})
+        ref = {'file': 'bundle.json', 'sha256': doc.digest(raw), 'design_sha256': doc.design_digest(design)}
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / 'Patch.results'
+            export_sections(root, raw, ref, design, _directory, _immutable)
+            folder = root / 'runs' / ('run-' + ref['sha256'] + '-' + ref['design_sha256'][:16])
+            self.assertEqual(json.loads((folder / 's-parameters/data.json').read_text())['sparams']['s'], [0.1, 0.2])
+            self.assertEqual(json.loads((folder / 'geometry/source.design.json').read_text()), design)
+            before = {p: p.read_bytes() for p in folder.rglob('*') if p.is_file()}
+            export_sections(root, raw, ref, design, _directory, _immutable)
+            self.assertEqual(before, {p: p.read_bytes() for p in folder.rglob('*') if p.is_file()})
+            (folder / 's-parameters/data.json').write_text('user edit')
+            with self.assertRaises(doc.DocumentConflict):
+                export_sections(root, raw, ref, design, _directory, _immutable)
+            self.assertEqual((folder / 's-parameters/data.json').read_text(), 'user edit')
+
+    def test_linked_run_directory_is_not_followed(self):
+        design = blank_design('patch', 'Patch')
+        raw = doc._json_bytes({'results': {}})
+        ref = {'file': 'bundle.json', 'sha256': doc.digest(raw), 'design_sha256': 'a'*64}
+        with tempfile.TemporaryDirectory() as tmp:
+            root, outside = Path(tmp)/'results', Path(tmp)/'outside'
+            root.mkdir(); outside.mkdir()
+            try:
+                (root/'runs').symlink_to(outside, target_is_directory=True)
+            except OSError:
+                self.skipTest('symlinks unavailable')
+            with self.assertRaises(doc.DocumentError):
+                export_sections(root, raw, ref, design, _directory, _immutable)
+            self.assertEqual(list(outside.iterdir()), [])

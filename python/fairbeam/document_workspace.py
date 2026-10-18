@@ -596,6 +596,18 @@ class DocumentWorkspace:
                     self._discard_unpublished(path, parent_info, state, provisional_state, created)
                 raise
             state.update(revision=revision, workspace_hash=file["hash"])
+            # Derivative exports are optional: a failure must not invalidate the committed
+            # document or its canonical result. Existing run folders are never overwritten.
+            from .document_exports import export_sections
+            export_reader = doc._ResultReader(path, document) if kept_records else None
+            for record in kept_records:
+                try:
+                    reference = {k: record[k] for k in ("file", "sha256", "design_sha256")}
+                    raw = _checked_result_model(export_reader.read(reference), export_reader.model_id)
+                    export_sections(path.parent / document["results_directory"], raw,
+                                    reference, document["design"], _directory, _immutable)
+                except (OSError, ValueError, KeyError, TypeError) as exc:
+                    warnings.append(f"Organized result export is unavailable: {exc}")
             try:
                 self._write_state(state)
             except Exception as exc:

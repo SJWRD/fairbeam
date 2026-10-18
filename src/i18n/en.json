@@ -4831,5 +4831,6 @@
   "elmerDesign.path": "Leave blank to use the managed Elmer installation. Use Elmer setup if it is not installed.",
   "elmerDesign.pec": "Use PEC walls on all six enclosure faces and on PEC solids.",
   "elmerDesign.setup": "Elmer setup and history",
-  "elmerDesign.resultHint": "Two eigenfrequencies near the target, not necessarily the lowest modes. Results appear in solver history. Mesh convergence and physical accuracy have not been certified."
+  "elmerDesign.resultHint": "Two eigenfrequencies near the target, not necessarily the lowest modes. Results appear in solver history. Mesh convergence and physical accuracy have not been certified.",
+  "document.autoSaveFailed": "Could not automatically save results beside the project. Results remain in the workspace; use Save to retry. {error}"
 }

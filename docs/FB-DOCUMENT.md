@@ -42,6 +42,19 @@ document; Save can still collect eligible completed runs from that document's wo
 
 ## Existing JSON files
 
+While a bound document is open, newly completed runs are automatically attached using its
+saved workspace snapshot. Unsaved designer edits are not silently saved. A pending failed
+design save pauses automatic publication until an explicit Save resolves it. Failed automatic
+result saves leave the workspace result available and show an error; explicit Save retries.
+
+Each saved result also has an immutable `runs/run-<result hash>-<design hash prefix>/` folder below the adjacent
+`.results` directory. It separates S-parameter JSON, far-field JSON, geometry, matching source
+design (when available), and run metadata. The original checksummed bundle remains canonical.
+`drawings`, `images`, and `optimization` folders reserve locations for separately exported
+artifacts; this does not automatically render plots or capture an optimizer study. Distinct
+result hashes get new folders, and existing files are never overwritten with different data.
+These derived folders are optional: an export error does not discard the saved document.
+
 The `.fb` format is additive. Existing `.design.json` designs and JSON result bundles still open
 through File > Open or import/drop. Legacy 0.6.x design and result schema names are still
 recognized. Importing a JSON design creates an editable workspace copy; it does not rewrite the

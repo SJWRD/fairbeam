@@ -14,6 +14,16 @@ from fairbeam.document_workspace import DocumentWorkspace
 
 
 class DocumentWorkspaceTests(unittest.TestCase):
+    def test_optional_section_export_failure_keeps_document_saved(self):
+        self.sidecar()
+        self.write_document()
+        opened = self.bridge.open(self.path)
+        with mock.patch('fairbeam.document_exports.export_sections', side_effect=OSError('disk full')):
+            result = self.bridge.save(self.path, opened['file']['id'], opened['file']['hash'],
+                                      opened['document']['revision'], self.document['id'])
+        self.assertTrue(any('Organized result export' in w for w in result['warnings']))
+        self.assertEqual(len(doc.read(self.path)[0]['results']), 1)
+
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)

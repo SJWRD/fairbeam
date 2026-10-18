@@ -38,3 +38,4 @@ assert.deepEqual(visibleProjects(entries,'fb_user_design','name',false,new Set()
 assert.equal(visibleProjects(entries,'','name',true,new Set(['copy']))[0].key,'copy');
 checks += 4;
 console.log(`Document envelope and project labels: ${checks} checks passed`);
+await import('./check-document-autosave.mjs');

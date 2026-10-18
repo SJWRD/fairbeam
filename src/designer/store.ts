@@ -33,7 +33,8 @@ import { confirmDraftDiscard } from "../lib/ConfirmDialog";
 import { createdNote, type TemplateKey } from "./templates";
 import { applyPythonScript, replaceDesignContent, type PythonApplyOutcome } from "./pythonApply";
 import { localeTag, t } from "../i18n/index.ts";
-import { pickNativeDocument, persistNativeDocument, rememberNativeDocument, restoreNativeDocumentBinding, observeNativeDocumentResults, nativeResultsPendingToken, resetNativeDocumentResults } from "../lib/nativeDocuments";
+import { pickNativeDocument, persistNativeDocument, rememberNativeDocument, restoreNativeDocumentBinding, observeNativeDocumentResults, nativeResultsPendingToken, resetNativeDocumentResults, nativeDocumentFor } from "../lib/nativeDocuments";
+import { createDocumentResultAutosave } from "../lib/documentResultAutosave";
 import { showToast } from "../lib/toast";
 
 export const defaultDesignerSession = createDesignerSession({
@@ -54,6 +55,31 @@ createRoot(() => createEffect(on(() => [file()?.backup_scope, file()?.id] as con
 })));
 createRoot(() => createEffect(() => observeNativeDocumentResults(file(), jobs(), jobsScope())));
 createRoot(() => createEffect(() => defaultDesignerSession.setPendingResultsToken(nativeResultsPendingToken(file()))));
+let autosaveTicket: ReturnType<typeof asyncState.ticket> | undefined;
+const [autosaveRevision, setAutosaveRevision] = createSignal(0);
+const autosaveResults = createDocumentResultAutosave({
+  busy: value => {
+    if (value) { autosaveTicket = asyncState.ticket(); setSaving(true); }
+    else {
+      if (autosaveTicket && asyncState.isDocumentCurrent(autosaveTicket)) setSaving(false);
+      setAutosaveRevision(value => value + 1);
+    }
+  },
+  persist: async f => {
+    const saved = await persistNativeDocument(f, f.hash, false);
+    if (saved && !("canceled" in saved) && saved.warnings.length)
+      showToast(saved.warnings.join("\n"), { tone: "error", key: "document-result-autosave" });
+  },
+  failed: (_f, error) => showToast(t("document.autoSaveFailed", { error: String(error) }),
+    { tone: "error", key: "document-result-autosave" }),
+});
+createRoot(() => createEffect(() => {
+  autosaveRevision();
+  const f = file(), token = nativeResultsPendingToken(f);
+  // A prior failed/cancelled design save can leave workspace bytes ahead of the portable
+  // design. Do not implicitly publish those edits while attaching a completed result.
+  void autosaveResults(f, token, saving() || loading() || defaultDesignerSession.persistencePending(), !!nativeDocumentFor(f));
+}));
 // the Run panel submits the saved file: it must not run this design while its draft is unsaved
 setUnsavedDesignCheck((key) => dirty() && file()?.id === key);
 
