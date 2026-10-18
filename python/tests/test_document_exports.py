@@ -19,8 +19,21 @@ class DocumentExportsTests(unittest.TestCase):
         ref = {'file': 'bundle.json', 'sha256': doc.digest(raw), 'design_sha256': doc.design_digest(design)}
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp) / 'Patch.results'
+            root.mkdir()
+            (root / ref['file']).write_bytes(raw)
+            old_folder = root / 'runs' / ('run-' + ref['sha256'] + '-' + ref['design_sha256'][:16])
+            (old_folder / 'metadata').mkdir(parents=True)
+            old_metadata = b'{"schema":"fairbeam.result-export/1","bundle_file":"../../bundle.json"}'
+            (old_folder / 'metadata/run.json').write_bytes(old_metadata)
             export_sections(root, raw, ref, design, _directory, _immutable)
-            folder = root / 'runs' / ('run-' + ref['sha256'] + '-' + ref['design_sha256'][:16])
+            folder = root / 'runs' / ('run-' + ref['sha256'] + '-' + ref['design_sha256'][:16] + '-v2')
+            metadata_path = folder / 'metadata/run.json'
+            metadata = json.loads(metadata_path.read_text())
+            self.assertEqual(metadata['schema'], 'fairbeam.result-export/2')
+            self.assertEqual((old_folder / 'metadata/run.json').read_bytes(), old_metadata)
+            bundle_path = (metadata_path.parent / metadata['bundle_file']).resolve()
+            self.assertEqual(bundle_path, (root / ref['file']).resolve())
+            self.assertEqual(doc.digest(bundle_path.read_bytes()), metadata['sha256'])
             self.assertEqual(json.loads((folder / 's-parameters/data.json').read_text())['sparams']['s'], [0.1, 0.2])
             self.assertEqual(json.loads((folder / 'geometry/source.design.json').read_text()), design)
             before = {p: p.read_bytes() for p in folder.rglob('*') if p.is_file()}

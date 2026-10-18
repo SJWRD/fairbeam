@@ -25,7 +25,7 @@ import { TEMPLATE_GROUPS, type TemplateKey } from "../designer/templates";
 import { openPythonModelAsDesign } from "../designer/pythonModel";
 import { locale, t } from "../i18n";
 import { createDesignActions } from "./DesignActions";
-import { hasUndatedProjects, visibleProjects, type ProjectSort } from "./projectList";
+import { hasUndatedProjects, projectLocation, visibleProjects, type ProjectSort } from "./projectList";
 
 const focusAfterRender = (id: string) => requestAnimationFrame(() => {
   document.getElementById(id)?.focus();
@@ -334,10 +334,11 @@ export default function Home() {
                                 <span class="home-item-sub">{loadError(m.error!)}</span>
                               </div>
                             }>
-                              <button class="home-item" onClick={() => enterDesign(m.key)}>
+                              <button class="home-item" onClick={() => enterDesign(m.key)}
+                                aria-label={m.document ? `${m.model?.name ?? m.key}. ${t("home.designs.documentCopy", { path: projectLocation(m).full })}` : undefined}>
                                 <span class="home-item-name" title={m.model?.name ?? m.key}>{m.model?.name ?? m.key}</span>
-                                <span class="home-item-sub mono" title={m.document?.path ?? m.file}>
-                                  {m.document ? t("home.designs.documentCopy", { path: m.document.path }) : m.file}
+                                <span class="home-item-sub home-project-location" title={projectLocation(m).full}>
+                                  {projectLocation(m).label}
                                 </span>
                               </button>
                             </Show>

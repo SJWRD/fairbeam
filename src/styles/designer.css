@@ -186,6 +186,7 @@ textarea.dz-autogrow { resize: none; overflow-y: auto; min-height: 0; max-height
 .home-item:focus-visible { outline: 2px solid var(--al-focus); outline-offset: -2px; }
 .home-item-name { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .home-item-sub { display: inline-flex; align-items: center; gap: 4px; font-size: var(--al-text-xs); color: var(--al-text-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.home-project-location { display: block; min-width: 0; }
 /* a design that does not load: listed, not openable, with the reason (it may wrap) */
 .home-item-bad { cursor: default; }
 .home-item-bad:hover { background: transparent; border-color: transparent; }

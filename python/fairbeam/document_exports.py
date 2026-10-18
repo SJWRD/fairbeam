@@ -16,7 +16,8 @@ def export_sections(root: Path, raw: bytes, reference: dict, design: dict, mkdir
     mkdir(root)
     runs = root / "runs"
     mkdir(runs)
-    folder = runs / ("run-" + reference["sha256"] + "-" + reference["design_sha256"][:16])
+    # Version the derivative layout so an earlier immutable export can coexist unchanged.
+    folder = runs / ("run-" + reference["sha256"] + "-" + reference["design_sha256"][:16] + "-v2")
     mkdir(folder)
 
     def emit(section, name, value):
@@ -24,8 +25,8 @@ def export_sections(root: Path, raw: bytes, reference: dict, design: dict, mkdir
         mkdir(target)
         write(target / name, doc._json_bytes(value))
 
-    emit("metadata", "run.json", {"schema": "fairbeam.result-export/1",
-         "bundle_file": "../../" + reference["file"], "sha256": reference["sha256"],
+    emit("metadata", "run.json", {"schema": "fairbeam.result-export/2",
+         "bundle_file": "../../../" + reference["file"], "sha256": reference["sha256"],
          "design_sha256": reference["design_sha256"],
          **{k: bundle[k] for k in ("name", "created", "generator", "solver", "run", "units") if k in bundle}})
     emit("s-parameters", "data.json", {k: results[k] for k in

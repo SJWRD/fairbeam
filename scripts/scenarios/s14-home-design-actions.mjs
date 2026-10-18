@@ -192,12 +192,18 @@ export default {
    }
   });
   await s.step('portable workspace rows show their source path without hiding JSON designs',async()=>{
-   const path='C:/Research/İzmir/Shared antenna measurements/文档 long portable project name.fb';
+   const path=String.raw`\\?\C:\Research\İzmir\Shared antenna measurements\文档 long portable project name.fb`;
+   const cleanPath=path.slice(4);
+   const label=String.raw`C:\…\Shared antenna measurements\文档 long portable project name.fb`;
    await s.ev(({id,path},m)=>m.r.setModels(m.r.models().map(entry=>entry.key===id?{...entry,document:{id:'display-fixture',path}}:entry)),
      {id:before.id,path},{r:'/src/runner/store.ts'});
-   await s.wait(`${row()} .home-item-sub`,path);
-   assert.equal(await s.page.$eval(`${row()} .home-item-sub`,e=>e.title),path,'the complete path is available when clipped');
-   assert.equal(await s.page.$eval(`${row()} .home-item-sub`,e=>e.textContent.trim()),await s.T('home.designs.documentCopy',{path}));
+   await s.wait(`${row()} .home-item-sub`,label);
+   assert.equal(await s.page.$eval(`${row()} .home-item-sub`,e=>e.title),cleanPath,'the complete clean path is available when clipped');
+   assert.equal(await s.page.$eval(`${row()} .home-item-sub`,e=>e.textContent.trim()),label);
+   const name=await s.page.$eval(`${row()} .home-item-name`,e=>e.textContent);
+   assert.equal(await s.page.$eval(`${row()} button.home-item`,e=>e.getAttribute('aria-label')),`${name}. ${await s.T('home.designs.documentCopy',{path:cleanPath})}`);
+   assert.equal(await s.page.$eval(`${row()} .home-item-sub`,e=>getComputedStyle(e).textOverflow),'ellipsis');
+   assert.equal(await s.page.$eval(`${row()} .home-item-sub`,e=>getComputedStyle(e).display),'block','plain path text can ellipsize instead of clipping inside flex');
    assert.ok(await s.page.$(`[data-home-design="other_${s.lang}_${ctx.stamp}"]`),'ordinary JSON design remains visible');
   });
  }
