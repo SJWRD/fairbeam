@@ -14,6 +14,53 @@ from fairbeam.document_workspace import DocumentWorkspace
 
 
 class DocumentWorkspaceTests(unittest.TestCase):
+    def test_first_save_draft_snapshot_never_updates_source_json(self):
+        file = self.workspace_design()
+        source = modelfiles.design_path(self.models, file['id'])
+        before = source.read_bytes()
+        self.bridge.record_completed(self.completed(file))
+        draft = copy.deepcopy(file['design'])
+        draft['model']['name'] = 'Unsaved changes'
+        saved = self.bridge.save(self.path, file['id'], file['hash'], design=draft)
+        self.assertEqual(source.read_bytes(), before)
+        self.assertEqual(saved['file']['design'], draft)
+        self.assertEqual(doc.read(self.path)[0]['design'], draft)
+        self.assertNotEqual(saved['file']['id'], file['id'])
+        self.assertEqual([r['status'] for r in saved['results']], ['stale'])
+
+    def test_first_save_draft_validation_concurrency_and_bound_guards(self):
+        file = self.workspace_design()
+        before = modelfiles.design_path(self.models, file['id']).read_bytes()
+        for design in ({}, {'schema': 'unknown'}):
+            with self.assertRaises(doc.DocumentError):
+                self.bridge.save(self.path, file['id'], file['hash'], design=design)
+        wrong_identity = copy.deepcopy(file['design'])
+        wrong_identity['model']['id'] = 'different-model'
+        with self.assertRaisesRegex(doc.DocumentError, 'source model identity'):
+            self.bridge.save(self.path, file['id'], file['hash'], design=wrong_identity)
+        with self.assertRaises(doc.DocumentConflict):
+            self.bridge.save(self.path, file['id'], '0' * 64, design=file['design'])
+        self.assertFalse(self.path.exists())
+        self.assertEqual(len(list(self.models.glob('*.design.json'))), 1)
+        self.assertEqual(modelfiles.design_path(self.models, file['id']).read_bytes(), before)
+        saved = self.bridge.save(self.path, file['id'], file['hash'], design=file['design'])
+        for identity in (saved['document']['id'], None):
+            with self.subTest(identity=identity), self.assertRaises(doc.DocumentError):
+                self.bridge.save(self.root / 'another.fb', saved['file']['id'], saved['file']['hash'],
+                                 document_id=identity, save_as=True, design=file['design'])
+
+    def test_failed_first_snapshot_save_leaves_original_json_and_no_clone(self):
+        file = self.workspace_design()
+        before = modelfiles.design_path(self.models, file['id']).read_bytes()
+        draft = copy.deepcopy(file['design'])
+        draft['model']['name'] = 'Draft only'
+        with mock.patch.object(doc, 'save', side_effect=OSError('disk full')):
+            with self.assertRaises(OSError):
+                self.bridge.save(self.path, file['id'], file['hash'], design=draft)
+        self.assertEqual(modelfiles.design_path(self.models, file['id']).read_bytes(), before)
+        self.assertEqual(len(list(self.models.glob('*.design.json'))), 1)
+        self.assertEqual(list(self.bridge.state_dir.glob('*.json')), [])
+
     def test_optional_section_export_failure_keeps_document_saved(self):
         self.sidecar()
         self.write_document()
@@ -90,12 +137,12 @@ class DocumentWorkspaceTests(unittest.TestCase):
         duplicate["id"] = doc.create(file["design"], "another.results")["id"]
         self.bridge._write_state(duplicate)
         with self.assertRaisesRegex(doc.DocumentConflict, "Multiple documents"):
-            self.bridge.document_id_for(file["id"])
+            self.bridge.document_id_for(saved["file"]["id"])
 
     def test_unbound_save_after_restart_copies_key_without_reading_original_document(self):
         file = self.workspace_design()
         saved = self.bridge.save(self.path, file["id"], file["hash"])
-        self.assertEqual(saved["file"]["id"], file["id"])
+        file = saved["file"]
         original = self.path.read_bytes()
         edited = self.saved_edit(file)
         self.bridge.record_completed(self.completed(edited))
@@ -190,13 +237,28 @@ class DocumentWorkspaceTests(unittest.TestCase):
         self.assertEqual(reopened["results"][0]["status"], "stale")
         self.assertEqual(reopened["file"]["design"], edited["design"])
 
-    def test_first_native_save_binds_existing_workspace_key(self):
+    def test_first_native_save_forks_json_and_later_edits_preserve_original(self):
         file = self.workspace_design()
+        source = self.models / (file['id'] + modelfiles.DESIGN_SUFFIX)
+        original = source.read_bytes()
+        self.bridge.record_completed(self.completed(file))
         saved = self.bridge.save(self.path, file["id"], file["hash"])
         reopened = self.bridge.open(self.path)
-        self.assertEqual(saved["file"]["id"], file["id"])
-        self.assertEqual(reopened["file"]["id"], file["id"])
-        self.assertEqual(len(list(self.models.glob("*.design.json"))), 1)
+        self.assertNotEqual(saved["file"]["id"], file["id"])
+        self.assertTrue(saved["file"]["id"].startswith('fb_'))
+        self.assertEqual(reopened["file"]["id"], saved["file"]["id"])
+        self.assertEqual(saved["file"]["design"], file["design"])
+        self.assertEqual(len(list(self.models.glob("*.design.json"))), 2)
+        self.assertIsNone(self.bridge.document_id_for(file['id']))
+        self.assertEqual([r['status'] for r in saved['results']], ['current'])
+        # Later runs of the original JSON are not owned by the new portable document.
+        self.bridge.record_completed(self.completed(file, name='json-only.json', job_id='json-only-job'))
+        edited = self.saved_edit(reopened['file'])
+        again = self.save_opened(reopened, edited)
+        self.assertEqual(source.read_bytes(), original)
+        self.assertEqual(doc.read(self.path)[0]['design'], edited['design'])
+        self.assertEqual([r['status'] for r in again['results']], ['stale'])
+        self.assertEqual(self.bridge.open(self.path)['file']['id'], saved['file']['id'])
 
     def test_long_unicode_filename_gets_a_portable_adjacent_results_name(self):
         file = self.workspace_design()
@@ -322,7 +384,7 @@ class DocumentWorkspaceTests(unittest.TestCase):
     def test_bound_save_skips_new_result_replaced_after_capture(self):
         file = self.workspace_design()
         saved = self.bridge.save(self.path, file["id"], file["hash"])
-        job = self.completed(file)
+        job = self.completed(saved['file'])
         self.bridge.record_completed(job)
         (self.projects / job.bundle).write_bytes(b"changed after capture")
         again = self.save_opened(saved)
@@ -365,7 +427,7 @@ class DocumentWorkspaceTests(unittest.TestCase):
         file = self.workspace_design()
         self.bridge.record_completed(self.completed(file))
         saved = self.bridge.save(self.path, file["id"], file["hash"])
-        edited = self.saved_edit(file)
+        edited = self.saved_edit(saved['file'])
         self.bridge.record_completed(self.completed(edited, job_id="newer-job"))
         again = self.save_opened(saved, edited)
         self.assertEqual(len(again["results"]), 2)

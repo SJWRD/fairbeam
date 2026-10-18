@@ -234,6 +234,11 @@ class DocumentWorkspace:
                     if key in labels:
                         ambiguous.add(key)
                     labels[key] = {"id": identity, "path": location}
+                    if "results_directory" in state:
+                        try:
+                            labels[key]["results_directory"] = doc._basename(state["results_directory"])
+                        except doc.DocumentError:
+                            pass  # An invalid optional label does not hide a recoverable project.
                 except (OSError, ValueError, TypeError, modelfiles.ModelFileError):
                     continue
         except OSError:
@@ -455,7 +460,7 @@ class DocumentWorkspace:
         return raw
 
     def save(self, path: Path, model_id: str, workspace_hash: str, base_hash: str | None = None,
-             document_id: str | None = None, save_as: bool = False) -> dict:
+             document_id: str | None = None, save_as: bool = False, design: dict | None = None) -> dict:
         path = doc._path(path)
         modelfiles.check_id(model_id)
         # Snapshot run metadata before taking the document lock: the completion callback
@@ -471,12 +476,20 @@ class DocumentWorkspace:
             if document_id is not None and (source_state is None or source_state["model_id"] != model_id):
                 raise doc.DocumentConflict("Reopen this document before saving it")
             existing_identity = self.document_id_for(model_id) if document_id is None else None
+            if design is not None:
+                if document_id is not None or existing_identity is not None:
+                    raise doc.DocumentError("A draft snapshot is only allowed for the first unbound document save")
+                doc.design_digest(design)
+                if design["model"]["id"] != file["design"]["model"]["id"]:
+                    raise doc.DocumentError("A draft snapshot must retain its source model identity")
             if save_as or document_id is None:
                 if base_hash is not None or path.exists() or path.is_symlink():
                     raise doc.DocumentConflict("Save a separate document under a new filename")
                 results_name = path.stem.encode("utf-8")[:160].decode("utf-8", errors="ignore") + ".results"
-                document = doc.create(file["design"], results_name)
-                key = "fb_" + uuid.UUID(document["id"]).hex if (save_as and source_state) or existing_identity or file["readonly"] else model_id
+                document = doc.create(file["design"] if design is None else design, results_name)
+                # Every new portable document owns its workspace copy. Reusing a legacy
+                # JSON key here would make later .fb edits overwrite the original JSON.
+                key = "fb_" + uuid.UUID(document["id"]).hex
                 if key != model_id:
                     modelfiles.check_free(self.models_dir, key)
             else:

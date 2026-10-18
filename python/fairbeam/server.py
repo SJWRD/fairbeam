@@ -2068,14 +2068,15 @@ class Handler(BaseHTTPRequestHandler):
             raise ApiError(403, "native document authorization required")
         if "Origin" in self.headers or any(name.lower().startswith("sec-fetch-") for name in self.headers):
             raise ApiError(403, "native document commands are not a browser API")
-        body = self._body(16 * 1024)
-        allowed = {"path"} if action == "open" else {"path", "model_id", "workspace_hash", "base_hash", "document_id", "save_as"}
+        body = self._body(16 * 1024 if action == "open" else MAX_DESIGN_BODY)
+        allowed = {"path"} if action == "open" else {"path", "model_id", "workspace_hash", "base_hash", "document_id", "save_as", "design"}
         if set(body) - allowed or not isinstance(body.get("path"), str) or not body["path"]:
             raise ApiError(400, "invalid native document request")
         if action == "save" and (not isinstance(body.get("model_id"), str)
                 or not isinstance(body.get("workspace_hash"), str)
                 or not re.fullmatch(r"[0-9a-f]{64}", body.get("workspace_hash", ""))
                 or not isinstance(body.get("save_as", False), bool)
+                or ("design" in body and not isinstance(body["design"], dict))
                 or (body.get("base_hash") is not None and (not isinstance(body["base_hash"], str)
                     or not re.fullmatch(r"[0-9a-f]{64}", body["base_hash"])))
                 or (body.get("document_id") is not None and not isinstance(body["document_id"], str))):
@@ -2086,8 +2087,11 @@ class Handler(BaseHTTPRequestHandler):
             if action == "open":
                 result = self.app.documents.open(Path(body["path"]))
             else:
+                if "design" in body:
+                    documents.design_digest(body["design"])
                 result = self.app.documents.save(Path(body["path"]), body["model_id"], body["workspace_hash"],
-                    base_hash=body.get("base_hash"), document_id=body.get("document_id"), save_as=body.get("save_as", False))
+                    base_hash=body.get("base_hash"), document_id=body.get("document_id"), save_as=body.get("save_as", False),
+                    design=body.get("design"))
         except documents.DocumentConflict as exc:
             raise ApiError(409, str(exc)) from exc
         except documents.DocumentError as exc:

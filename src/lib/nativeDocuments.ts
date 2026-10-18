@@ -1,5 +1,6 @@
 import { createSignal, untrack } from "solid-js";
 import type { DesignFile } from "../runner/api";
+import type { Design } from "../designer/types";
 import { t } from "../i18n";
 
 export interface DocumentResult {
@@ -141,16 +142,18 @@ export async function restoreNativeDocumentBinding(file: DesignFile): Promise<vo
   if (result && key(result.file) === key(file) && !nativeDocumentFor(file)) rememberNativeDocument(result);
 }
 
-/** The shell retains both path and external revision. The viewer sends only a granted handle
- * and the exact workspace revision already saved by the designer. */
-export async function persistNativeDocument(file: DesignFile, hash: string, saveAs: boolean): Promise<{ canceled: true } | { file?: DesignFile; warnings: string[] } | void> {
+/** The shell retains path and external revision. Bound saves use the saved workspace revision;
+ * a first save may fork a draft snapshot while leaving its legacy source revision untouched. */
+export async function persistNativeDocument(file: DesignFile, hash: string, saveAs: boolean, draftDesign?: Design): Promise<{ canceled: true } | { file?: DesignFile; warnings: string[] } | void> {
   if (!nativeDocumentsAvailable()) return;
   if (hasDocumentResultScope(file) && !nativeDocumentFor(file)) await restoreNativeDocumentBinding(file);
   const current = nativeDocumentFor(file);
+  const firstDraft = !current && !hasDocumentResultScope(file) ? draftDesign : undefined;
   const candidates = new Set([...(observedScope === file.backup_scope ? completedKeys(file, observedJobs) : []), ...(untrack(resultJournals).get(key(file))?.pending ?? [])]);
   const result = await invoke<NativeDocument | { status: "canceled" }>("native_document_save", {
     request: { handle: current?.handle, modelId: file.id, workspaceHash: hash, saveAs,
-      suggestedName: `${file.design.model.name || file.id}.fb` },
+      suggestedName: `${(firstDraft ?? file.design).model.name || file.id}.fb`,
+      ...(firstDraft ? { draftDesign: firstDraft } : {}) },
   });
   if (result.status === "canceled") return { canceled: true };
   // Another Open of this UUID may have selected a different location meanwhile. A late save

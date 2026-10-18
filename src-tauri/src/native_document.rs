@@ -70,6 +70,16 @@ pub struct SaveRequest {
     #[serde(default)]
     save_as: bool,
     suggested_name: Option<String>,
+    draft_design: Option<Value>,
+}
+
+fn validate_draft_request(request: &SaveRequest) -> Result<(), Value> {
+    if let Some(design) = &request.draft_design {
+        if request.handle.is_some() || !design.is_object() {
+            return Err(error("A draft snapshot requires a first unbound document save", 400));
+        }
+    }
+    Ok(())
 }
 
 fn error(message: impl Into<String>, status: u16) -> Value {
@@ -583,6 +593,7 @@ pub fn native_document_restore(app: AppHandle, model_id: String) -> Value {
 
 #[tauri::command]
 pub async fn native_document_save(app: AppHandle, request: SaveRequest) -> Result<Value, Value> {
+    validate_draft_request(&request)?;
     let client = client(&app)?;
     let grant = app
         .state::<NativeDocuments>()
@@ -634,6 +645,9 @@ pub async fn native_document_save(app: AppHandle, request: SaveRequest) -> Resul
     };
     let mut body = json!({"path": path, "model_id": request.model_id,
         "workspace_hash": request.workspace_hash, "save_as": save_as});
+    if let Some(design) = request.draft_design {
+        body["design"] = design;
+    }
     if let Some(grant) = &grant {
         body["document_id"] = json!(grant.document_id);
         if !save_as {
@@ -885,6 +899,20 @@ mod tests {
             request[name] = json!("injected");
             assert!(serde_json::from_value::<SaveRequest>(request).is_err());
         }
+    }
+
+    #[test]
+    fn draft_snapshots_are_allowed_only_without_a_handle() {
+        let mut value = json!({"modelId":"example", "workspaceHash":"123", "draftDesign":{"schema":"fairbeam.design/1"}});
+        let request: SaveRequest = serde_json::from_value(value.clone()).unwrap();
+        assert!(validate_draft_request(&request).is_ok());
+        value["handle"] = json!("existing");
+        let request: SaveRequest = serde_json::from_value(value.clone()).unwrap();
+        assert_eq!(validate_draft_request(&request).unwrap_err()["status"], 400);
+        value.as_object_mut().unwrap().remove("handle");
+        value["draftDesign"] = json!([]);
+        let request: SaveRequest = serde_json::from_value(value).unwrap();
+        assert!(validate_draft_request(&request).is_err());
     }
 
     #[test]

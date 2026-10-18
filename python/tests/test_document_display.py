@@ -54,6 +54,17 @@ class DocumentDisplayTests(unittest.TestCase):
         with mock.patch.object(Path, "lstat", side_effect=PermissionError):
             self.assertEqual(self.bridge.display_documents({"fb_user_design"}), {})
 
+    def test_results_directory_is_optional_validated_display_metadata(self):
+        name = "İzmir 文档.results"
+        self.write({**self.state, 'results_directory': name})
+        self.assertEqual(self.bridge.display_documents({'fb_user_design'})['fb_user_design'],
+                         {'id': self.identity, 'path': self.state['path'], 'results_directory': name})
+        for invalid in ('../outside', '/absolute', 'bad\\path', None, {}, ''):
+            with self.subTest(invalid=invalid):
+                self.write({**self.state, 'results_directory': invalid})
+                self.assertEqual(self.bridge.display_documents({'fb_user_design'})['fb_user_design'],
+                                 {'id': self.identity, 'path': self.state['path']})
+
     def test_ambiguous_binding_does_not_pick_an_arbitrary_path(self):
         self.write()
         other = {**self.state, "id": str(uuid.uuid4()), "path": str(self.root / "Other.fb")}
@@ -94,6 +105,7 @@ class DocumentDisplayTests(unittest.TestCase):
         labels = self.bridge.display_documents(keys)
         self.assertEqual(set(labels), keys)
         self.assertEqual({Path(item["path"]).name for item in labels.values()}, {"Original.fb", "Copy.fb"})
+        self.assertEqual({item['results_directory'] for item in labels.values()}, {'Original.results', 'Copy.results'})
         self.assertEqual(doc.read(original)[0], document)
 
 

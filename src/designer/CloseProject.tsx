@@ -2,7 +2,7 @@ import { createEffect, createSignal, onCleanup, onMount, Show } from "solid-js";
 import { Portal } from "solid-js/web";
 import { X } from "lucide-solid";
 import { useModal } from "../lib/dialog";
-import { closeDesign, dirty, draft, file, message, releaseDraft, replaceRequest, type ReplaceRequest, saveAndCloseDesign, saveBeforeLeaving, saving } from "./store";
+import { closeDesign, defaultDesignerSession, dirty, draft, file, message, releaseDraft, replaceRequest, type ReplaceRequest, saveAndCloseDesign, saveBeforeLeaving, saving } from "./store";
 
 import { answerWindowClose, decideWindowClose, windowClose, type WindowLeave } from "./windowClose";
 import { modifierShortcut } from "../lib/shortcut";
@@ -99,6 +99,9 @@ function CloseProjectDialog() {
 /** Creating or opening another design replaces the open draft: the same choice, then it goes on. */
 function ReplaceProjectDialog(props: { request: ReplaceRequest }) {
   const request = props.request;
+  const owner = file();
+  const ownerTicket = defaultDesignerSession.asyncState.ticket();
+  const [ownSave, setOwnSave] = createSignal(false);
   let settled = false;
   const decide = (proceed: boolean) => {
     if (settled) return;
@@ -106,7 +109,7 @@ function ReplaceProjectDialog(props: { request: ReplaceRequest }) {
     request.decide(proceed);
   };
   // a save started before the request finished cleanly: nothing is at stake any more
-  createEffect(() => { if (!saving() && !dirty()) decide(true); });
+  createEffect(() => { if (!ownSave() && file()?.id === owner?.id && defaultDesignerSession.asyncState.isDocumentCurrent(ownerTicket) && !saving() && !dirty()) decide(true); });
   // the dialog went away without a choice (the design was closed or deleted meanwhile)
   onCleanup(() => decide(!file()));
   return (
@@ -114,9 +117,9 @@ function ReplaceProjectDialog(props: { request: ReplaceRequest }) {
       title={t(request.action === "create" ? "closeProject.replace.createTitle" : "closeProject.replace.openTitle", { target: request.target })}
       description={t("closeProject.replace.description", { name: draftName() })}
       save={async () => {
-        const ok = await saveBeforeLeaving();
-        if (ok) decide(true);
-        return ok;
+        setOwnSave(true);
+        try { return await saveBeforeLeaving(() => decide(true)); }
+        finally { setOwnSave(false); }
       }}
       discard={() => { releaseDraft(); decide(true); }}
       cancel={() => decide(false)}
@@ -127,17 +130,20 @@ function ReplaceProjectDialog(props: { request: ReplaceRequest }) {
 
 /** Closing the desktop window or quitting (windowClose.ts): the same choice, then the app goes. */
 function WindowCloseDialog(props: { kind: WindowLeave }) {
+  const owner = file();
+  const ownerTicket = defaultDesignerSession.asyncState.ticket();
+  const [ownSave, setOwnSave] = createSignal(false);
   // a save running when the question came finished cleanly: nothing is at stake any more
-  createEffect(() => { if (!file() || (!saving() && !dirty())) decideWindowClose("close"); });
+  createEffect(() => { if (!ownSave() && (!file() || (file()?.id === owner?.id && defaultDesignerSession.asyncState.isDocumentCurrent(ownerTicket) && !saving() && !dirty()))) decideWindowClose("close"); });
   const quitting = () => props.kind === "quit";
   return (
     <UnsavedChangesDialog
       title={t(quitting() ? "closeProject.quit.title" : "closeProject.window.title")}
       description={t(quitting() ? "closeProject.quit.description" : "closeProject.window.description", { name: draftName() })}
       save={async () => {
-        const ok = await saveBeforeLeaving();
-        if (ok) decideWindowClose("close");
-        return ok;
+        setOwnSave(true);
+        try { return await saveBeforeLeaving(() => decideWindowClose("close")); }
+        finally { setOwnSave(false); }
       }}
       // Don't save: like Close project, the draft and its local backup go
       discard={() => { closeDesign(); decideWindowClose("close"); }}

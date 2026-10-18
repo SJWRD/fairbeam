@@ -39,6 +39,7 @@ pub enum DocumentOperation {
 
 const DOCUMENT_RESPONSE_LIMIT: usize = 64 * 1024 * 1024;
 const DOCUMENT_REQUEST_LIMIT: usize = 16 * 1024;
+const DOCUMENT_SAVE_REQUEST_LIMIT: usize = 32 * 1024 * 1024;
 const DOCUMENT_REQUEST_TIMEOUT: Duration = Duration::from_secs(120);
 
 impl DocumentClient {
@@ -49,7 +50,11 @@ impl DocumentClient {
     ) -> Result<serde_json::Value, serde_json::Value> {
         let error = |message: &str| serde_json::json!({"error": message, "status": 503});
         let body = serde_json::to_vec(body).map_err(|_| error("Invalid document request"))?;
-        if body.len() > DOCUMENT_REQUEST_LIMIT {
+        let limit = match operation {
+            DocumentOperation::Open => DOCUMENT_REQUEST_LIMIT,
+            DocumentOperation::Save => DOCUMENT_SAVE_REQUEST_LIMIT,
+        };
+        if body.len() > limit {
             return Err(error("Document request exceeds its size limit"));
         }
         let path = match operation {
@@ -400,8 +405,13 @@ mod tests {
 
     #[test]
     fn document_channel_uses_only_its_child_and_private_token() {
+        for (operation, path, body) in [
+            (DocumentOperation::Open, "/api/native-document/open", serde_json::json!({"path":"example.fb"})),
+            (DocumentOperation::Save, "/api/native-document/save", serde_json::json!({"design":{"name":"x".repeat(20000)}})),
+        ] {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let port = listener.local_addr().unwrap().port();
+        let expected_body = serde_json::to_string(&body).unwrap();
         let task = thread::spawn(move || {
             let (mut stream, _) = listener.accept().unwrap();
             stream.set_read_timeout(Some(Duration::from_secs(3))).unwrap();
@@ -418,15 +428,25 @@ mod tests {
                 }
             }
             let request = String::from_utf8(request).unwrap();
-            assert!(request.starts_with("POST /api/native-document/open HTTP/1.1\r\n"));
+            assert!(request.starts_with(&format!("POST {path} HTTP/1.1\r\n")));
             assert!(request.contains("\r\nX-Fairbeam-Token: test-private-token\r\n"));
-            assert!(request.ends_with(r#"{"path":"example.fb"}"#));
+            assert!(request.ends_with(&expected_body));
             stream.write_all(&document_answer(200, r#"{"file":{"id":"example"}}"#)).unwrap();
         });
         let client = DocumentClient { port, token: "test-private-token".into() };
-        let answer = client.request(DocumentOperation::Open, &serde_json::json!({"path":"example.fb"})).unwrap();
+        let answer = client.request(operation, &body).unwrap();
         assert_eq!(answer["file"]["id"], "example");
         task.join().unwrap();
+        }
+    }
+
+    #[test]
+    fn document_request_limits_are_operation_specific() {
+        let client = DocumentClient { port: 0, token: "test".into() };
+        let open = client.request(DocumentOperation::Open, &serde_json::json!({"path":"x".repeat(DOCUMENT_REQUEST_LIMIT)}));
+        assert_eq!(open.unwrap_err()["error"], "Document request exceeds its size limit");
+        let save = client.request(DocumentOperation::Save, &serde_json::json!({"design":"x".repeat(DOCUMENT_SAVE_REQUEST_LIMIT)}));
+        assert_eq!(save.unwrap_err()["error"], "Document request exceeds its size limit");
     }
 
     /// A one-shot HTTP server on 127.0.0.1: reads the request head, sends `parts` with a pause

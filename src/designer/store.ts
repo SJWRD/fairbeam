@@ -33,7 +33,7 @@ import { confirmDraftDiscard } from "../lib/ConfirmDialog";
 import { createdNote, type TemplateKey } from "./templates";
 import { applyPythonScript, replaceDesignContent, type PythonApplyOutcome } from "./pythonApply";
 import { localeTag, t } from "../i18n/index.ts";
-import { pickNativeDocument, persistNativeDocument, rememberNativeDocument, restoreNativeDocumentBinding, observeNativeDocumentResults, nativeResultsPendingToken, resetNativeDocumentResults, nativeDocumentFor } from "../lib/nativeDocuments";
+import { pickNativeDocument, persistNativeDocument, rememberNativeDocument, restoreNativeDocumentBinding, observeNativeDocumentResults, nativeResultsPendingToken, resetNativeDocumentResults, nativeDocumentFor, nativeDocumentsAvailable, hasDocumentResultScope } from "../lib/nativeDocuments";
 import { createDocumentResultAutosave } from "../lib/documentResultAutosave";
 import { showToast } from "../lib/toast";
 
@@ -249,6 +249,12 @@ export const defaultDesignerIO = createDesignerIO(defaultDesignerSession, {
   stopPreview, forgetPreviewFailure, resetParamAsks: () => setParamAsks([]),
   schedulePreview: () => schedulePreview(0), applyModelEntry,
   restoreModelSelection: f => selectModel(f?.id ?? ""),
+  persistUnsavedDesign: async (f, design, copy) => {
+    if (!nativeDocumentsAvailable() || hasDocumentResultScope(f)) return;
+    const result = await persistNativeDocument(f, f.hash, copy, design);
+    if (result && "file" in result && result.file) await refreshModels();
+    return result;
+  },
   persistSavedDesign: async (f, hash, copy) => {
     const result = await persistNativeDocument(f, hash, copy);
     // A Save As copy has a new workspace key. Load its real parameter metadata before
@@ -376,9 +382,7 @@ export function closeDesign() {
 /** Save before the draft is closed or replaced: true only when this draft is saved and unchanged.
  * A failed/conflicting save or edits arriving during it must never discard the draft. */
 export async function saveAndCloseDesign(): Promise<boolean> {
-  if (!(await saveBeforeLeaving())) return false;
-  closeDesign();
-  return true;
+  return saveBeforeLeaving(closeDesign);
 }
 
 // ------------------------------------------------------------------ replacing the open draft

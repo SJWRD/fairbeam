@@ -383,41 +383,95 @@ def _windows_discard_staging(fd: int) -> None:
         raise ctypes.WinError(ctypes.get_last_error())
 
 
-def _macos_has_metadata(fd: int) -> bool:
-    """Query descriptor metadata directly: COPYFILE_CHECK can hide query errors."""
+def _macos_metadata(fd: int) -> tuple[dict[bytes, bytes], bytes | None]:
+    """Snapshot every descriptor xattr and the complete Darwin ACL, failing closed."""
+    import ctypes
+
+    api = ctypes.CDLL(None, use_errno=True)
+    listing, getting = api.flistxattr, api.fgetxattr
+    listing.argtypes = (ctypes.c_int, ctypes.c_void_p, ctypes.c_size_t, ctypes.c_int)
+    listing.restype = ctypes.c_ssize_t
+    getting.argtypes = (ctypes.c_int, ctypes.c_char_p, ctypes.c_void_p,
+                       ctypes.c_size_t, ctypes.c_uint32, ctypes.c_int)
+    getting.restype = ctypes.c_ssize_t
+    api.acl_get_fd_np.argtypes = (ctypes.c_int, ctypes.c_int)
+    api.acl_get_fd_np.restype = ctypes.c_void_p
+    api.acl_to_text.argtypes = (ctypes.c_void_p, ctypes.POINTER(ctypes.c_ssize_t))
+    api.acl_to_text.restype = ctypes.c_void_p
+    api.acl_free.argtypes = (ctypes.c_void_p,)
+    api.acl_free.restype = ctypes.c_int
+
+    def read(call):
+        size = call(None, 0)
+        if not 0 <= size <= 16 * 1024 * 1024:
+            raise OSError(ctypes.get_errno() or errno.EIO, "Cannot read document metadata")
+        buffer = ctypes.create_string_buffer(max(1, size))
+        if call(buffer, size) != size:
+            raise OSError(errno.EIO, "Document metadata changed while reading")
+        return buffer.raw[:size]
+
+    names = read(lambda buf, size: listing(fd, buf, size, 0x20))
+    if names and not names.endswith(b"\0"):
+        raise OSError(errno.EIO, "Invalid document attribute list")
+    keys = names[:-1].split(b"\0") if names else []
+    if len(set(keys)) != len(keys) or any(not key for key in keys):
+        raise OSError(errno.EIO, "Invalid document attribute list")
+    attrs = {key: read(lambda buf, size: getting(fd, key, buf, size, 0, 0x20)) for key in keys}
+    ctypes.set_errno(0)
+    acl = api.acl_get_fd_np(fd, 0x100)
+    if not acl:
+        if ctypes.get_errno() == errno.ENOENT:
+            return attrs, None
+        raise OSError(ctypes.get_errno() or errno.EIO, "Cannot read document ACL")
+    text = None
+    try:
+        size = ctypes.c_ssize_t()
+        text = api.acl_to_text(acl, ctypes.byref(size))
+        if not text or not 0 <= size.value <= 16 * 1024 * 1024:
+            raise OSError(ctypes.get_errno() or errno.EIO, "Cannot serialize document ACL")
+        return attrs, ctypes.string_at(text, size.value)
+    finally:
+        text_error = api.acl_free(text) if text else 0
+        acl_error = api.acl_free(acl)
+        if text_error or acl_error:
+            raise OSError(ctypes.get_errno() or errno.EIO, "Cannot release document ACL")
+
+
+def _macos_preserve_metadata(source: Path, destination_fd: int, expected, snapshot=None):
+    """Copy metadata on empty staging, or recheck it before publishing saved bytes."""
     import ctypes
 
     try:
-        api = ctypes.CDLL(None, use_errno=True)
-        attributes, acl_get, acl_free = api.flistxattr, api.acl_get_fd_np, api.acl_free
-    except AttributeError as exc:
-        raise OSError(errno.ENOSYS, "Metadata queries are unavailable") from exc
-    attributes.argtypes = (ctypes.c_int, ctypes.c_void_p, ctypes.c_size_t, ctypes.c_int)
-    attributes.restype = ctypes.c_ssize_t
-    acl_get.argtypes = (ctypes.c_int, ctypes.c_int)
-    acl_get.restype = ctypes.c_void_p
-    acl_free.argtypes = (ctypes.c_void_p,)
-    acl_free.restype = ctypes.c_int
-    ctypes.set_errno(0)
-    size = attributes(fd, None, 0, 0x0020)  # XATTR_SHOWCOMPRESSION includes compression metadata.
-    if size < 0:
-        error = ctypes.get_errno() or errno.EIO
-        raise OSError(error, os.strerror(error))
-    if size:
-        return True
-    ctypes.set_errno(0)
-    acl = acl_get(fd, 0x00000100)  # ACL_TYPE_EXTENDED
-    if acl:
-        if acl_free(acl) != 0:
-            error = ctypes.get_errno() or errno.EIO
-            raise OSError(error, os.strerror(error))
-        return True  # Even an empty explicit ACL can carry inheritance flags.
-    error = ctypes.get_errno()
-    # Darwin's filesec_get_property reports ENOENT for an absent ACL. Querying
-    # a valid open descriptor avoids confusing this with a missing pathname.
-    if error == errno.ENOENT:
-        return False
-    raise OSError(error or errno.EIO, os.strerror(error or errno.EIO))
+        _regular(source)
+        source_fd = os.open(source, os.O_RDONLY | os.O_NOFOLLOW)
+        try:
+            original = os.fstat(source_fd)
+            staging = os.fstat(destination_fd)
+            if (not stat.S_ISREG(original.st_mode) or not stat.S_ISREG(staging.st_mode)
+                    or (original.st_dev, original.st_ino) != (expected.st_dev, expected.st_ino)):
+                raise DocumentError("Document changed while preserving metadata")
+            identity = lambda info: (info.st_uid, info.st_gid, stat.S_IMODE(info.st_mode),
+                                     getattr(info, "st_flags", 0))
+            if identity(original) != identity(expected) or identity(staging) != identity(expected):
+                raise DocumentError("Cannot preserve document owner, group and permissions")
+            current = _macos_metadata(source_fd)
+            if snapshot is None:
+                api = ctypes.CDLL(None, use_errno=True)
+                api.fcopyfile.argtypes = (ctypes.c_int, ctypes.c_int, ctypes.c_void_p, ctypes.c_uint32)
+                api.fcopyfile.restype = ctypes.c_int
+                # COPYFILE_ACL | COPYFILE_XATTR; never copy data, times, or ownership.
+                if api.fcopyfile(source_fd, destination_fd, None, 0x1 | 0x4) != 0:
+                    raise OSError(ctypes.get_errno() or errno.EIO, "Cannot copy document metadata")
+                snapshot = current
+            if (current != snapshot or _macos_metadata(source_fd) != snapshot
+                    or _macos_metadata(destination_fd) != snapshot
+                    or identity(os.fstat(destination_fd)) != identity(expected)):
+                raise DocumentError("Cannot verify preserved document ACLs and extended attributes")
+            return snapshot
+        finally:
+            os.close(source_fd)
+    except (OSError, AttributeError) as exc:
+        raise DocumentError("Cannot preserve document metadata; save a separate copy") from exc
 
 
 def _posix_plain_metadata(path: Path):
@@ -433,7 +487,11 @@ def _posix_plain_metadata(path: Path):
                 raise DocumentError("Cannot preserve document special mode bits; save a separate copy")
             if getattr(info, "st_flags", 0):
                 raise DocumentError("Cannot preserve document file flags; save a separate copy")
-            extended = _macos_has_metadata(fd) if sys.platform == "darwin" else bool(os.listxattr(fd))
+            if sys.platform == "darwin":
+                _macos_metadata(fd)  # These are copied and verified on staging before replacement.
+                extended = False
+            else:
+                extended = bool(os.listxattr(fd))
             if extended:
                 raise DocumentError("Cannot preserve document ACLs or extended attributes; save a separate copy")
             return info
@@ -538,8 +596,13 @@ def save(path: Path, document: dict, base_hash: str | None = None) -> str:
                         _windows_apply_dacl(temporary, dacl)
                     if posix_metadata is not None:
                         _posix_prepare_staging(temporary, posix_metadata)
+                    macos_metadata = None
+                    if posix_metadata is not None and sys.platform == "darwin":
+                        macos_metadata = _macos_preserve_metadata(path, stream.fileno(), posix_metadata)
                     stream.write(data)
                     stream.flush()
+                    if macos_metadata is not None:
+                        _macos_preserve_metadata(path, stream.fileno(), posix_metadata, macos_metadata)
                     os.fsync(stream.fileno())
                     if previous is not None:
                         def replace():

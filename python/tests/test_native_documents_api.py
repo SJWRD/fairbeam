@@ -20,6 +20,29 @@ from fairbeam.server import App, make_server
 
 
 class NativeDocumentsAPI(unittest.TestCase):
+    def test_first_save_accepts_dirty_snapshot_without_modifying_json(self):
+        modelfiles.create_design(self.models, 'plain_draft', self.document['design'])
+        _, original = self.get_design('plain_draft')
+        source = modelfiles.design_path(self.models, 'plain_draft')
+        before = source.read_bytes()
+        draft = copy.deepcopy(original['design'])
+        draft['model']['name'] = 'Unsaved native draft'
+        target = self.root / 'draft.fb'
+        body = {'path': str(target), 'model_id': original['id'], 'workspace_hash': original['hash'],
+                'design': draft, 'save_as': True}
+        raw = b' ' * 20000 + json.dumps(body).encode('utf-8')
+        status, result = self.request('save', raw=raw)
+        self.assertEqual(status, 200, result)
+        self.assertEqual(source.read_bytes(), before)
+        self.assertEqual(result['file']['design'], draft)
+        self.assertNotEqual(result['file']['id'], original['id'])
+        self.assertEqual(doc.read(target)[0]['design'], draft)
+        status, _ = self.request('save', body={**body, 'path': str(self.root / 'rejected.fb'),
+                                 'model_id': result['file']['id'], 'workspace_hash': result['file']['hash'],
+                                 'document_id': result['document']['id']})
+        self.assertEqual(status, 400)
+        self.assertFalse((self.root / 'rejected.fb').exists())
+
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.root = Path(self.tmp.name)
@@ -59,7 +82,8 @@ class NativeDocumentsAPI(unittest.TestCase):
         modelfiles.create_design(self.models, "fb_user_design", blank_design("user", "Ordinary JSON design"))
         models = {entry["key"]: entry for entry in self.app.models()["models"]}
         self.assertEqual(models[opened["file"]["id"]]["document"],
-                         {"id": self.document["id"], "path": str(self.path.resolve())})
+                         {"id": self.document["id"], "path": str(self.path.resolve()),
+                          "results_directory": self.document["results_directory"]})
         self.assertIn("fb_user_design", models)
         self.assertNotIn("document", models["fb_user_design"])
 
@@ -156,10 +180,11 @@ class NativeDocumentsAPI(unittest.TestCase):
         status, saved = self.request("save", body={"path": str(target), "model_id": legacy["id"],
                                     "workspace_hash": legacy["hash"], "save_as": True})
         self.assertEqual(status, 200, saved)
-        self.assertEqual(saved["file"]["id"], "plain_key")
+        self.assertNotEqual(saved["file"]["id"], "plain_key")
+        self.assertTrue(saved["file"]["id"].startswith("fb_"))
         self.assertEqual(saved["file"]["document_id"], saved["document"]["id"])
         self.app.documents = DocumentWorkspace(self.models, self.projects, self.app.history_dir, self.manager)
-        status, restored = self.get_design("plain_key")
+        status, restored = self.get_design(saved["file"]["id"])
         self.assertEqual(status, 200, restored)
         self.assertEqual(restored["document_id"], saved["document"]["id"])
         self.assertEqual(set(restored) - set(legacy), {"document_id"})
@@ -171,7 +196,8 @@ class NativeDocumentsAPI(unittest.TestCase):
         self.assertNotEqual(copied["file"]["id"], restored["id"])
         self.assertNotEqual(copied["file"]["document_id"], restored["document_id"])
         self.assertEqual(self.get_design(copied["file"]["id"])[1]["document_id"], copied["document"]["id"])
-        self.assertEqual(self.get_design("plain_key")[1]["document_id"], saved["document"]["id"])
+        self.assertEqual(self.get_design(saved["file"]["id"])[1]["document_id"], saved["document"]["id"])
+        self.assertEqual(self.get_design("plain_key")[1], legacy)
 
     def test_design_read_refuses_untrusted_identity_instead_of_legacy_fallback(self):
         opened = self.opened()

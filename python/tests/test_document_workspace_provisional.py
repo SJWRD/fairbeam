@@ -33,7 +33,7 @@ class ProvisionalDocumentBindingTests(unittest.TestCase):
     def assert_source_unchanged(self, case, source):
         self.assertEqual(modelfiles.read_design_file(case.models, source["id"]), source)
 
-    def test_failed_first_save_keeps_original_key_unbound_and_retry_reuses_it(self):
+    def test_failed_first_save_keeps_original_key_unbound_and_retry_forks_once(self):
         case = self.fixture
         original = case.workspace_design()
         original_bytes = modelfiles.design_path(case.models, original["id"]).read_bytes()
@@ -45,9 +45,11 @@ class ProvisionalDocumentBindingTests(unittest.TestCase):
         self.assertEqual(list(case.bridge.state_dir.glob("*.json")), [])
         self.assertEqual(modelfiles.design_path(case.models, original["id"]).read_bytes(), original_bytes)
         retried = case.bridge.save(case.path, original["id"], original["hash"], save_as=True)
-        self.assertEqual(retried["file"]["id"], original["id"])
-        self.assertEqual(case.bridge.document_id_for(original["id"]), retried["document"]["id"])
-        self.assertEqual(len(list(case.models.glob("*.design.json"))), 1)
+        self.assertNotEqual(retried["file"]["id"], original["id"])
+        self.assertIsNone(case.bridge.document_id_for(original["id"]))
+        self.assertEqual(case.bridge.document_id_for(retried["file"]["id"]), retried["document"]["id"])
+        self.assertEqual(len(list(case.models.glob("*.design.json"))), 2)
+        self.assertEqual(modelfiles.design_path(case.models, original["id"]).read_bytes(), original_bytes)
         self.assertEqual(retried["warnings"], [])
 
     def test_metadata_failure_before_or_after_state_publication_cleans_only_new_binding(self):
@@ -98,7 +100,7 @@ class ProvisionalDocumentBindingTests(unittest.TestCase):
                         case.bridge.save(target, source["id"], source["hash"], **options)
                 self.assertEqual(case.bridge._state(captured["id"]), captured)
                 self.assertEqual(case.bridge.open(target)["file"]["id"], captured["model_id"])
-                self.assertEqual(len(list(case.models.glob("*.design.json"))), 2 if clone else 1)
+                self.assertEqual(len(list(case.models.glob("*.design.json"))), 2)
                 self.assert_source_unchanged(case, source)
 
     def test_changed_state_is_preserved_before_deleting_a_clone(self):

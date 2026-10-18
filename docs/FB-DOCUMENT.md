@@ -9,8 +9,10 @@ release. Existing design JSON and result bundles remain supported.
 - File > Open selects a `.fb` document or imports legacy JSON. A second launch forwards `.fb`
   paths to the running window. Queued requests wait while a modal window is open. Unsaved
   changes are handled before opening a queued document.
-- Save writes the workspace revision first, then the selected `.fb` file. The first save opens
-  a native file picker. Canceling keeps existing unsaved edits and results pending, but does not
+- The first native `.fb` save opens a file picker and creates a separate `fb_` workspace from
+  the current draft. The source JSON is not overwritten. Later portable edits use the new workspace;
+  the original JSON remains independently editable. Bound document saves write the workspace
+  revision first, then the selected `.fb` file. Canceling keeps existing unsaved edits and results pending, but does not
   mark a clean document changed. A failed write retains a retry reminder; retry uses the workspace
   revision that was actually written.
 - Save remains available for an unchanged writable design, so newly completed runs can be added
@@ -29,6 +31,8 @@ release. Existing design JSON and result bundles remain supported.
 - Start keeps portable workspace copies visible and identifies them by their `.fb` path. The
   path is display/search metadata, not permission to open a file; missing or ambiguous metadata
   falls back to the workspace filename. Deleting a workspace copy does not delete its `.fb` file.
+  Search normalizes names, paths and result-directory names to NFC, so decomposed macOS filenames
+  match typed Unicode. Display normalization never changes the path used for filesystem access.
 
 The native shell retains the selected path and revision behind an opaque handle. Browser code
 cannot submit arbitrary external paths. The private bridge is restricted to the shell's current
@@ -107,9 +111,9 @@ device and inode. This intentionally serializes separate documents too, avoiding
 filesystem case and Unicode alias rules. New files use `renamex_np(RENAME_EXCL)` where supported,
 falling back to an exclusive hardlink only when exclusive rename is unavailable. If neither
 operation is supported, creation fails without publishing partial content.
-Native macOS checks on APFS passed ordinary saves, concurrent saves through case aliases, Unicode
-result-name collision checks, and safe refusal for ACLs, Finder tags, quarantine metadata, and
-locked files. On the tested exFAT volume, neither exclusive
+Earlier native macOS checks on APFS passed ordinary saves, concurrent saves through case aliases,
+Unicode result-name collision checks and locked-file refusal. The metadata-copy change below
+requires a new Finder-open/save check on macOS. On the tested exFAT volume, neither exclusive
 rename nor hardlinks was supported, so creation refused without publishing partial content.
 Save on an internal APFS volume, then copy the `.fb` file and its adjacent results folder together.
 Other volumes still need their own checks.
@@ -140,17 +144,14 @@ or security resource attributes, and it does not enable security privileges. Fil
 depends on that metadata require a separate-copy workflow; the app does not detect those policies.
 Other attributes, including encryption and compression, are not copied or guaranteed.
 
-POSIX replacement preserves ordinary mode bits and requires the empty staging file's owner/group to match
-the destination before writing bytes. It refuses replacement when the destination or stage has
-setuid/setgid/sticky mode bits, extended ACLs, listed extended attributes, or BSD file flags, or
-when those metadata queries fail.
-macOS queries the open file descriptor with `flistxattr` (including compression attributes) and
-`acl_get_fd_np`; Linux uses `os.listxattr`, which also lists POSIX ACL attributes. Metadata is never
-stripped or permissions escalated. The error directs the user to save a separate copy.
-Finder tags, quarantine attributes, and inherited stage ACLs therefore cause refusal too: even a
-downloaded document with quarantine metadata needs Save As to a new file. An identical-byte save
-does not replace the file and needs no metadata changes. Queries cover metadata exposed to the
-current user, within the existing advisory-lock and static-boundary guarantees described below.
+POSIX replacement preserves ordinary mode bits and requires the empty staging file's owner/group to
+match the destination. Special mode bits and BSD file flags remain unsupported. On macOS, the writer
+copies ACLs and extended attributes onto the empty stage using `fcopyfile(COPYFILE_ACL | COPYFILE_XATTR)`.
+Descriptor queries compare all listed attribute bytes and serialized ACLs before writing and again
+before replacement. This includes Finder's last-used date, tags, quarantine and other exposed attributes;
+failed copying or verification leaves the original intact. Linux still refuses extended metadata.
+An identical-byte save does not replace the file. These checks cover metadata exposed to the current
+user, within the advisory-lock and static-boundary guarantees below, without escalating permissions.
 
 New POSIX documents and portable result files currently use owner-only permissions (`0600`).
 They can be copied or shared, but do not automatically grant access to other local users through
@@ -223,8 +224,8 @@ cache priming and verification are outside the measured operation.
 - Review the result-status presentation with missing, corrupt, historical, and newly computed
   results. Existing JSON import, export, and the openEMS workflow must remain usable.
 - Validate the bounded metadata policy on target Windows and macOS volumes. Windows preserves
-  DACLs and owner/group identities and refuses named streams or failed stream queries. POSIX
-  preserves owner/group and ordinary mode bits and refuses extended metadata. Windows SACLs,
+  DACLs and owner/group identities and refuses named streams or failed stream queries. macOS copies
+  and verifies exposed ACLs/xattrs; Linux refuses extended metadata. Both preserve owner/group and mode. Windows SACLs,
   audit/security policies, encryption, compression, and other attributes are outside the verified
   preservation contract; unrestricted metadata-preserving overwrites are not supported.
 

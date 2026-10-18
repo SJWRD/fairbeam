@@ -22,6 +22,8 @@ export interface DesignerIODependencies {
   /** Persist the saved workspace revision in its selected native document. Cancellation keeps
    * the previous saved baseline; an ambiguous write failure also retains a retry reminder. */
   persistSavedDesign?: (file: DesignFile, hash: string, saveAs: boolean) => Promise<{ canceled: true } | { file?: DesignFile; warnings?: string[] } | void>;
+  /** First native save forks the draft without first overwriting its legacy JSON source. */
+  persistUnsavedDesign?: (file: DesignFile, design: Design, saveAs: boolean) => Promise<{ canceled: true } | { file?: DesignFile; warnings?: string[] } | void>;
 }
 /** IO owns no global registration or viewport: dependencies belong to its captured session. */
 export function createDesignerIO(core: Core, deps: DesignerIODependencies) {
@@ -120,7 +122,7 @@ export function createDesignerIO(core: Core, deps: DesignerIODependencies) {
   const saveExplicit = () => saveWithIntent(true);
   const saveAs = () => saveWithIntent(false, true);
 
-  async function saveWithIntent(overwriteConflict: boolean, copy = false): Promise<boolean> {
+  async function saveWithIntent(overwriteConflict: boolean, copy = false, replaced?: (ticket: ReturnType<typeof asyncState.ticket>) => void): Promise<boolean> {
     const f = file();
     if (!alive() || !f || saving()) return false;
     const ticket = asyncState.ticket();
@@ -131,19 +133,22 @@ export function createDesignerIO(core: Core, deps: DesignerIODependencies) {
     setSaving(true);
     try {
       const d = JSON.parse(snapshot()) as Design;
-      const res = await deps.transport.saveDesign(f, d, (overwriteConflict ? conflict() : null) ?? f.hash);
+      const firstNative = deps.persistUnsavedDesign ? await deps.persistUnsavedDesign(f, d, copy) : undefined;
+      if (!currentSave()) return false;
+      const res = firstNative ? { hash: f.hash, validation: { valid: true, checks: [] } as Validation }
+        : await deps.transport.saveDesign(f, d, (overwriteConflict ? conflict() : null) ?? f.hash);
       if (!currentSave()) return false;
       let replacement: DesignFile | void;
       let warnings: string[] = [];
       try {
-        const persisted = await deps.persistSavedDesign?.(f, res.hash, copy);
+        const persisted = firstNative ?? await deps.persistSavedDesign?.(f, res.hash, copy);
         if (!currentSave()) return false;
         if (persisted && "canceled" in persisted) {
           batch(() => {
             // A cancelled picker wrote no external file. Keep real pending work, including
             // workspace edits that could otherwise be hidden by Undo after cancellation.
             setFile({ ...f, hash: res.hash });
-            core.setPersistencePending(core.persistencePending() || JSON.stringify(d) !== JSON.stringify(f.design));
+            if (!firstNative) core.setPersistencePending(core.persistencePending() || JSON.stringify(d) !== JSON.stringify(f.design));
             setConflict(null);
             setMessage({ tone: "warn", text: t(dirty() ? "document.saveCancelled" : "document.saveCancelledClean"), sticky: true });
           });
@@ -168,15 +173,17 @@ export function createDesignerIO(core: Core, deps: DesignerIODependencies) {
       if (replacement && replacement.id !== f.id) {
         if (!asyncState.isDraftCurrent(ticket) || core.resultsPending()) {
           setFile({ ...f, hash: res.hash });
-          core.setPersistencePending(true);
+          if (!firstNative) core.setPersistencePending(true);
           savedNotice({ tone: "warn", text: t("document.copySavedNewer") }, warnings);
           return false;
         }
         deps.clearBackup(f);
         take(replacement);
+        const replacementTicket = asyncState.ticket();
         deps.restoreModelSelection(replacement);
         deps.schedulePreview();
         savedNotice({ tone: "good", text: t("store.saved") }, warnings);
+        replaced?.(replacementTicket);
         return true;
       }
       deps.clearBackup(f);
@@ -220,10 +227,14 @@ export function createDesignerIO(core: Core, deps: DesignerIODependencies) {
   }
 
 
-  async function saveBeforeLeaving(): Promise<boolean> {
+  async function saveBeforeLeaving(onReady?: () => void): Promise<boolean> {
     if (!alive()) return false;
-    const ticket = asyncState.ticket();
-    return (await save()) && alive() && asyncState.isDocumentCurrent(ticket) && !dirty() && !conflict();
+    let ticket = asyncState.ticket();
+    const saved = await saveWithIntent(false, false, replacement => { ticket = replacement; });
+    if (!saved || !alive() || !asyncState.isDocumentCurrent(ticket) || dirty() || conflict()) return false;
+    // Run the authorized close/replacement before another await can let a different Open win.
+    onReady?.();
+    return true;
   }
   /** Explicit recovery is an undoable edit, never a replacement of the saved file/hash. */
   function restoreRecoveredDraft(design: Design): boolean {

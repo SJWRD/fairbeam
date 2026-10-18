@@ -33,6 +33,8 @@ let nativeReply=()=>Promise.resolve(response()),readDesign=async()=>f,nativeCall
 let refreshModels=async()=>{},restoreModelSelection=()=>{};
 const adapterSource=readFileSync(root+'src/designer/store.ts','utf8').match(/persistSavedDesign: (async \(f, hash, copy\) => \{[\s\S]*?\n  \}),/)[1];
 const persistSavedDesign=Function('persistNativeDocument','refreshModels',`return (${stripTypeScriptTypes(adapterSource)});`)(n.persistNativeDocument,()=>refreshModels());
+const firstAdapterSource=readFileSync(root+'src/designer/store.ts','utf8').match(/persistUnsavedDesign: (async \(f, design, copy\) => \{[\s\S]*?\n  \}),/)[1];
+const persistUnsavedDesign=Function('persistNativeDocument','refreshModels','nativeDocumentsAvailable','hasDocumentResultScope',`return (${stripTypeScriptTypes(firstAdapterSource)});`)(n.persistNativeDocument,()=>refreshModels(),n.nativeDocumentsAvailable,n.hasDocumentResultScope);
 globalThis.window={__TAURI_INTERNALS__:{invoke:async()=>{nativeCalls++;return nativeReply();}}};
 const core=createDesignerSession();
 const [jobs,setJobs]=createSignal([old,running]),[scope,setScope]=createSignal(f.backup_scope);
@@ -44,9 +46,42 @@ createRoot(dispose=>{disposeEffects=dispose;
 const io=createDesignerIO(core,{
  transport:{design:id=>readDesign(id),saveDesign:async()=>({hash:`workspace-${++writes}`,validation:{valid:true,checks:[]}})},
  rememberLastDesign(){},readBackup(){return null;},clearBackup(){},stopPreview(){},forgetPreviewFailure(){},resetParamAsks(){},schedulePreview(){},applyModelEntry(){},
- restoreModelSelection:file=>restoreModelSelection(file),persistSavedDesign,
+ restoreModelSelection:file=>restoreModelSelection(file),persistSavedDesign,persistUnsavedDesign,
 });
 try {
+ for(const outcome of ['saved','cancel','clean-cancel','failure','late-edit','late-open','open-after-fork']) {
+  const source={...f,id:`legacy-${outcome}`,document_id:undefined};
+  core.takeFile(source);if(outcome!=='clean-cancel')core.edit(d=>d.model.description='Unsaved source edit');
+  const draftAtSave=JSON.parse(core.snapshot()),beforeWrites=writes,wait=deferred();
+  let request;
+  globalThis.window.__TAURI_INTERNALS__.invoke=async(command,args)=>{nativeCalls++;request=args.request;return wait.promise;};
+  let ready=0;
+  if(outcome==='open-after-fork')restoreModelSelection=()=>queueMicrotask(()=>core.takeFile({...f,id:'after-fork-owner',hash:'after-fork-hash'}));
+  const operation=io.saveBeforeLeaving(()=>ready++);await tick();
+  assert.equal(writes,beforeWrites,'first native save never writes the legacy source JSON');
+  assert.deepEqual(request.draftDesign,draftAtSave);assert.equal(request.workspaceHash,source.hash);
+  assert.equal(request.handle,undefined);
+  if(outcome==='late-edit')core.edit(d=>d.model.description='Newer live edit');
+  if(outcome==='late-open')core.takeFile({...f,id:'new-owner',hash:'new-owner-hash'});
+  const fork={...source,id:`fork-${outcome}`,document_id:`fork-uuid-${outcome}`,hash:'fork-hash',design:draftAtSave};
+  if(outcome==='cancel'||outcome==='clean-cancel')wait.resolve({status:'canceled'});
+  else if(outcome==='failure')wait.resolve(Promise.reject(Error('disk full')));
+  else wait.resolve(response(fork));
+  assert.equal(await operation,outcome==='saved');
+  assert.equal(ready,outcome==='saved'?1:0,'only the intentionally saved and still-current replacement may leave');
+  restoreModelSelection=()=>{};
+  assert.equal(writes,beforeWrites);
+  if(outcome==='saved'){assert.equal(core.file().id,fork.id);assert.equal(core.dirty(),false);}
+  else if(outcome==='late-open'){assert.equal(core.file().id,'new-owner');assert.equal(core.file().hash,'new-owner-hash');}
+  else if(outcome==='open-after-fork'){assert.equal(core.file().id,'after-fork-owner');assert.equal(core.file().hash,'after-fork-hash');}
+  else {
+   assert.equal(core.file().id,source.id);assert.equal(core.file().hash,source.hash);
+   assert.equal(core.file().design,source.design,'source saved baseline is untouched');
+   assert.equal(core.dirty(),outcome!=='clean-cancel');assert.equal(core.persistencePending(),false,'no source write needs a persistence reminder');
+   assert.equal(JSON.parse(core.snapshot()).model.description,outcome==='clean-cancel'?undefined:outcome==='late-edit'?'Newer live edit':'Unsaved source edit');
+  }
+ }
+ globalThis.window.__TAURI_INTERNALS__.invoke=async()=>{nativeCalls++;return nativeReply();};
  n.resetNativeDocumentResults(f,jobs(),scope());n.rememberNativeDocument(response());core.takeFile(f);
  assert.equal(core.dirty(),false,'existing history is the explicit Open baseline');
  // Cancelling a clean Save As is a neutral action, not an external-write failure.
