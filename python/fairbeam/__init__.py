@@ -41,7 +41,7 @@ _NATIVE_CPU_ENV = (
 )
 
 
-def _qualified_windows_cpu_pack() -> bool:
+def _qualified_windows_cpu_marker() -> dict | None:
     """The installer verifies the archive; this marker scopes defaults to its qualified build.
 
     This is a capability declaration, not independent binary-integrity verification.
@@ -51,15 +51,20 @@ def _qualified_windows_cpu_pack() -> bool:
         with open(_os.path.join(_openems_install_root(), "openems-pack.json"), "rb") as stream:
             raw = stream.read(65537)
         if len(raw) > 65536:
-            return False
+            return None
         marker = _json.loads(raw)
-        return (isinstance(marker, dict)
+        qualified = (isinstance(marker, dict)
                 and marker.get("marker") == "fairbeam openEMS pack v1"
                 and marker.get("platform") == "windows-x64"
                 and marker.get("native_cpu") is True
                 and marker.get("openems_commit") == "12cd91de21548987b835ce21f10fd8421d74da78")
+        return marker if qualified else None
     except (OSError, ValueError, UnicodeError, RecursionError):
-        return False
+        return None
+
+
+def _qualified_windows_cpu_pack() -> bool:
+    return _qualified_windows_cpu_marker() is not None
 
 
 def native_cpu_default() -> bool:
@@ -73,6 +78,11 @@ def _native_cpu_defaults():
     if native_cpu_default():
         for name, value in _NATIVE_CPU_ENV:
             _os.environ.setdefault(name, value)
+        # Independently qualified I/O optimization: old CPU packs and macOS retain their
+        # existing behavior. Respect an explicit value, including "0".
+        marker = _qualified_windows_cpu_marker() if _sys.platform == "win32" else None
+        if marker is not None and marker.get("native_hdf5_td_batch") is True:
+            _os.environ.setdefault("OPENEMS_EXPERIMENTAL_HDF5_TD_BATCH", "1")
 
 
 def native_cpu_note() -> str | None:

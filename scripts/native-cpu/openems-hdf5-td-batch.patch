@@ -1,0 +1,69 @@
+diff --git a/Common/processfields_td.cpp b/Common/processfields_td.cpp
+index 3b46a27..b316000 100644
+--- a/Common/processfields_td.cpp
++++ b/Common/processfields_td.cpp
+@@ -1,3 +1,5 @@
++#include <cstdlib>
++#include <cstring>
+ /*
+ *	Copyright (C) 2010 Thorsten Liebig (Thorsten.Liebig@gmx.de)
+ *
+@@ -68,9 +70,14 @@ int ProcessFieldsTD::Process()
+ 	{
+ 		stringstream ss;
+ 		ss << std::setw( pad_length ) << std::setfill( '0' ) << m_Eng_Interface->GetNumberOfTimesteps();
++        const char* batch = std::getenv("OPENEMS_EXPERIMENTAL_HDF5_TD_BATCH");
++        if (!g_settings.GetLegacyHDF5Dumps() && batch && std::strcmp(batch, "1") == 0) {
++            success &= m_HDF5_Dump_File->WriteTimeDomainVectorField(ss.str(), field, (float)m_Eng_Interface->GetTime(m_dualTime));
++        } else {
+ 		success &= m_HDF5_Dump_File->WriteVectorField<float>(ss.str(), field, g_settings.GetLegacyHDF5Dumps());
+ 		float time[1] = {(float)m_Eng_Interface->GetTime(m_dualTime)};
+ 		success &= m_HDF5_Dump_File->WriteAttribute("/FieldData/TD/"+ss.str(),"time",time,1);
++        }
+ 	}
+ 	else
+ 	{
+diff --git a/tools/hdf5_file_writer.cpp b/tools/hdf5_file_writer.cpp
+index 856c80e..79c77d0 100644
+--- a/tools/hdf5_file_writer.cpp
++++ b/tools/hdf5_file_writer.cpp
+@@ -529,3 +529,26 @@ bool HDF5_File_Writer::WriteAttribute(std::string locName, std::string attr_name
+ {
+ 	return HDF5_File_Writer::WriteAttribute(locName, attr_name, &value, 0, H5T_NATIVE_HBOOL);
+ }
++
++// Experimental non-legacy TD output: preserve dataset bytes and rank-1 time attribute,
++// while sharing a file handle for a single complete sample. No handle crosses samples.
++bool HDF5_File_Writer::WriteTimeDomainVectorField(std::string dataSetName, ArrayLib::ArrayNIJK<float>& data, float time)
++{
++    hid_t file = H5Fopen(m_filename.c_str(), H5F_ACC_RDWR, H5P_DEFAULT);
++    if (file < 0) return false;
++    hid_t group = OpenGroup(file, m_Group);
++    if (group < 0) { H5Fclose(file); return false; }
++    size_t dims[4] = {data.extent(0), data.extent(1), data.extent(2), data.extent(3)};
++    bool ok = WriteData(group, dataSetName, H5T_NATIVE_FLOAT, data.data(), 4, dims, "NXYZ");
++    if (ok) {
++        hid_t dataset = H5Dopen(group, dataSetName.c_str(), H5P_DEFAULT);
++        if (dataset < 0) ok = false;
++        else {
++            ok = WriteAttribute(dataset, "time", &time, 1, H5T_NATIVE_FLOAT);
++            if (H5Dclose(dataset) < 0) ok = false;
++        }
++    }
++    if (H5Gclose(group) < 0) ok = false;
++    if (H5Fclose(file) < 0) ok = false;
++    return ok;
++}
+diff --git a/tools/hdf5_file_writer.h b/tools/hdf5_file_writer.h
+index 386fbfd..eccc41e 100644
+--- a/tools/hdf5_file_writer.h
++++ b/tools/hdf5_file_writer.h
+@@ -63,6 +63,8 @@ public:
+ 	bool WriteAttribute(std::string locName, std::string attr_name, std::string value);
+ 	bool WriteAttribute(std::string locName, std::string attr_name, bool value);
+ 
++	bool WriteTimeDomainVectorField(std::string dataSetName, ArrayLib::ArrayNIJK<float>& data, float time);
++
+ 	void SetCurrentGroup(std::string group, bool createGrp=true);
+ 
+ 	bool WriteData(std::string dataSetName, hid_t mem_type, void const* field_buf, size_t dim, size_t* datasize, std::string d_order="");

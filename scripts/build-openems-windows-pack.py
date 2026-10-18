@@ -12,7 +12,7 @@ import zipfile
 
 PIN = "12cd91de21548987b835ce21f10fd8421d74da78"
 UPSTREAM = "948d04e67a0b7ee4b149176e746b23e609a8ac46c525ba75d6c11071f354339a"
-NAME = "openems-windows-x64-0.37.0rc3-g12cd91de2-ncpu1-r1"
+NAME = "openems-windows-x64-0.37.0rc3-g12cd91de2-ncpu1-tdio1-r1"
 
 
 def digest(data):
@@ -42,6 +42,16 @@ def main():
     expected = re.findall(r'"(FDTD/[^ ]+) ([a-f0-9]{64})"', recipe.read_text())
     if len(expected) != 7 or any(digest((a.source / p).read_bytes()) != h for p, h in expected):
         raise ValueError("native patches do not match the reviewed rc3 files")
+    io_recipe = json.loads((recipe.parent / "hdf5-td-batch.json").read_text())
+    if (io_recipe["base_commit"] != PIN
+            or digest((recipe.parent / "openems-hdf5-td-batch.patch").read_bytes()) != io_recipe["patch_sha256"]
+            or any(digest((a.source / p).read_bytes()) != h for p, h in io_recipe["files"].items())):
+        raise ValueError("TD output patch does not match the qualified files")
+    io_proof = json.loads((a.qualification / "io-qualification.json").read_text())
+    for check in ("all_hdf5_content_exact", "legacy_content_exact", "repeated_arrays_exact",
+                  "completed_sample_readable_after_process_termination", "write_failure_cleanup"):
+        if io_proof.get(check) is not True:
+            raise ValueError("TD output qualification missing: " + check)
     proof = json.loads((a.qualification / "comparison.json").read_text())
     required = {(v, c) for v in ("official", "baseline") for c in ("patch", "line-p1", "line-p2", "dipole")}
     passed = {(r["reference"], r["case"]) for r in proof["records"] if r["all_numeric_exact"]}
@@ -69,8 +79,9 @@ def main():
             add(z, "openEMS/" + rel.as_posix(), p.read_bytes())
         add(z, "build-provenance.json", a.provenance.read_bytes())
         add(z, "qualification.json", (a.qualification / "comparison.json").read_bytes())
+        add(z, "io-qualification.json", (a.qualification / "io-qualification.json").read_bytes())
     marker = {"marker": "fairbeam openEMS pack v1", "platform": "windows-x64", "native_cpu": True,
-              "openems_commit": PIN, "upstream_sha256": UPSTREAM,
+              "openems_commit": PIN, "upstream_sha256": UPSTREAM, "native_hdf5_td_batch": True,
               "source_archive": source.name, "source_sha256": digest(source.read_bytes()),
               "native_overlay": {p: digest(b) for p, b in overlay.items()}}
     overlay["openEMS/openems-pack.json"] = json.dumps(marker, indent=2).encode()
@@ -82,6 +93,7 @@ def main():
     overlay["openEMS/NOTICE.Fairbeam.txt"] = (
         "Fairbeam native CPU pack. openEMS source " + PIN + ".\n"
         "Changes: opt-in phase dispatch, UPML scalar cursor and row addressing.\n"
+        "Additional opt-in TD HDF5 batching shares one file handle per complete float sample.\n"
         "Same mesh, arithmetic precision and exact energy stopping policy.\n"
         "Source/build provenance: " + source.name + ".\n"
         "Original upstream archive, wheels, CSXCAD, tools and third-party notices are retained.\n"

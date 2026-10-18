@@ -12,10 +12,11 @@ import fairbeam
 
 NAMES = [n for n, _ in fairbeam._NATIVE_CPU_ENV]
 EXPECTED = dict(fairbeam._NATIVE_CPU_ENV)
+IO_FLAG = "OPENEMS_EXPERIMENTAL_HDF5_TD_BATCH"
 
 
 def clean_env(**extra):
-    env = {k: v for k, v in os.environ.items() if k not in NAMES and k != "FAIRBEAM_NATIVE_CPU"}
+    env = {k: v for k, v in os.environ.items() if k not in NAMES and k not in ("FAIRBEAM_NATIVE_CPU", IO_FLAG)}
     env.update(extra)
     return mock.patch.dict(os.environ, env, clear=True)
 
@@ -121,6 +122,47 @@ class NativeCpuDefault(unittest.TestCase):
     def test_marker_read_error_is_nonfatal(self):
         with clean_env(), mock.patch.object(sys, 'platform', 'win32'), mock.patch('builtins.open', side_effect=PermissionError):
             self.assertFalse(fairbeam.native_cpu_default())
+
+    def test_windows_hdf5_batch_requires_explicit_boolean_capability(self):
+        for changes in ({}, {'native_hdf5_td_batch': False}, {'native_hdf5_td_batch': 1},
+                        {'native_hdf5_td_batch': 'true'}, {'native_hdf5_td_batch': None}):
+            with self.subTest(changes=changes), clean_env(), mock.patch.object(sys, 'platform', 'win32'):
+                self.write_marker(**changes)
+                fairbeam._native_cpu_defaults()
+                self.assertNotIn(IO_FLAG, os.environ)
+                self.assertTrue(all(os.environ.get(k) == v for k, v in EXPECTED.items()))
+        self.write_marker(native_hdf5_td_batch=True)
+        with clean_env(), mock.patch.object(sys, 'platform', 'win32'):
+            fairbeam._native_cpu_defaults()
+            self.assertEqual(os.environ[IO_FLAG], '1')
+
+    def test_hdf5_batch_requires_qualified_windows_pack(self):
+        self.write_marker(native_hdf5_td_batch=True)
+        for platform in ('darwin', 'linux'):
+            with self.subTest(platform=platform), clean_env(), mock.patch.object(sys, 'platform', platform):
+                fairbeam._native_cpu_defaults()
+                self.assertNotIn(IO_FLAG, os.environ)
+        for changes in ({'native_cpu': False}, {'openems_commit': 'unqualified'},
+                        {'marker': 'GPU pack'}, {'platform': 'macos-arm64'}):
+            with self.subTest(changes=changes), clean_env(), mock.patch.object(sys, 'platform', 'win32'):
+                self.write_marker(native_hdf5_td_batch=True, **changes)
+                fairbeam._native_cpu_defaults()
+                self.assertNotIn(IO_FLAG, os.environ)
+        (self.root / 'openems-pack.json').unlink()
+        with clean_env(), mock.patch.object(sys, 'platform', 'win32'):
+            fairbeam._native_cpu_defaults()
+            self.assertNotIn(IO_FLAG, os.environ)
+
+    def test_hdf5_batch_optout_and_explicit_value_are_preserved(self):
+        self.write_marker(native_hdf5_td_batch=True)
+        for off in ('0', 'off', ' FALSE ', 'no'):
+            with self.subTest(off=off), clean_env(FAIRBEAM_NATIVE_CPU=off), mock.patch.object(sys, 'platform', 'win32'):
+                fairbeam._native_cpu_defaults()
+                self.assertNotIn(IO_FLAG, os.environ)
+        with clean_env(**{IO_FLAG: '0'}), mock.patch.object(sys, 'platform', 'win32'):
+            fairbeam._native_cpu_defaults()
+            self.assertEqual(os.environ[IO_FLAG], '0')
+            self.assertTrue(all(os.environ.get(k) == v for k, v in EXPECTED.items()))
 
 
 if __name__ == "__main__":

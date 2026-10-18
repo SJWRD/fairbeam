@@ -90258,7 +90258,7 @@ Copyright notice:
 
 ### openems windows-x64 v0.37.0-rc3
 
-License: GPL-3.0-or-later; LGPL-3.0-or-later; bundled library terms below. Source: https://github.com/ismailakdag/fairbeam-releases/releases/download/openems-windows-x64-0.37.0rc3-g12cd91de2-ncpu1-r1/openems-windows-x64-0.37.0rc3-g12cd91de2-ncpu1-r1.zip.
+License: GPL-3.0-or-later; LGPL-3.0-or-later; bundled library terms below. Source: https://github.com/ismailakdag/fairbeam-releases/releases/download/openems-windows-x64-0.37.0rc3-g12cd91de2-ncpu1-tdio1-r1/openems-windows-x64-0.37.0rc3-g12cd91de2-ncpu1-tdio1-r1.zip.
 
 <details>
 <summary>COPYING.openEMS</summary>
@@ -91009,8 +91009,9 @@ DEALINGS IN THE SOFTWARE.
 ```text
 Fairbeam native CPU pack. openEMS source 12cd91de21548987b835ce21f10fd8421d74da78.
 Changes: opt-in phase dispatch, UPML scalar cursor and row addressing.
+Additional opt-in TD HDF5 batching shares one file handle per complete float sample.
 Same mesh, arithmetic precision and exact energy stopping policy.
-Source/build provenance: openems-windows-x64-0.37.0rc3-g12cd91de2-ncpu1-r1-source.zip.
+Source/build provenance: openems-windows-x64-0.37.0rc3-g12cd91de2-ncpu1-tdio1-r1-source.zip.
 Original upstream archive, wheels, CSXCAD, tools and third-party notices are retained.
 Additional Boost 1.91 vc143 runtime DLLs use the Boost Software License 1.0.
 The upstream distribution's unresolved binary provenance exceptions remain;

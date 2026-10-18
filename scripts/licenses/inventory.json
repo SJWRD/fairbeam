@@ -7824,7 +7824,7 @@
           "name": "openems windows-x64",
           "version": "v0.37.0-rc3",
           "license": "GPL-3.0-or-later; LGPL-3.0-or-later; bundled library terms below",
-          "source": "https://github.com/ismailakdag/fairbeam-releases/releases/download/openems-windows-x64-0.37.0rc3-g12cd91de2-ncpu1-r1/openems-windows-x64-0.37.0rc3-g12cd91de2-ncpu1-r1.zip",
+          "source": "https://github.com/ismailakdag/fairbeam-releases/releases/download/openems-windows-x64-0.37.0rc3-g12cd91de2-ncpu1-tdio1-r1/openems-windows-x64-0.37.0rc3-g12cd91de2-ncpu1-tdio1-r1.zip",
           "texts": [
             {
               "name": "COPYING.openEMS",
@@ -7840,7 +7840,7 @@
             },
             {
               "name": "NOTICE.Fairbeam.txt",
-              "text": "Fairbeam native CPU pack. openEMS source 12cd91de21548987b835ce21f10fd8421d74da78.\nChanges: opt-in phase dispatch, UPML scalar cursor and row addressing.\nSame mesh, arithmetic precision and exact energy stopping policy.\nSource/build provenance: openems-windows-x64-0.37.0rc3-g12cd91de2-ncpu1-r1-source.zip.\nOriginal upstream archive, wheels, CSXCAD, tools and third-party notices are retained.\nAdditional Boost 1.91 vc143 runtime DLLs use the Boost Software License 1.0.\nThe upstream distribution's unresolved binary provenance exceptions remain;\nsee Fairbeam's third-party license inventory. No SZIP/libaec provenance substitution is claimed.\nSet FAIRBEAM_NATIVE_CPU=0 to opt out of default native patches.\n"
+              "text": "Fairbeam native CPU pack. openEMS source 12cd91de21548987b835ce21f10fd8421d74da78.\nChanges: opt-in phase dispatch, UPML scalar cursor and row addressing.\nAdditional opt-in TD HDF5 batching shares one file handle per complete float sample.\nSame mesh, arithmetic precision and exact energy stopping policy.\nSource/build provenance: openems-windows-x64-0.37.0rc3-g12cd91de2-ncpu1-tdio1-r1-source.zip.\nOriginal upstream archive, wheels, CSXCAD, tools and third-party notices are retained.\nAdditional Boost 1.91 vc143 runtime DLLs use the Boost Software License 1.0.\nThe upstream distribution's unresolved binary provenance exceptions remain;\nsee Fairbeam's third-party license inventory. No SZIP/libaec provenance substitution is claimed.\nSet FAIRBEAM_NATIVE_CPU=0 to opt out of default native patches.\n"
             }
           ]
         },
@@ -8707,12 +8707,12 @@
     "package-lock.json": "f3d00271745ccabe9d4905cbf4dabfe68e4bf2081d73f32edc22224cffb6d803",
     "package.json": "d74c9ba938fdcc18044de9d03113d8ddd92ff789d5ad9b6df687a7d1f6a89a04",
     "runtime/install.py": "726f42b50220c5613b7e8100c356895a391785873cae278995f68e1dac51d571",
-    "runtime/pins.json": "4d8d589a95cfaaa75eff77e0a2dce41dfd1c128e42034e3ef119c026fd75db5c",
+    "runtime/pins.json": "d125d3d88a3ef10be83195545ce2b6b7588f59d596c055a7bd391559a93acb18",
     "runtime/requirements.txt": "8a06a606ca2adec73b5c4448003c94eacbb71afc95ab1297ee1bd584648a1e52",
     "runtime/setup-runtime.ps1": "e6e0cfd8c0c8e19c4eb54bd88eda086f17d116dc40f9680087e9d740f0811d9c",
     "runtime/setup-runtime.sh": "d9de98d15c7a3bf139598c5be1301b384ec1eac8bc38ba35a19ecbb0f67bc71c",
     "scripts/build-openems-macos-pack.py": "135c80fdf47445319e22d77eaf2bdb52f661af381d75a46153edd4c6bd260b20",
-    "scripts/build-openems-windows-pack.py": "e81469ee98f7fa31bf94db6dde225c3c40cbce255a5a96a434617cd1d287c623",
+    "scripts/build-openems-windows-pack.py": "b88dad2edaccd7dc2c982229afaa00776e1869723cb04b701beab12157606f95",
     "scripts/build-site.mjs": "c816c861c7da27080b8547963269fd1297849011e1f24c3db1e065c6e69c1acc",
     "scripts/install-openems-macos.sh": "fdf3a790722a733e790526e1cbef84e2d95bbbb43ad75bcba228d00c9c1b61be",
     "scripts/licenses/crate-sources.json": "d190f8950bf71f8991ce84048c7af9b4b8c0774ae9a208f7f7587eaf62d19d03",
@@ -8720,7 +8720,9 @@
     "scripts/licenses/fingerprint.mjs": "bf1dbe50016df8e83dcec49fd537e485d949686f61da0ad3d104021497b27b1d",
     "scripts/licenses/render.mjs": "8292b2799661afcde977838d7a76b344cfcfa6e850abb1acda3f1226e5359654",
     "scripts/licenses/solver-components.json": "3a0b894e5f477c87e364b1205755f2c01bcacb073cff88d25579fadea364a5fe",
-    "scripts/third-party-licenses.mjs": "6ea8c0327a9b33fca52f7361edaa7d89703250937cbbed52e5a18eacd469cb53",
+    "scripts/native-cpu/hdf5-td-batch.json": "10463e4dc15d4fdd6c33a7ab1f850c1ada87f92330479bd5bdcb23e0cbf81ae0",
+    "scripts/native-cpu/openems-hdf5-td-batch.patch": "ebe367bee34569cb6bf42beaf2610be66192ef602a45ab2dcc2ddf5541d90281",
+    "scripts/third-party-licenses.mjs": "b37c7de3d2d4ae2d19f19cb2d47f76eb08bd88d4f5a710ebb322943ae0634492",
     "scripts/third-party-licenses.py": "04c3a188ddb7924667dc2baf1ca19938e69048b841000ecad1e49bdfb396102b",
     "src-tauri/Cargo.lock": "b972b4a4ee99a5269c3518ad258364ab6e42b9952ec450e810bfd57095a18000",
     "src-tauri/Cargo.toml": "477624f35dcbac8e223f73d9ac682a58e7f2e2d5937fc28956f74a6a4a8788b9",

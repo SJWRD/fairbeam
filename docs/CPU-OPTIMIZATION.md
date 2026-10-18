@@ -138,7 +138,7 @@ faster). Linux is unchanged. Windows activation is scoped to the qualified pack 
 
 ## Qualified Windows rc3 pack
 
-The Windows CPU pin uses `openems-windows-x64-0.37.0rc3-g12cd91de2-ncpu1-r1`.
+The Windows CPU pin uses `openems-windows-x64-0.37.0rc3-g12cd91de2-ncpu1-tdio1-r1`.
 It combines openEMS `12cd91de21548987b835ce21f10fd8421d74da78` and the three verified rc3 patches
 with the original rc3 CSXCAD, Python wheels and distribution tools. It does not require CUDA.
 The required Boost vc143 runtime libraries are included alongside the original vc145 libraries.
@@ -158,7 +158,8 @@ also exactly equal; its largest singular value squared stayed below one. All run
 existing energy criterion at the same timestep counts. A clean installed archive repeated the
 same numeric comparisons successfully, with native defaults enabled by its marker.
 
-Single-run solver timings (not a robust timing distribution) were:
+Before the TD output follow-up below, single-run solver timings for the three CPU patches
+(not a robust timing distribution) were:
 
 | Case | Official rc3 | Qualified candidate | Timesteps |
 | --- | ---: | ---: | ---: |
@@ -188,11 +189,45 @@ calculation; replacing a presumed scalar fallback is not an applicable optimizat
 candidate must retain the same mesh, feed, precision and exact stopping criterion and repeat
 raw complex port/far-field comparisons before activation.
 
+### Per-sample TD output batching
+
+Profiling the patch separated the bottleneck from the field engine: an instrumented run spent
+about 38 seconds in processing, versus 19 seconds advancing fields. A second instrumented run
+attributed 18.84 seconds to TD vector writes and 18.16 seconds to their separate time-attribute
+writes (4,536 samples), versus 1.69 seconds calculating those fields. Energy checks used about
+0.008 seconds. Instrumented totals are diagnostic, not production speed measurements.
+
+`openems-hdf5-td-batch.patch` shares one HDF5 file handle for a single non-legacy float TD vector
+and its time attribute, closing it before returning. Sampling, interpolation, float values,
+dimensions, `NXYZ` ordering, and the rank-one float time attribute are unchanged. Legacy output
+uses the original path. No handle persists across samples. A crash between the two writes can
+have different intermediate persistence; this does not make a partially written sample atomic.
+
+Uninstrumented patch pairs with the same binary, four workers and unchanged 18,507-step stopping
+point measured:
+
+| Order | Batching off | Batching on | Time reduction |
+| --- | ---: | ---: | ---: |
+| On, then off | 53.99 s | 40.83 s | 24.4% |
+| Off, then on | 49.29 s | 34.11 s | 30.8% |
+
+These two pairs establish a benefit for this host/case, not a universal speed guarantee.
+Retained patch, two-port and dipole arrays and the complete S matrix still match both rc3
+references exactly. The patch's 12 raw HDF5 files also match in 4,572 datasets and 9,132
+attributes. Legacy on/off dipole files match in 1,356 datasets and 2,712 attributes. A native
+writer fixture checks two samples, duplicate-write/missing-file errors without leaked handles,
+and completed-sample readability before and after process termination.
+
+Windows enables `OPENEMS_EXPERIMENTAL_HDF5_TD_BATCH=1` only when the already-qualified pack marker
+also declares `native_hdf5_td_batch: true`. Explicit environment values and the general
+`FAIRBEAM_NATIVE_CPU=0` opt-out are respected. Older Windows packs, macOS and GPU packages keep
+their existing defaults. `hdf5-td-batch.json` records the patch and resulting source hashes.
+
 `scripts/build-openems-windows-pack.py` packages a qualified staged build; it does not compile or
 publish one. Supply the original pinned Windows archive, a staged native build, the patched
 source checkout, the qualification folder, build provenance, Boost license text and a fresh
-output directory. It checks the upstream hash, source revision, seven patched source hashes,
-patch/two-port/dipole equality records, and qualified DLL hashes. The companion source archive
+output directory. It checks the upstream hash, source revision, ten patched source hashes,
+patch/two-port/dipole equality records, TD output qualification, and qualified DLL hashes. The companion source archive
 contains the modified source and CMake/compiler provenance. Use the existing pinned dependency
 manifest/triplet/overlay under `scripts/native-cpu` to reproduce the dependency prefix; adapt the
 recorded source/build/dependency paths to the local machine. The build uses MSVC 19.42 x64,
