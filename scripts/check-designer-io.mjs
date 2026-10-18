@@ -16,12 +16,13 @@ const deferred=()=>{let resolve,reject;const promise=new Promise((a,b)=>{resolve
 const valid={valid:true,checks:[],model:{key:'same'}};
 const response=hash=>({hash,validation:valid});
 const fault=(status,message='failed')=>Object.assign(Error(message),{status,data:status===409?{current_hash:'conflict'}:{},fields:{field:'invalid'}});
-function fixture(owner){
+function fixture(owner,extra={}){
  const core=createDesignerSession(),log=[];let get,put;
  const io=createDesignerIO(core,{
   transport:{design:id=>{log.push(['get',id]);return get.promise;},saveDesign:(f,d,hash)=>{log.push(['put',f.backup_scope,d,hash]);return put.promise;}},
   rememberLastDesign:f=>log.push(['remember',f.backup_scope]),readBackup:f=>{log.push(['read',f.backup_scope]);return null;},clearBackup:f=>log.push(['clear',f.backup_scope]),
   stopPreview:()=>log.push(['stop']),forgetPreviewFailure:()=>log.push(['forget']),resetParamAsks:()=>log.push(['reset']),schedulePreview:()=>log.push(['preview']),applyModelEntry:m=>log.push(['model',m.key]),restoreModelSelection:f=>log.push(['selection',f?.id??'']),
+  ...extra,
  });
  core.takeFile(file('same','base',owner));
  return{core,io,log,nextGet:()=>get=deferred(),nextPut:()=>put=deferred()};
@@ -108,4 +109,40 @@ for(const x of [a,b,c,d,guarded]){x.io.dispose();x.core.dispose();}
  const io=createDesignerIO(core,{transport:{design:()=>get.promise,saveDesign:()=>new Promise(()=>{})},rememberLastDesign(){},readBackup:()=>null,clearBackup(){},stopPreview(){},forgetPreviewFailure(){},resetParamAsks(){},schedulePreview(){},applyModelEntry(){},restoreModelSelection(){},openedDesign:f=>seen.push([f.id,JSON.parse(JSON.stringify(core.draft.view??null))])});
  const view={camera:[12,-20,9],target:[0,0,1]},p=io.openDesign('viewed');get.resolve({...file('viewed'),design:{...design('viewed'),view}});await p;
  assert.deepEqual(seen,[['viewed',view]]);io.dispose();core.dispose();}
-console.log('Designer IO: independent deferred loads/saves, conflict/errors, stale responses, file-owned scope, rename guards, newer edits, the opened-design hook and disposal pass');
+// Native two-stage saves: a workspace write is not a completed .fb save.
+{
+ let finish=deferred(),calls=[];
+ const x=fixture('native',{persistSavedDesign:(f,hash,copy)=>{calls.push([f.id,hash,copy]);return finish.promise;}});
+ x.core.edit(d=>d.model.name='Edited');
+ let put=x.nextPut(),pending=x.io.saveBeforeLeaving();put.resolve(response('workspace-1'));
+ await Promise.resolve();finish.reject(Error('External disk full'));
+ assert.equal(await pending,false);assert.equal(x.core.file().hash,'workspace-1');
+ assert.equal(x.core.file().design.model.name,'same');assert.equal(x.core.dirty(),true);
+ assert.equal(x.core.message().text,'External disk full');assert.equal(x.log.some(e=>e[0]==='clear'),false);
+ finish=deferred();put=x.nextPut();pending=x.io.save();put.resolve(response('workspace-2'));
+ await Promise.resolve();finish.resolve();assert.equal(await pending,true);
+ assert.equal(x.log.findLast(e=>e[0]==='put')[3],'workspace-1','retry uses actual workspace revision');
+ assert.equal(x.core.dirty(),false);assert.equal(x.core.persistencePending(),false);
+ assert.deepEqual(calls,[['same','workspace-1',false],['same','workspace-2',false]]);
+ // An ambiguous external write failure stays pending even with unchanged design data.
+ finish=deferred();put=x.nextPut();pending=x.io.save();put.resolve(response('workspace-3'));
+ await Promise.resolve();finish.reject(Error('External reply lost'));
+ assert.equal(await pending,false);assert.equal(x.core.dirty(),true);
+ // Replacing the session while the external stage is pending retires its response.
+ finish=deferred();put=x.nextPut();pending=x.io.save();put.resolve(response('workspace-4'));await Promise.resolve();
+ x.core.takeFile(file('other','other-base','native'));finish.reject(Error('Late failure'));
+ assert.equal(await pending,false);assert.equal(x.core.file().hash,'other-base');assert.equal(x.core.dirty(),false);
+ x.io.dispose();x.core.dispose();
+}
+for(const editDuringCopy of [false,true]){
+ const external=deferred(),x=fixture('copy',{persistSavedDesign:(_f,_hash,copy)=>{assert.equal(copy,true);return external.promise;}});
+ x.core.edit(d=>d.model.name='Copy source');const put=x.nextPut(),pending=x.io.saveAs();put.resolve(response('workspace-copy'));await Promise.resolve();
+ if(editDuringCopy)x.core.edit(d=>d.model.description='Do not lose me');
+ external.resolve({file:{...file('independent','copy-hash','copy'),design:{...design('same'),model:{id:'same',name:'Copy source'}}}});
+ assert.equal(await pending,!editDuringCopy);
+ assert.equal(x.core.file().id,editDuringCopy?'same':'independent');
+ assert.equal(x.core.dirty(),editDuringCopy);
+ if(editDuringCopy){assert.equal(x.core.draft.model.description,'Do not lose me');assert.equal(x.core.file().hash,'workspace-copy');}
+ x.io.dispose();x.core.dispose();
+}
+console.log('Designer IO: independent deferred loads/saves, conflicts, stale responses, scopes, rename guards, newer edits, native partial saves/cancellation/copy, opened hook and disposal pass');

@@ -18,6 +18,7 @@ const withThreads = <T extends { threads: number }>(b: T) => ({ ...b, threads: b
 
 export interface Health {
   elmer_driven?: number;
+  research_source?: boolean;
   research?: boolean;
   ok: boolean;
   api: number;
@@ -69,6 +70,8 @@ export interface DesignFile {
   readonly: boolean;
   /** Captured with this file response; do not substitute a later health response. */
   backup_scope?: string;
+  /** Portable identity only; never grants access to a filesystem path. */
+  document_id?: string;
 }
 
 export interface PythonDesignSource {
@@ -80,6 +83,8 @@ export interface PythonDesignSource {
 
 export interface ModelEntry {
   key: string;
+  /** Display-only portable document origin; opening still requires the native grant. */
+  document?: { id: string; path: string; results_directory?: string };
   /** File modification time in Unix seconds; absent on older servers. */
   modified?: number;
   file: string;
@@ -390,7 +395,8 @@ export interface Job {
   id: string;
   /** "run" (fairbeam run) or "optimize" (fairbeam optimize) */
   kind?: "run" | "optimize" | "research";
-  research?: { backend: "periodic" | "elmer"; path: string; settings: Record<string, unknown>; snapshot_sha256: string };
+  research?: { backend: "periodic" | "elmer"; path: string; settings: Record<string, unknown>; snapshot_sha256: string;
+    source?: { model_id: string; workspace_hash: string; backup_scope: string; design_sha256: string } };
   result?: ResearchResult | null;
   optimize?: { vary: OptVary[]; goals: OptGoal[]; max_evals: number; method: string; excite?: string } | null;
   /** display name given by the user (the bundle file name is its slug, `name`) */
@@ -500,7 +506,8 @@ export const api = {
   elmerInstall: (signal?: AbortSignal) => call<ElmerRuntime>("POST", "/research/elmer/install", {}, signal),
   researchRuns: (signal?: AbortSignal) => call<{ runs: Job[] }>("GET", "/research/runs", undefined, signal),
   researchRun: (id: string, signal?: AbortSignal) => call<Job>("GET", `/research/runs/${encodeURIComponent(id)}`, undefined, signal),
-  researchStart: (body: { backend: "periodic" | "elmer"; path: string; settings: Record<string, unknown>; design?: Design }, signal?: AbortSignal) =>
+  researchStart: (body: { backend: "periodic" | "elmer"; path: string; settings: Record<string, unknown>; design?: Design;
+    source?: { model_id: string; workspace_hash: string; backup_scope: string } }, signal?: AbortSignal) =>
     call<Job>("POST", "/research/runs", body, signal),
   researchCancel: (id: string, signal?: AbortSignal) => call<Job>("POST", `/research/runs/${encodeURIComponent(id)}/cancel`, {}, signal),
   previewExampleConversion: (body: { from: string; project?: string }, signal?: AbortSignal) =>

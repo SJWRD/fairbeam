@@ -80,6 +80,8 @@ export const [submitError, setSubmitError] = createSignal<string | null>(null);
 /** the technical side of the last submit failure (HTTP status and path), shown under "Details" */
 export const [submitErrorDetail, setSubmitErrorDetail] = createSignal<string>("");
 export const [jobs, setJobs] = createSignal<Job[]>([]);
+/** Workspace identity captured by the successful history request; null until one succeeds. */
+export const [jobsScope, setJobsScope] = createSignal<string | undefined | null>(null);
 export type Notice =
   | { kind: "run"; job: Job; bundle: string }
   | { kind: "sweep"; sweepId: string; name: string; done: number; total: number }
@@ -261,12 +263,13 @@ let runsSeq = 0;
 let lastStatus: Map<string, Job["status"]> | null = null;
 export async function refreshRuns() {
   const mine = ++runsSeq;
+  const scope = health()?.backup_scope;
   try {
     const next = await api.runs();
-    if (mine !== runsSeq) return;
+    if (mine !== runsSeq || health()?.backup_scope !== scope) return;
     const before = lastStatus;
     lastStatus = new Map(next.map((j) => [j.id, j.status]));
-    setJobs(next);
+    batch(() => { setJobsScope(scope); setJobs(next); });
     // a stopped run is "stopping" until the list says it ended (its process takes a moment to exit)
     if (stopping().size) setStopping(new Set([...stopping()].filter((id) => { const s = lastStatus!.get(id); return s !== undefined && !isTerminal(s); })));
     // a run ended since the last list, also one this window neither started nor follows: its bundle
@@ -826,10 +829,15 @@ export function setUnsavedDesignCheck(check: (key: string) => boolean) { unsaved
 /** Submit a single run of the current model. `extra` adds per-run options (frequency points). Returns
  * the job, or null when it was not submitted (the reason is in submitError / fieldErrors). */
 export async function startRun(extra: { points?: number; cells?: number } = {}): Promise<Job | null> {
-  const m = currentModel();
-  if (!m || submitting()) return null;
+  if (submitting()) return null;
   setSubmitError(null);
   setSubmitErrorDetail("");
+  const m = currentModel();
+  if (!m) {
+    setFieldErrors(reconcile({}));
+    setSubmitError(t("runner.modelUnavailable"));
+    return null;
+  }
   if (unsavedDesign(m.key)) {
     // the server runs the file on disk: the edits on screen would silently not be simulated
     setSubmitError(t("runner.unsavedDesign"));

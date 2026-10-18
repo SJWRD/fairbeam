@@ -46,6 +46,8 @@ const results = {
   } },
 };
 const bundle = { results, model: { id: "test", name: "Test", description: "", params: [] }, name: "first", ports: [{ number: 1, excite: true }], half_space: null };
+const legacy = structuredClone(bundle);
+delete legacy.results.sparams;
 
 const s = resultDataTable(bundle, "sparams");
 check(s.header.join("|") === "f (GHz)||S11| (dB)||S12| (dB)||S21| (dB)||S22| (dB)", "all matrix Sij columns included, headers name the magnitude");
@@ -63,7 +65,7 @@ for (const format of formats) {
   for (const vals of Object.values(pairValues)) for (const [, fn] of blocks) check(Math.abs(table.rows[0][col++] - fn(vals)) < 1e-12, `${format} value computed directly from re/im`);
   const chosen = resultDataTable(bundle, "sparams", undefined, { format, pairs: [[2, 1]], sparamMode: "phase" });
   check(chosen.header.length === blocks.length + 1, `${format} selected pair count`);
-  const zt = resultDataTable(bundle, "impedance", undefined, { format });
+  const zt = resultDataTable(legacy, "impedance", undefined, { format });
   const zlabels = { db: ["Re Zin (Ω)", "Im Zin (Ω)"], db_phase: ["Re Zin (Ω)", "Im Zin (Ω)", "∠Zin (deg)"], re_im: ["Re Zin (Ω)", "Im Zin (Ω)"], mag_phase: ["|Zin| (Ω)", "∠Zin (deg)"], all: ["Re Zin (Ω)", "Im Zin (Ω)", "|Zin| (Ω)", "∠Zin (deg)"] }[format];
   assert.deepEqual(zt.header.slice(1), zlabels, `${format} impedance headers`);
   const zr = results.ports["1"].zin_re[0], zi = results.ports["1"].zin_im[0];
@@ -78,13 +80,16 @@ for (const format of formats) {
   check(nt.rows[0].slice(1).every((x, i) => nt.header[i + 1].startsWith("Im ") ? x === 0.2 : x === null), `${format} NaN and derived cells become null`);
   check(nt.rows[1].slice(1).every((x, i) => nt.header[i + 1].startsWith("Re ") ? x === 0.1 : x === null), `${format} infinite derived cells become null`);
 }
-const legacy = structuredClone(bundle);
-delete legacy.results.sparams;
 const legacyAll = resultDataTable(legacy, "sparams", undefined, { format: "all" });
 check(legacyAll.header.length === 6 && legacyAll.rows[0][3] === 0.25, "legacy S11 complex values support all format");
 
-const z = resultDataTable(bundle, "impedance");
-check(z.rows.length === n && z.rows[7][1] === 57.123456789, "impedance export retains raw sample precision");
+const z = resultDataTable(legacy, "impedance");
+check(z.rows.length === n && z.rows[7][1] === 57.123456789, "legacy impedance export retains raw sample precision");
+const matrixZ = resultDataTable(bundle, "impedance");
+check(matrixZ.rows.length === n, "matrix impedance exports every stored frequency sample");
+// 50 * (1 + (0.1 + 0.2j)) / (1 - (0.1 + 0.2j)) = (950 + 400j) / 17.
+check(matrixZ.rows.every(row => Math.abs(row[1] - 950 / 17) < 1e-12 && Math.abs(row[2] - 400 / 17) < 1e-12),
+  "matrix impedance follows canonical S11 rather than the different raw-run Zin");
 check(resultDataTable(bundle, "smith").header.includes("Re S11"), "Smith export includes complex reflection");
 check(resultDataTable(bundle, "table").header.includes("VSWR"), "table export includes displayed quantities");
 const p = resultDataTable(bundle, "pattern");

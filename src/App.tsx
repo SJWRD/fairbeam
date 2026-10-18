@@ -14,7 +14,8 @@ import { researchOpen, setResearchOpen } from "./runner/researchState";
 import { importReferenceFile } from "./compare/store";
 import Home from "./home/Home";
 import { DesignDock, DesignKeys, DesignSide, DesignTreePanel, DrawHint, Ribbon } from "./designer/DesignWorkspace";
-import { file as designFile, draft as designDraft, removeSelected, canRemove, save as saveDesign, enterDesign, reopenLastDesign, undo as undoDesign, redo as redoDesign } from "./designer/store";
+import { file as designFile, draft as designDraft, removeSelected, canRemove, save as saveDesign, enterDesign, reopenLastDesign, openNativeDocument, undo as undoDesign, redo as redoDesign } from "./designer/store";
+import { nativeDocumentsAvailable, pendingNativeDocument } from "./lib/nativeDocuments";
 import SaveAsDialog, { canSaveAs, openSaveAs, saveAsOpen, setSaveAsOpen } from "./designer/SaveAsDialog";
 import { MeshViewPanel } from "./designer/MeshView";
 import MainArea from "./designer/MainArea";
@@ -60,12 +61,14 @@ import UpdateProgress from "./components/UpdateProgress";
 import { watchUpdate } from "./lib/updateProgress";
 
 export default function App() {
+  let disposed = false, cleanupDocuments = () => {};
+  onCleanup(() => { disposed = true; cleanupDocuments(); });
   const onScreenshot=()=>{void captureActiveSurface().catch(error=>exportNotice(t("contextExport.failed",{error:String(error)}),{tone:"error"}));};
   onMount(()=>{window.addEventListener("fairbeam:screenshot",onScreenshot);onCleanup(()=>window.removeEventListener("fairbeam:screenshot",onScreenshot));});
   const [dragging, setDragging] = createSignal(false);
   // file drags only (a tree part drag is not a file drop, #87): project bundles open; anything
   // else is imported as reference data for the comparison
-  const drop = fileDropHandlers(setDragging, (f) => (/\.json$/i.test(f.name) ? openUserProject(f) : importReferenceFile(f)));
+  const drop = fileDropHandlers(setDragging, (f) => (/\.(json|fb)$/i.test(f.name) ? openUserProject(f) : importReferenceFile(f)));
   const [booting, setBooting] = createSignal(true);
   const [leftClosed, setLeftClosed] = createSignal(false);
   const [rightClosed, setRightClosed] = createSignal(false);
@@ -128,7 +131,7 @@ export default function App() {
   });
   let openInput: HTMLInputElement | undefined;
   const menuAction = createMenuActionRouter({
-    "file-new": () => setAppMode("home"), "file-open": () => openInput?.click(),
+    "file-new": () => setAppMode("home"), "file-open": () => { if (nativeDocumentsAvailable()) void openNativeDocument(); else openInput?.click(); },
     "file-import-cst": () => { if (DEMO) notice(t("app.notice.cstImportDesktop")); else setCstImportOpen(true); },
     "file-import-pcb": () => { if (DEMO) notice(t("app.notice.pcbImportDesktop")); else setPcbImportOpen(true); },
     "file-save": () => { if (appMode() === "design" && designFile()) void saveDesign(); else window.dispatchEvent(new Event("fairbeam:menu-notice")); },
@@ -205,10 +208,10 @@ export default function App() {
     if (native) void native.invoke("sync_native_menu_availability", { availability }).catch(() => {});
   });
   createEffect(() => {
-    const id = designFile()?.id;
-    if (!id) return;
-    const native = (window as unknown as { __TAURI_INTERNALS__?: { invoke: (command: string, args: { id: string }) => Promise<unknown> } }).__TAURI_INTERNALS__;
-    if (native) void native.invoke("remember_recent_design", { id }).catch(() => {});
+    const saved = designFile();
+    if (!saved) return;
+    const native = (window as unknown as { __TAURI_INTERNALS__?: { invoke: (command: string, args: { id: string; title: string }) => Promise<unknown> } }).__TAURI_INTERNALS__;
+    if (native) void native.invoke("remember_recent_design", { id: saved.id, title: saved.design.model.name }).catch(() => {});
   });
 
   onMount(async () => {
@@ -262,7 +265,35 @@ export default function App() {
     setBooting(false);
     // a reload does not drop the open design: it comes back once the example bundle is in (it must
     // not replace the design's preview) and the server has listed its models
-    if (await probe) await reopenLastDesign();
+    if (await probe && !disposed) {
+      let ready = false, busy = false;
+      const attempted = new Set<string>();
+      const hasOpenModal = () => !!document.querySelector(".scrim, [aria-modal='true'], dialog[open]");
+      const openPending = async () => {
+        if (!ready || busy || !nativeDocumentsAvailable() || hasOpenModal()) return false;
+        busy = true;
+        try {
+          const pending = await pendingNativeDocument([...attempted]);
+          // A modal can open while the shell is finding the next request. Leave the
+          // request queued until it closes; do not replace its underlying document.
+          if (!ready || hasOpenModal()) return false;
+          if (!pending || attempted.has(pending.handle)) return false;
+          const opened = await openNativeDocument(pending.handle, pending.displayName);
+          // A save or another open may be finishing. Retry that request on the next poll;
+          // cancellation and errors wait for another explicit OS-open event.
+          if (opened !== null) attempted.add(pending.handle);
+          return opened === true;
+        } catch { return false; } finally { busy = false; }
+      };
+      ready = true;
+      if (!(await openPending()) && !disposed && !attempted.size) await reopenLastDesign();
+      if (disposed) { ready = false; return; }
+      const onOpen = () => { attempted.clear(); void openPending(); };
+      window.addEventListener("fairbeam:native-document-open", onOpen);
+      // OS launch can arrive while the renderer was starting; the shell keeps the queue.
+      const timer = nativeDocumentsAvailable() ? setInterval(() => void openPending(), 2500) : undefined;
+      cleanupDocuments = () => { ready = false; clearInterval(timer); window.removeEventListener("fairbeam:native-document-open", onOpen); };
+    }
   });
 
   return (
@@ -279,7 +310,7 @@ export default function App() {
       <ConfirmDialog />
       <UpdateProgress />
       <ToastHost />
-      <input ref={openInput} type="file" accept=".json,application/json" hidden onChange={(e) => { const f = e.currentTarget.files?.[0]; if (f) void openUserProject(f); e.currentTarget.value = ""; }} />
+      <input ref={openInput} type="file" accept=".fb,.json,application/json" hidden onChange={(e) => { const f = e.currentTarget.files?.[0]; if (f) void openUserProject(f); e.currentTarget.value = ""; }} />
       <ExampleCopyDialog />
       <Show when={!DEMO && cstImportOpen()}><CstImportDialog /></Show>
       <Show when={!DEMO && pcbImportOpen()}><PcbImportDialog /></Show>

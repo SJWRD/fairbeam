@@ -105,7 +105,7 @@ const shellRequest = (kind = "window") => {
 const addPart = (name) => store.edit((d) => { d.parts.push({ name, material: "copper", primitives: [{ kind: "box", start: [0, 0, 0], stop: [1, 1, 1] }] }); });
 const partNames = () => store.draft.parts.map((p) => p.name);
 /** the dialog's Save button (CloseProject.tsx WindowCloseDialog) */
-const dialogSave = async () => { const ok = await store.saveBeforeLeaving(); if (ok) wc.decideWindowClose("close"); return ok; };
+const dialogSave = () => store.saveBeforeLeaving(() => wc.decideWindowClose("close"));
 /** the dialog's Don't save button */
 const dialogDiscard = () => { store.closeDesign(); wc.decideWindowClose("close"); };
 async function openA() {

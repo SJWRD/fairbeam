@@ -7,7 +7,7 @@ import { Box, CircuitBoard, CopyPlus, FilePlus2, FileCode, FileUp, FolderOpen, L
 import { ApiError } from "../runner/api";
 import { models, openRunPanel, openExampleCopy, probeServer, refreshModels, serverState } from "../runner/store";
 import { isDesktopShell } from "../lib/telemetry";
-import { confirmReplaceDraft, createDesign, deleteDesign, dirty, enterDesign, file } from "../designer/store";
+import { confirmReplaceDraft, createDesign, deleteDesign, dirty, enterDesign, file, openNativeDocument } from "../designer/store";
 import { openUserProject } from "../runner/openProject";
 import { index } from "../state";
 import { exampleGroups } from "../lib/examplePicker";
@@ -25,7 +25,7 @@ import { TEMPLATE_GROUPS, type TemplateKey } from "../designer/templates";
 import { openPythonModelAsDesign } from "../designer/pythonModel";
 import { locale, t } from "../i18n";
 import { createDesignActions } from "./DesignActions";
-import { hasUndatedProjects, visibleProjects, type ProjectSort } from "./projectList";
+import { hasUndatedProjects, projectLocation, visibleProjects, type ProjectSort } from "./projectList";
 
 const focusAfterRender = (id: string) => requestAnimationFrame(() => {
   document.getElementById(id)?.focus();
@@ -274,6 +274,11 @@ export default function Home() {
                   </button>
                 </form>
                 <div class="home-import">
+                  <Show when={isDesktopShell()}>
+                    <button class="btn btn-ghost" type="button" onClick={() => void openNativeDocument()} disabled={!online()}>
+                      <FolderOpen size={14} aria-hidden="true" /> {t("document.open")}
+                    </button>
+                  </Show>
                   <button class="btn btn-ghost" type="button" onClick={() => setCstImportOpen(true)}
                     title={t("home.importCst.title")}>
                     <FileUp size={14} aria-hidden="true" /> {t("home.importCst.button")}
@@ -329,9 +334,12 @@ export default function Home() {
                                 <span class="home-item-sub">{loadError(m.error!)}</span>
                               </div>
                             }>
-                              <button class="home-item" onClick={() => enterDesign(m.key)}>
+                              <button class="home-item" onClick={() => enterDesign(m.key)}
+                                aria-label={m.document ? `${m.model?.name ?? m.key}. ${t("home.designs.documentCopy", { path: projectLocation(m).full })}` : undefined}>
                                 <span class="home-item-name" title={m.model?.name ?? m.key}>{m.model?.name ?? m.key}</span>
-                                <span class="home-item-sub mono">{m.file}</span>
+                                <span class="home-item-sub home-project-location" title={projectLocation(m).full}>
+                                  {projectLocation(m).label}
+                                </span>
                               </button>
                             </Show>
                             <button id={`home-favorite-${m.key}`} class="icon-btn icon-btn-sm home-favorite" data-home-favorite={m.key} aria-pressed={favoriteKeys().has(m.key)}

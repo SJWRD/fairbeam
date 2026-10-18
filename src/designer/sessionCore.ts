@@ -24,6 +24,11 @@ export function createDesignerSession(effects: DesignerSessionEffects = {}) {
     const [selection, setSelection] = createSignal<Selection>({ type: "design" });
     const [loading, setLoading] = createSignal(false);
     const [saving, setSaving] = createSignal(false);
+    // A workspace write may succeed while the selected .fb file is still unsaved.
+    // Keep all existing close/run/navigation guards aware of that partial save.
+    const [persistencePending, setPersistencePending] = createSignal(false);
+    const [pendingResultsToken, setPendingResultsToken] = createSignal("[]");
+    const resultsPending = () => pendingResultsToken() !== "[]";
     /** `sticky`: a warning about a condition that lasts (a save conflict, a live Boolean that cannot be
      * recomputed): it stays until its owner clears or replaces it, when the condition is gone. */
     const [message, setMessageRaw] = createSignal<{ tone: "good" | "warn" | "critical"; text: string; sticky?: boolean } | null>(null);
@@ -89,7 +94,7 @@ export function createDesignerSession(effects: DesignerSessionEffects = {}) {
     const dirty = createMemo(() => {
       const f = file();
       // track the whole draft: any nested edit re-evaluates
-      return !!f && loaded() && draftText() !== JSON.stringify(f.design);
+      return !!f && loaded() && (persistencePending() || resultsPending() || draftText() !== JSON.stringify(f.design));
     });
 
     let lastKey = "";
@@ -342,6 +347,8 @@ export function createDesignerSession(effects: DesignerSessionEffects = {}) {
       asyncState.replaceDocument();
       batch(() => {
         setFile(next);
+        setPersistencePending(false);
+        setPendingResultsToken("[]");
         // Keep JSON key order independent when replacing a different document.
         if (previous?.id !== next.id) setDraft(reconcile({} as Design));
         setDraft(reconcile(structuredClone(next.design)));
@@ -377,6 +384,8 @@ export function createDesignerSession(effects: DesignerSessionEffects = {}) {
       sessionId, asyncState, dispose, isDisposed: () => disposed,
       file, setFile: guarded(setFile), draft, setDraft: guarded(setDraft), selection, setSelection: guarded(setSelection),
       loading, setLoading: guarded(setLoading), saving, setSaving: guarded(setSaving), message, setMessage: guarded(setMessage),
+      persistencePending, setPersistencePending: guarded(setPersistencePending),
+      pendingResultsToken, setPendingResultsToken: guarded(setPendingResultsToken), resultsPending,
       serverErrors, setServerErrors: guarded(setServerErrors), conflict, setConflict: guarded(setConflict), serverChecks, setServerChecks: guarded(setServerChecks),
       loaded, snapshot, draftText, dirty, canUndo, canRedo, edit, undo, redo, historySteps, undoLabel, redoLabel, historyIndex, historyDesign, goToHistory,
       historyMark, changedSince, rollbackTo, syncSavedDesignName, revertObservedEdit,

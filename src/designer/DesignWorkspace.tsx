@@ -19,6 +19,7 @@ import { CLOSE_KEY, requestCloseProject } from "./CloseProject";
 import { bundle, layers, setLayers, setSelectedPart, setSelectedShape, type Layers as LayerState } from "../state";
 import { SAVE_KEY } from "../editor/store";
 import { openSaveAs } from "./SaveAsDialog";
+import { nativeDocumentFor, nativeDocumentsAvailable } from "../lib/nativeDocuments";
 import { openSimSettings, runDialogOpen, setRunDialogOpen, setSimSettingsOpen, simSettingsOpen, sweepDialogOpen } from "../runner/designRun";
 import { EFFICIENCY_POINTS_DEFAULT } from "./checks";
 import FeedCreationDialog from "./FeedCreationDialog";
@@ -84,7 +85,7 @@ import FaceExtrudeDialog from "./FaceExtrudeDialog";
 import { HistoryDialog } from "./HistoryDialog";
 import {
   addMaterial, addParam, addPort, addWaveguidePort, addResistor, addShape, canDuplicate, canRedo, canRemove, canUndo, undoLabel, redoLabel, conflict, dirty, draft, issueUnder, names,
-  duplicateSelected, edit, errorCount, exportPython, file, highlightedPart, message, pickPart, redo, removeSelected, saveExplicit, saving,
+  duplicateSelected, edit, errorCount, exportPython, file, highlightedPart, message, pickPart, redo, removeSelected, resultsPending, saveExplicit, saving,
   selection, setDesignView, setMessage, setSelection, type ShapeKind, undo,
 } from "./store";
 import { downloadFailedMessage, downloadMessage, revealDownloadedFile, saveDownload } from "../lib/download";
@@ -568,7 +569,7 @@ export function Ribbon() {
           <RButton icon={Home} label={t("ribbon.home.start")} title={t("ribbon.home.startTitle")} onClick={() => setAppMode("home")} />
           <RButton icon={FileUp} label={t("ribbon.home.importCst")} title={t("ribbon.home.importCstTitle")} onClick={() => setCstImportOpen(true)} />
           <RButton icon={CircuitBoard} label={t("ribbon.home.importPcb")} title={t("ribbon.home.importPcbTitle")} onClick={() => setPcbImportOpen(true)} />
-          <RButton icon={Save} label={saving() ? t("ribbon.home.saving") : t("common.save")} title={saving() ? t("ribbon.home.saving") : !dirty() && !conflict() ? t("ribbon.home.noChanges") : t("ribbon.home.saveTitle", { key: SAVE_KEY })} onClick={saveExplicit} disabled={saving() || (!dirty() && !conflict())} />
+          <RButton icon={Save} label={saving() ? t("ribbon.home.saving") : t("common.save")} title={saving() ? t("ribbon.home.saving") : !dirty() && !conflict() && !nativeDocumentsAvailable() ? t("ribbon.home.noChanges") : t("ribbon.home.saveTitle", { key: SAVE_KEY })} onClick={saveExplicit} disabled={saving() || (!dirty() && !conflict() && !(nativeDocumentsAvailable() && !file()?.readonly))} />
           <RButton icon={SaveAll} label={t("ribbon.home.saveAs")} action="save-as" title={t("ribbon.home.saveAsTitle", { key: SHORTCUTS.saveAs.key })} onClick={openSaveAs} disabled={saving()}
             ariaKeyShortcuts={isMacPlatform() ? "Meta+Shift+S" : "Control+Shift+S"} />
           <RButton icon={X} label={t("common.close")} title={health()?.desktop ? t("ribbon.home.closeTitle", { key: CLOSE_KEY }) : t("ribbon.home.closeProject")} onClick={requestCloseProject} />
@@ -935,8 +936,23 @@ export function DesignTreePanel() {
       <div class="dw-title">
         <span class="dw-name" title={draft.model?.name}>{draft.model?.name}</span>
         <Show when={dirty()}><span class="code-dot" aria-label={t("workspace.unsaved")} title={t("workspace.unsavedTitle")} /></Show>
-        <span class="mono muted dw-file" title={file()?.file}>{file()?.file}</span>
+        <span class="mono muted dw-file" title={nativeDocumentFor(file())?.path ?? file()?.file}>{nativeDocumentFor(file())?.path.split(/[\\/]/).pop() ?? file()?.file}</span>
       </div>
+      <Show when={resultsPending()}><p class="muted" role="status">{t("document.resultsPending")}</p></Show>
+      <Show when={nativeDocumentFor(file())}>{document => (
+        <details class="fb-document-info">
+          <summary>{t("document.details")}</summary>
+          <div class="stack-sm">
+            <p class="muted">{document().path}</p>
+            <p>{t("document.resultsFolder", { folder: document().document.results_directory })}</p>
+            <p class="muted">{t("document.resultsNote")}</p>
+            <Show when={document().results.length} fallback={<p>{t("document.noResults")}</p>}>
+              <ul><For each={document().results}>{result => <li>{result.file}: {t(`document.result.${result.status}`)}</li>}</For></ul>
+            </Show>
+            <For each={document().warnings}>{warning => <p role="status">{warning}</p>}</For>
+          </div>
+        </details>
+      )}</Show>
       <NavTree />
     </aside>
   );

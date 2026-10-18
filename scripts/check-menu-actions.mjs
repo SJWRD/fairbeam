@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { stripTypeScriptTypes } from "node:module";
 import { createMenuActionRouter, isMenuActionId, MENU_ACTION_IDS } from "../src/lib/menuActions.ts";
 
 const expected = ["file-new","file-import-cst","file-import-pcb","file-open","file-save","file-save-as","export-cst","export-python","export-touchstone","export-package","file-close","settings","edit-undo","edit-redo","edit-delete","view-start","view-design","view-examples","view-tree","view-dock","view-properties","view-ribbon","view-iso","view-top","view-front","view-right","view-bottom","view-back","view-left","view-zoom-in","view-zoom-out","view-zoom-reset","help-shortcuts","about"];
@@ -19,6 +20,26 @@ assert.equal(route(JSON.stringify("not-allowed")), false); assert.match(reported
 assert.equal(route("not json"), false);
 const app = readFileSync(new URL("../src/App.tsx", import.meta.url), "utf8");
 const shell = readFileSync(new URL("../src-tauri/src/main.rs", import.meta.url), "utf8");
+// Execute the real effect body: only the saved snapshot supplies the menu title.
+const rememberEffect = app.match(/createEffect\(\(\) => \{\s*(const saved = designFile\(\);[\s\S]*?)\n  \}\);/)?.[1];
+assert.ok(rememberEffect, "App remembers saved designs in the native recent menu");
+const remember = Function(`return ${stripTypeScriptTypes(`function remember(designFile, window, designDraft) { ${rememberEffect} }`)}`)();
+const recentCalls = [];
+const nativeWindow = { __TAURI_INTERNALS__: { invoke: (command, args) => { recentCalls.push({ command, args }); return Promise.resolve(); } } };
+const savedRecent = { id: "fb_123", design: { model: { name: "Saved R&D 文档" } } };
+remember(() => savedRecent, nativeWindow, { model: { name: "Unsaved rename" } });
+assert.deepEqual(recentCalls, [{ command: "remember_recent_design", args: { id: "fb_123", title: "Saved R&D 文档" } }]);
+remember(() => ({ ...savedRecent, design: { model: { name: "Saved rename" } } }), nativeWindow, { model: { name: "Later draft" } });
+assert.deepEqual(recentCalls.at(-1).args, { id: "fb_123", title: "Saved rename" });
+remember(() => null, nativeWindow, {});
+remember(() => savedRecent, {}, {});
+assert.equal(recentCalls.length, 2, "closed design and browser mode need no native call");
+remember(() => savedRecent, { __TAURI_INTERNALS__: { invoke: () => Promise.reject(new Error("unavailable")) } }, {});
+await Promise.resolve();
+assert.match(shell, /fn remember_recent_design\(app: AppHandle, id: String, title: Option<String>\)/, "ID-only native clients remain compatible");
+assert.match(shell, /if !settings\.remember_recent_design\(id, title\.as_deref\(\)\) \{\s*return Ok\(\(\)\);\s*\}\s*save_settings/, "unchanged ID/title skips persistence and menu rebuild");
+assert.match(shell, /if changed \{\s*settings\.clear_recent_designs\(\);/, "workspace changes clear title metadata with recent IDs");
+assert.match(shell, /paths::canonical\(path\) != paths::canonical\(&next\)/, "the active/next-workspace guard is retained");
 // the menu texts, in English and Turkish (the viewer's language, src-tauri/src/i18n.rs)
 const shellText = readFileSync(new URL("../src-tauri/src/i18n.rs", import.meta.url), "utf8");
 const closeHost = readFileSync(new URL("../src/designer/CloseProject.tsx", import.meta.url), "utf8");

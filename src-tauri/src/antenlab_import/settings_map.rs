@@ -165,6 +165,7 @@ impl Mapped {
             s.gpu_runtime_enabled = v;
         }
         if !self.recent_designs.is_empty() {
+            s.clear_recent_designs();
             s.recent_designs = self.recent_designs.clone();
         }
         if let Some(py) = &self.external_python {
@@ -219,10 +220,12 @@ mod tests {
         });
         let m = map(&old, None, &[]);
         let mut s = Settings::default();
+        s.remember_recent_design("patch_24".into(), Some("Title from another workspace"));
         m.apply(&mut s);
         assert_eq!(s.language.as_deref(), Some("tr"));
         assert!(!s.check_updates_on_start && s.prefer_gpu && s.gpu_runtime_enabled);
         assert_eq!(s.recent_designs, vec!["patch_24", "horn"]);
+        assert!(s.recent_design_titles.is_empty(), "imported IDs cannot inherit titles from an unrelated workspace");
         // the managed runtime is never reused
         assert_eq!((s.runtime, s.python), (None, None));
         assert_eq!(s.workspace, None, "the workspace step decides");

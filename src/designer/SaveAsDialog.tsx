@@ -3,7 +3,8 @@ import { useModal } from "../lib/dialog";
 import { designFileHint, designIdError, freeDesignId } from "../lib/designId";
 import { models } from "../runner/store";
 import { appMode } from "../workspace";
-import { createDesign, dirty, file, saveBeforeLeaving } from "./store";
+import { createDesign, dirty, file, saveBeforeLeaving, saveNativeDocumentAs } from "./store";
+import { nativeDocumentsAvailable } from "../lib/nativeDocuments";
 import { t } from "../i18n";
 
 /** Save As… is open (App.tsx hosts the dialog). Opened from the desktop File menu, the Home ribbon's
@@ -11,7 +12,11 @@ import { t } from "../i18n";
 export const [saveAsOpen, setSaveAsOpen] = createSignal(false);
 /** Save As needs a design open on the Design screen. */
 export const canSaveAs = () => appMode() === "design" && !!file();
-export const openSaveAs = () => { if (canSaveAs()) setSaveAsOpen(true); };
+export const openSaveAs = () => {
+  if (!canSaveAs()) return;
+  if (nativeDocumentsAvailable() && !file()?.readonly) void saveNativeDocumentAs();
+  else setSaveAsOpen(true);
+};
 
 interface Props {
   source: { id: string; name: string };

@@ -20,6 +20,20 @@
     "publisher": "Fairbeam",
     "copyright": "Copyright © 2026 Fairbeam contributors",
     "shortDescription": "The open electromagnetic workbench.",
+    "fileAssociations": [
+      {
+        "ext": ["fb"],
+        "name": "Fairbeam document",
+        "description": "Fairbeam document",
+        "role": "Editor",
+        "rank": "Owner",
+        "mimeType": "application/vnd.fairbeam.document+json",
+        "exportedType": {
+          "identifier": "org.fairbeam.document",
+          "conformsTo": ["public.json"]
+        }
+      }
+    ],
     "targets": [
       "app",
       "dmg"

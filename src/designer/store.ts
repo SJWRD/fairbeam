@@ -5,8 +5,9 @@
 import { batch, createEffect, createMemo, createRoot, createSignal, on } from "solid-js";
 import { reconcile, unwrap } from "solid-js/store";
 import { api, type PcbFile, type PcbOptions } from "../runner/api";
-import { applyModelEntry, draftPreview, forgetPreviewFailure, restoreProject, invalidatePreview, previewActive, previewFailure, previewIsCurrent, previewState, health, modelKey, models, refreshModels, runDesignPreview, selectModel, serverState, setUnsavedDesignCheck, showEmptyDesign, showQuickPreview } from "../runner/store";
-import { openCount, setCenterView, setHiddenParts, setOpeningView } from "../state";
+import { applyModelEntry, draftPreview, forgetPreviewFailure, restoreProject, invalidatePreview, previewActive, previewFailure, previewIsCurrent, previewState, health, jobs, jobsScope, modelKey, models, refreshModels, runDesignPreview, selectModel, serverState, setUnsavedDesignCheck, showEmptyDesign, showQuickPreview } from "../runner/store";
+import { loadIndex, openCount, setCenterView, setHiddenParts, setOpeningView } from "../state";
+import { openUserProject } from "../runner/openProject";
 import { validPose } from "../scene/cameraViews";
 import { quickBundle } from "./geometry";
 import { portFeedEntries } from "../lib/portGroups";
@@ -32,6 +33,9 @@ import { confirmDraftDiscard } from "../lib/ConfirmDialog";
 import { createdNote, type TemplateKey } from "./templates";
 import { applyPythonScript, replaceDesignContent, type PythonApplyOutcome } from "./pythonApply";
 import { localeTag, t } from "../i18n/index.ts";
+import { pickNativeDocument, persistNativeDocument, rememberNativeDocument, restoreNativeDocumentBinding, observeNativeDocumentResults, nativeResultsPendingToken, resetNativeDocumentResults, nativeDocumentFor, nativeDocumentsAvailable, hasDocumentResultScope } from "../lib/nativeDocuments";
+import { createDocumentResultAutosave } from "../lib/documentResultAutosave";
+import { showToast } from "../lib/toast";
 
 export const defaultDesignerSession = createDesignerSession({
   edited: () => { quickPreview(); schedulePreview(); },
@@ -39,12 +43,43 @@ export const defaultDesignerSession = createDesignerSession({
 });
 export const { file, setFile, draft, setDraft, selection, setSelection, loading, setLoading, saving, setSaving,
   message, setMessage, serverErrors, setServerErrors, conflict, setConflict, serverChecks, setServerChecks,
-  dirty, canUndo, canRedo, edit, undo, redo, historySteps, undoLabel, redoLabel, historyIndex, historyDesign, goToHistory,
+  dirty, resultsPending, canUndo, canRedo, edit, undo, redo, historySteps, undoLabel, redoLabel, historyIndex, historyDesign, goToHistory,
   historyMark, changedSince, rollbackTo, syncSavedDesignName, revertObservedEdit,
   registerPostEditObserver, registerDocumentChangeObserver, registerDeriveHook,
 } = defaultDesignerSession;
 export type { HistoryStep, HistoryMark } from "./sessionCore";
 const { asyncState, loaded, snapshot, draftText, showSaveNote, checksTicket, setChecksTicket } = defaultDesignerSession;
+createRoot(() => createEffect(on(() => [file()?.backup_scope, file()?.id] as const, () => {
+  const current = file();
+  if (current) void restoreNativeDocumentBinding(current).catch(() => { /* no active grant: explicit Open is required */ });
+})));
+createRoot(() => createEffect(() => observeNativeDocumentResults(file(), jobs(), jobsScope())));
+createRoot(() => createEffect(() => defaultDesignerSession.setPendingResultsToken(nativeResultsPendingToken(file()))));
+let autosaveTicket: ReturnType<typeof asyncState.ticket> | undefined;
+const [autosaveRevision, setAutosaveRevision] = createSignal(0);
+const autosaveResults = createDocumentResultAutosave({
+  busy: value => {
+    if (value) { autosaveTicket = asyncState.ticket(); setSaving(true); }
+    else {
+      if (autosaveTicket && asyncState.isDocumentCurrent(autosaveTicket)) setSaving(false);
+      setAutosaveRevision(value => value + 1);
+    }
+  },
+  persist: async f => {
+    const saved = await persistNativeDocument(f, f.hash, false);
+    if (saved && !("canceled" in saved) && saved.warnings.length)
+      showToast(saved.warnings.join("\n"), { tone: "error", key: "document-result-autosave" });
+  },
+  failed: (_f, error) => showToast(t("document.autoSaveFailed", { error: String(error) }),
+    { tone: "error", key: "document-result-autosave" }),
+});
+createRoot(() => createEffect(() => {
+  autosaveRevision();
+  const f = file(), token = nativeResultsPendingToken(f);
+  // A prior failed/cancelled design save can leave workspace bytes ahead of the portable
+  // design. Do not implicitly publish those edits while attaching a completed result.
+  void autosaveResults(f, token, saving() || loading() || defaultDesignerSession.persistencePending(), !!nativeDocumentFor(f));
+}));
 // the Run panel submits the saved file: it must not run this design while its draft is unsaved
 setUnsavedDesignCheck((key) => dirty() && file()?.id === key);
 
@@ -53,7 +88,7 @@ setUnsavedDesignCheck((key) => dirty() && file()?.id === key);
 // not only the first one that made the draft dirty.
 let backupTimer: ReturnType<typeof setTimeout> | undefined;
 createRoot(() => createEffect(() => {
-  const f = file(), unsaved = dirty(), text = unsaved ? draftText() : "";
+  const f = file(), unsaved = !!f && (defaultDesignerSession.persistencePending() || draftText() !== JSON.stringify(f.design)), text = unsaved ? draftText() : "";
   clearTimeout(backupTimer);
   if (!f || f.readonly) return;
   if (!unsaved) { clearBackup(f.id, f.backup_scope, f.hash); return; }
@@ -214,6 +249,19 @@ export const defaultDesignerIO = createDesignerIO(defaultDesignerSession, {
   stopPreview, forgetPreviewFailure, resetParamAsks: () => setParamAsks([]),
   schedulePreview: () => schedulePreview(0), applyModelEntry,
   restoreModelSelection: f => selectModel(f?.id ?? ""),
+  persistUnsavedDesign: async (f, design, copy) => {
+    if (!nativeDocumentsAvailable() || hasDocumentResultScope(f)) return;
+    const result = await persistNativeDocument(f, f.hash, copy, design);
+    if (result && "file" in result && result.file) await refreshModels();
+    return result;
+  },
+  persistSavedDesign: async (f, hash, copy) => {
+    const result = await persistNativeDocument(f, hash, copy);
+    // A Save As copy has a new workspace key. Load its real parameter metadata before
+    // sessionIO selects it; that session still checks ownership after this await.
+    if (result && "file" in result && result.file) await refreshModels();
+    return result;
+  },
   // the first picture of the opened design is its saved opening view, if it has one
   openedDesign: () => {
     const pose = validPose(unwrap(draft).view);
@@ -221,7 +269,64 @@ export const defaultDesignerIO = createDesignerIO(defaultDesignerSession, {
   },
 });
 export const { openDesign, save, saveExplicit, saveBeforeLeaving } = defaultDesignerIO;
+export const saveNativeDocumentAs = defaultDesignerIO.saveAs;
 const { take, applyValidation, isReleased } = defaultDesignerIO;
+
+/** Native selection happens only after resolving the current draft. No external file is read
+ * into the workspace before that decision, including an OS double-click queued at startup. */
+let nativeOpenInProgress = false;
+export async function openNativeDocument(handle?: string, displayName = ".fb"): Promise<boolean | null> {
+  if (nativeOpenInProgress) return null;
+  nativeOpenInProgress = true;
+  try { return await openNativeDocumentOwned(handle, displayName); }
+  finally { nativeOpenInProgress = false; }
+}
+async function openNativeDocumentOwned(handle?: string, displayName = ".fb"): Promise<boolean | null> {
+  if (loading() || saving()) return null;
+  if (!(await confirmReplaceDraft("open", displayName))) return false;
+  if (loading() || saving()) return null;
+  const ticket = asyncState.ticket(), mine = asyncState.navigationTicket();
+  const resultsAtOpen = defaultDesignerSession.pendingResultsToken();
+  const keepNewerChanges = () => {
+    const newResults = defaultDesignerSession.pendingResultsToken() !== resultsAtOpen;
+    if (asyncState.isDraftCurrent(ticket) && !newResults) return false;
+    defaultDesignerIO.forgetRelease();
+    setMessage({ tone: "warn", text: t(newResults ? "document.openCancelledByResults" : "store.openCancelledByEdit"), sticky: true });
+    return true;
+  };
+  stopPreview();
+  setLoading(true);
+  try {
+    const result = await pickNativeDocument(handle);
+    if (!asyncState.isOwnedNavigationCurrent(mine) || !asyncState.isDocumentCurrent(ticket)) return false;
+    if (result.status === "canceled") { defaultDesignerIO.forgetRelease(); return false; }
+    if (keepNewerChanges()) return false;
+    if (result.status === "import") {
+      if (!asyncState.isOwnedNavigationCurrent(mine) || !asyncState.isDraftCurrent(ticket)) return false;
+      setLoading(false);
+      return openUserProject(new File([result.content], result.name, { type: "application/json" }));
+    }
+    await refreshModels();
+    if (!asyncState.isOwnedNavigationCurrent(mine) || !asyncState.isDocumentCurrent(ticket) || keepNewerChanges()) return false;
+    resetNativeDocumentResults(result.file, jobs(), jobsScope());
+    rememberNativeDocument(result);
+    selectModel(result.file.id);
+    take(result.file);
+    setAppMode("design");
+    schedulePreview(0);
+    void loadIndex();
+    if (result.warnings.length) setMessage({ tone: "warn", text: t("document.openWarnings", { count: result.warnings.length }), sticky: true });
+    return true;
+  } catch (error) {
+    if (asyncState.isOwnedNavigationCurrent(mine) && asyncState.isDocumentCurrent(ticket)) {
+      defaultDesignerIO.forgetRelease();
+      showToast((error as Error).message, { tone: "error", key: "native-document-open" });
+    }
+    return false;
+  } finally {
+    if (asyncState.isOwnedNavigationCurrent(mine)) setLoading(false);
+  }
+}
 /** Recover only after the current window's unsaved work has been explicitly handled. */
 export async function restoreRecovery(saved: Backup): Promise<boolean> {
   const f = file(), ticket = asyncState.ticket();
@@ -277,9 +382,7 @@ export function closeDesign() {
 /** Save before the draft is closed or replaced: true only when this draft is saved and unchanged.
  * A failed/conflicting save or edits arriving during it must never discard the draft. */
 export async function saveAndCloseDesign(): Promise<boolean> {
-  if (!(await saveBeforeLeaving())) return false;
-  closeDesign();
-  return true;
+  return saveBeforeLeaving(closeDesign);
 }
 
 // ------------------------------------------------------------------ replacing the open draft
@@ -314,6 +417,7 @@ export function releaseDraft() {
 export async function createDesign(body: { id: string; name?: string; from?: string; template?: TemplateKey; python?: { source_model: string; model?: Design["model"] }; cst?: { source: string; filename?: string };
   pcb?: { files: PcbFile[]; options?: PcbOptions }; design?: Design }) {
   if (!(await confirmReplaceDraft("create", body.name || body.id))) return null;
+  const sourceTicket = asyncState.ticket(), sourceResults = defaultDesignerSession.pendingResultsToken();
   const mine = asyncState.navigationTicket();
   defaultDesignerIO.setNavigationTarget(body.id);
   stopPreview();
@@ -335,7 +439,16 @@ export async function createDesign(body: { id: string; name?: string; from?: str
       }
     }
     await refreshModels();
-    if (!asyncState.isOwnedNavigationCurrent(mine)) return res;
+    if (!asyncState.isOwnedNavigationCurrent(mine) || !asyncState.isDocumentCurrent(sourceTicket)) return res;
+    if (!asyncState.isDraftCurrent(sourceTicket) || defaultDesignerSession.pendingResultsToken() !== sourceResults) {
+      defaultDesignerIO.forgetRelease();
+      selectModel(file()?.id ?? "");
+      const text = t("document.createdNewer");
+      if (appMode() === "design") setMessage({ tone: "warn", text, sticky: true });
+      else showToast(text, { key: "create-retained-source" });
+      schedulePreview(0);
+      return res;
+    }
     selectModel(res.id);
     take({ id: res.id, file: res.file, design: res.design, hash: res.hash, readonly: res.readonly, backup_scope: res.backup_scope });
     const createdDocument = asyncState.ticket();

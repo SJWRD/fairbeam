@@ -7,14 +7,32 @@ import { parseTouchstoneN } from '../src/import/touchstone.ts';
 import { arrayWeightsCsv, bandsCsv, farfieldCsv, parseCsv, sparamsCsv, sweepCsv } from '../src/export/csv.ts';
 
 const blobs = new Map();
+const revoked = [];
+const timers = [];
+const globals = [
+  [globalThis, 'window'], [globalThis, 'document'], [globalThis, 'setTimeout'],
+  [URL, 'createObjectURL'], [URL, 'revokeObjectURL'],
+].map(([owner, key]) => [owner, key, Object.getOwnPropertyDescriptor(owner, key)]);
 let offered;
+try {
 globalThis.window = {};
 globalThis.document = {
   body: { appendChild() {}, },
   createElement() { return { style: {}, click() { offered = { name: this.download, url: this.href }; }, remove() {} }; },
 };
 URL.createObjectURL = (blob) => { const url = `blob:test-${blobs.size}`; blobs.set(url, blob); return url; };
-URL.revokeObjectURL = () => {};
+URL.revokeObjectURL = (url) => {
+  assert.ok(blobs.has(url), 'only a generated Blob URL can be revoked');
+  assert.ok(!revoked.includes(url), 'each generated Blob URL is revoked once');
+  revoked.push(url);
+};
+// Keep browser cleanup deferred until the data assertions finish, without making Node wait 30s.
+globalThis.setTimeout = (callback, delay, ...args) => {
+  assert.equal(delay, 30_000, 'the real browser keeps its Blob URL grace period');
+  assert.equal(typeof callback, 'function');
+  timers.push({ callback, args });
+  return timers.length;
+};
 
 function bundle(n) {
   const frequency = [1e9, 2e9];
@@ -180,3 +198,22 @@ for (const invalid of [null, [6], [5, 6]]) {
   assert.equal(offered, before, 'an invalid association cannot offer a file');
 }
 console.log('Mapped single-port download keeps physical port identity and rejects invalid associations');
+assert.equal(revoked.length, 0, 'cleanup stays deferred until data assertions finish');
+assert.ok(blobs.size > 0, 'the contract exercises generated downloads');
+assert.equal(timers.length, blobs.size, 'every generated download schedules one cleanup');
+} finally {
+  try {
+    for (const { callback, args } of timers.splice(0)) callback(...args);
+    assert.equal(timers.length, 0, 'cleanup does not schedule more timers');
+    assert.deepEqual(revoked, [...blobs.keys()], 'every generated Blob URL is revoked in order');
+  } finally {
+    for (const [owner, key, descriptor] of globals) {
+      if (descriptor) Object.defineProperty(owner, key, descriptor);
+      else delete owner[key];
+    }
+  }
+}
+for (const [owner, key, descriptor] of globals) {
+  assert.deepEqual(Object.getOwnPropertyDescriptor(owner, key), descriptor, `${key} is restored`);
+}
+console.log('Deferred Blob cleanup: scheduled callbacks, URL revocations and global restoration passed');

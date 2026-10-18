@@ -17,6 +17,9 @@
 ; in tauri.conf.json (scripts/check-installer-info.mjs checks it).
 VIAddVersionKey "CompanyName" "Fairbeam"
 
+; Tauri includes FileAssociation.nsh before this hook; replace its two dispatch macros.
+!include "${__FILEDIR__}\association-lifecycle.nsh"
+
 ; 0 shared, 1 resources
 Var FairbeamOwnsResources
 

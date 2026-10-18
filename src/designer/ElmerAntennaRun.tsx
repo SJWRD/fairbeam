@@ -8,6 +8,7 @@ import { conflict, dirty, draft, file, names, save } from "./store";
 import { tryEvaluate } from "./expr";
 import { t } from "../i18n";
 import NumberField from "../components/NumberField";
+import { hasDocumentResultScope } from "../lib/nativeDocuments";
 
 export default function ElmerAntennaRun(props: { close: () => void }) {
   const number = (v: unknown, fallback: number) => Number((tryEvaluate(v as string | number, names().names).value ?? fallback).toPrecision(12));
@@ -33,7 +34,8 @@ export default function ElmerAntennaRun(props: { close: () => void }) {
     e.preventDefault(); if(invalid() || busy() || !file())return;
     setBusy(true);setError("");setDiagnostic(""); const identity=file()!.id;
     try{
-      if ((await api.health()).elmer_driven !== 2) throw Error(t("elmerAntenna.serverUpdate"));
+      const health = await api.health();
+      if (health.elmer_driven !== 2 || (hasDocumentResultScope(file()) && !health.research_source)) throw Error(t("elmerAntenna.serverUpdate"));
       if (!alive) return;
       const capability = await api.researchProbe("elmer", researchPath("elmer"));
       if (!alive) return;
@@ -46,8 +48,12 @@ export default function ElmerAntennaRun(props: { close: () => void }) {
       if(file()?.id!==identity || dirty() || conflict())throw Error(t("run.err.notSaved"));
       const settings:Record<string,unknown>={analysis:"driven",accept_finite_feed:true,approximate_metals:true};
       for(const [key,v] of Object.entries(values()))settings[key]=Number(v)*(key.endsWith("_hz")?1e9:1);
-      const job=await api.researchStart({backend:"elmer",path:researchPath("elmer"),design:structuredClone(unwrap(draft)),settings});
-      void refreshRuns();if(alive){props.close();followInDesigner(job);}
+      const saved = file()!;
+      const source = health.research_source && saved.backup_scope
+        ? {model_id:saved.id,workspace_hash:saved.hash,backup_scope:saved.backup_scope} : undefined;
+      if (hasDocumentResultScope(saved) && !source) throw Error(t("elmerAntenna.serverUpdate"));
+      const job=await api.researchStart({backend:"elmer",path:researchPath("elmer"),design:structuredClone(unwrap(draft)),settings,...(source ? {source} : {})});
+      void refreshRuns();if(alive && file()?.id === saved.id && file()?.backup_scope === saved.backup_scope){props.close();followInDesigner(job);}
     }catch(e){if(alive)setError((e as Error).message);}finally{if(alive)setBusy(false);}
   };
   return <form class="rd-body" onSubmit={submit} data-testid="elmer-antenna-form">
