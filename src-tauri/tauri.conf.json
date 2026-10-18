@@ -26,6 +26,7 @@
         "name": "Fairbeam document",
         "description": "Fairbeam document",
         "role": "Editor",
+        "rank": "Owner",
         "mimeType": "application/vnd.fairbeam.document+json",
         "exportedType": {
           "identifier": "org.fairbeam.document",

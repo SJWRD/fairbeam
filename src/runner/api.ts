@@ -83,6 +83,8 @@ export interface PythonDesignSource {
 
 export interface ModelEntry {
   key: string;
+  /** Display-only portable document origin; opening still requires the native grant. */
+  document?: { id: string; path: string };
   /** File modification time in Unix seconds; absent on older servers. */
   modified?: number;
   file: string;

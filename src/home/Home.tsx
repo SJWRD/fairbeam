@@ -336,7 +336,9 @@ export default function Home() {
                             }>
                               <button class="home-item" onClick={() => enterDesign(m.key)}>
                                 <span class="home-item-name" title={m.model?.name ?? m.key}>{m.model?.name ?? m.key}</span>
-                                <span class="home-item-sub mono">{m.file}</span>
+                                <span class="home-item-sub mono" title={m.document?.path ?? m.file}>
+                                  {m.document ? t("home.designs.documentCopy", { path: m.document.path }) : m.file}
+                                </span>
                               </button>
                             </Show>
                             <button id={`home-favorite-${m.key}`} class="icon-btn icon-btn-sm home-favorite" data-home-favorite={m.key} aria-pressed={favoriteKeys().has(m.key)}

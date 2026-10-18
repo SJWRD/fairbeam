@@ -54,6 +54,15 @@ class NativeDocumentsAPI(unittest.TestCase):
         self.app.close()
         self.tmp.cleanup()
 
+    def test_model_list_labels_portable_workspace_without_hiding_other_designs(self):
+        opened = self.app.documents.open(self.path)
+        modelfiles.create_design(self.models, "fb_user_design", blank_design("user", "Ordinary JSON design"))
+        models = {entry["key"]: entry for entry in self.app.models()["models"]}
+        self.assertEqual(models[opened["file"]["id"]]["document"],
+                         {"id": self.document["id"], "path": str(self.path.resolve())})
+        self.assertIn("fb_user_design", models)
+        self.assertNotIn("document", models["fb_user_design"])
+
     def request(self, action="open", body=None, headers=None, token=True, method="POST", raw=None):
         conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=10)
         h = {"Content-Type": "application/json"}

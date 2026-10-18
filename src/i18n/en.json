@@ -1,4 +1,5 @@
 {
+  "home.designs.documentCopy": "Workspace copy of {path}",
   "runner.modelUnavailable": "The selected model is unavailable. Reopen the design or model, then try again.",
   "document.open": "Open project…",
   "document.desktopRequired": "Open this project in the desktop app to use its adjacent results folder.",

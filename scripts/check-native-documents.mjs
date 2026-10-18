@@ -59,6 +59,9 @@ assert.equal(await native.persistNativeDocument(original,'snapshot',false),undef
 // Exercise the actual App queue body with controlled async shell replies. Browser coverage
 // separately checks the real modal selector; this test needs neither a desktop nor a server.
 const app=readFileSync(root+'src/App.tsx','utf8');
+const association=JSON.parse(readFileSync(root+'src-tauri/tauri.conf.json','utf8')).bundle.fileAssociations;
+assert.deepEqual(association.map(entry=>entry.ext),[['fb']],'the application does not claim all JSON files');
+assert.equal(association[0].rank,'Owner','the exported Fairbeam UTI declares its own handler rank');
 const queueSource=app.match(/const openPending = async \(\) => \{([\s\S]*?)\n      \};/)?.[1];
 assert.ok(queueSource,'App owns the pending-open queue');
 const deferred=()=>{let resolve;const promise=new Promise(yes=>resolve=yes);return {promise,resolve};};

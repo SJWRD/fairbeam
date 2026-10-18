@@ -26,6 +26,9 @@ release. Existing design JSON and result bundles remain supported.
 - Project file details in the model tree show the location and each referenced result's status.
   A result can match the saved design, belong to an earlier design, be missing, or fail validation.
   Matching the design does not establish mesh convergence or physical accuracy.
+- Start keeps portable workspace copies visible and identifies them by their `.fb` path. The
+  path is display/search metadata, not permission to open a file; missing or ambiguous metadata
+  falls back to the workspace filename. Deleting a workspace copy does not delete its `.fb` file.
 
 The native shell retains the selected path and revision behind an opaque handle. Browser code
 cannot submit arbitrary external paths. The private bridge is restricted to the shell's current
@@ -40,7 +43,7 @@ document; Save can still collect eligible completed runs from that document's wo
 ## Existing JSON files
 
 The `.fb` format is additive. Existing `.design.json` designs and JSON result bundles still open
-through File > Open or import/drop. Legacy Antenlab design and result schema names are still
+through File > Open or import/drop. Legacy 0.6.x design and result schema names are still
 recognized. Importing a JSON design creates an editable workspace copy; it does not rewrite the
 source JSON file. A desktop Save can then create a separate `.fb` project. JSON export remains
 available for interchange, and importing a result-only bundle does not invent an editable design.
@@ -135,6 +138,11 @@ Finder tags, quarantine attributes, and inherited stage ACLs therefore cause ref
 downloaded document with quarantine metadata needs Save As to a new file. An identical-byte save
 does not replace the file and needs no metadata changes. Queries cover metadata exposed to the
 current user, within the existing advisory-lock and static-boundary guarantees described below.
+
+New POSIX documents and portable result files currently use owner-only permissions (`0600`).
+They can be copied or shared, but do not automatically grant access to other local users through
+the directory's umask. Existing file permissions are preserved on replacement; this release does
+not widen them. Umask-aware creation remains a follow-up requiring native ACL and staging checks.
 
 `read(path)` returns `(document, byte_hash)` without opening results or executing Python.
 `read_result(path, document, reference)` checks membership, relative boundaries, regular files,

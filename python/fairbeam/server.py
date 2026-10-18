@@ -730,9 +730,13 @@ class App:
 
     def models(self) -> dict:
         items = []
-        for m in self.registry.list():
+        entries = self.registry.list()
+        documents = self.documents.display_documents({m["key"] for m in entries if m.get("kind") == "design"})
+        for m in entries:
             public = self._public(m) | {"readonly": modelfiles.is_readonly_file(m.get("file") or m["key"])}
             if m.get("kind") == "design":
+                if m["key"] in documents:
+                    public["document"] = documents[m["key"]]
                 # The Python model remains editable after conversion. Tell the Home screen which
                 # Design already came from each source so “Open as Design” reuses it instead of
                 # creating another copy every time.

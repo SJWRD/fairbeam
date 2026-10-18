@@ -206,6 +206,40 @@ class DocumentWorkspace:
             identity = candidate
         return identity
 
+    def display_documents(self, model_ids: set[str]) -> dict[str, dict[str, str]]:
+        """Best-effort display metadata, never permission to open an external path."""
+        if not model_ids:
+            return {}
+        labels = {}
+        ambiguous = set()
+        try:
+            for parent in (self.state_dir, *self.state_dir.parents):
+                info = parent.lstat()
+                if doc._linked(info) or not stat.S_ISDIR(info.st_mode):
+                    return {}
+            for path in self.state_dir.iterdir():
+                if path.suffix != ".json":
+                    continue
+                try:
+                    identity = _uuid(path.stem)
+                    state = _json_file(path)
+                    key = modelfiles.check_id(state.get("model_id"))
+                    location = state.get("path")
+                    revision = state.get("revision")
+                    if (key not in model_ids or state.get("schema") != STATE_SCHEMA
+                            or state.get("id") != identity or not isinstance(location, str)
+                            or not Path(location).is_absolute() or Path(location).suffix.lower() != ".fb"
+                            or not isinstance(revision, str) or not doc._HASH.fullmatch(revision)):
+                        continue
+                    if key in labels:
+                        ambiguous.add(key)
+                    labels[key] = {"id": identity, "path": location}
+                except (OSError, ValueError, TypeError, modelfiles.ModelFileError):
+                    continue
+        except OSError:
+            return {}
+        return {key: value for key, value in labels.items() if key not in ambiguous}
+
     @staticmethod
     def _reference_records(document: dict, state: dict | None) -> list[dict]:
         """The portable envelope is authoritative even after a metadata-write failure."""

@@ -27,4 +27,14 @@ for (const name of ["😀".repeat(46), "a".repeat(181), "unpaired\ud800"]) {
   assert.throws(() => documentEnvelope({...base, results_directory: name}));
   checks++;
 }
-console.log(`Document envelope: ${checks} checks passed`);
+const {visibleProjects} = await import('../src/home/projectList.ts');
+const entries = [
+  {key:'fb_user_design',file:'fb_user_design.design.json',model:{name:'Patch'}},
+  {key:'copy',file:'copy.design.json',model:{name:'Patch'},document:{id:'example',path:'/İzmir/文档.fb'}},
+];
+assert.equal(visibleProjects(entries,'','name',false,new Set()).length,2,'all ordinary and portable designs remain visible');
+assert.deepEqual(visibleProjects(entries,'文档.fb','name',false,new Set()).map(x=>x.key),['copy']);
+assert.deepEqual(visibleProjects(entries,'fb_user_design','name',false,new Set()).map(x=>x.key),['fb_user_design']);
+assert.equal(visibleProjects(entries,'','name',true,new Set(['copy']))[0].key,'copy');
+checks += 4;
+console.log(`Document envelope and project labels: ${checks} checks passed`);

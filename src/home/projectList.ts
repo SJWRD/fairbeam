@@ -4,6 +4,7 @@ export type ProjectSort = "modified" | "name";
 export interface ProjectListEntry {
   key: string;
   file?: string;
+  document?: { id: string; path: string };
   model?: { name?: string };
   modified?: number;
 }
@@ -25,7 +26,7 @@ export function visibleProjects<T extends ProjectListEntry>(
   return entries.filter((entry) => {
     if (favoritesOnly && !favoriteKeys.has(entry.key)) return false;
     if (!term) return true;
-    return [projectName(entry), entry.key, entry.file ?? ""].some((value) => value.toLocaleLowerCase().includes(term));
+    return [projectName(entry), entry.key, entry.file ?? "", entry.document?.path ?? ""].some((value) => value.toLocaleLowerCase().includes(term));
   }).sort((a, b) => {
     if (sort === "modified") {
       const aTime = modifiedTime(a), bTime = modifiedTime(b);
