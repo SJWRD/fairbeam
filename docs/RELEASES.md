@@ -178,6 +178,13 @@ editing them, or the prefill stops working.
 One entry per release, newest first. The installers are on the
 [release page](https://github.com/ismailakdag/fairbeam-releases/releases) of each version.
 
+### 0.8.1, 2026-10-18
+
+- Fix new-design creation staying on Start after the initial native `.fb` save changes
+  the workspace identity. Creation now enters Design after its own successful save;
+  an unrelated document opened while saving still takes precedence.
+- The Windows first-use Open With limitation documented for 0.8.0 remains unchanged.
+
 ### 0.8.0, 2026-10-18
 
 - Portable `.fb` documents with native Open, Save and Save As, while keeping support for
