@@ -1,6 +1,6 @@
 # Experimental openEMS CPU optimizations
 
-Opt-in source patches target the pinned openEMS beta engine at commit `08e15ff532a7f4cfd1d4e7164ec262f5187bf30e`: extension-phase scheduling, scalar SSE index mapping in UPML boundary hooks, and a separate UPML coefficient/flux row-pointer experiment. The first two patches came first; the row-pointer patch is the subsequent experiment. Except on macOS (see [the last section](#macos-shipped-and-on-by-default)), these engines are not installed or distributed as a Fairbeam runtime and application defaults remain unchanged.
+The original opt-in source patches target openEMS beta commit `08e15ff532a7f4cfd1d4e7164ec262f5187bf30e`: extension-phase scheduling, scalar SSE index mapping in UPML boundary hooks, and a separate UPML coefficient/flux row-pointer experiment. The sections below retain that experiment's provenance. The managed macOS pack and the qualified Windows rc3 pack now carry the rc3 adaptation; see their platform sections. Unmarked Windows installations, GPU packs and Linux retain their existing defaults.
 
 The current engine calls six extension phases per timestep: pre-voltage, post-voltage, apply-voltage, pre-current, post-current, and apply-current. Each extension hook is followed by a worker barrier. The prototype caches per-phase schedules and classifies only exact dynamic types whose hook masks were audited:
 
@@ -114,7 +114,7 @@ The driver performs no solver run. Its successful paired provenance reaches `pai
 The macOS openEMS pack ships the three patches, and Fairbeam turns them on by default on macOS, because
 five CPU cases were bitwise identical to the unpatched build on both bases
 (patch starter, pyramidal horn, blade 867, two-port microstrip, dipole; solver 1.3 to 1.7 times
-faster). Windows and Linux are unchanged: the patches stay opt-in there, as described above.
+faster). Linux is unchanged. Windows activation is scoped to the qualified pack below.
 
 - **Base.** The pack is built from openEMS `12cd91de2` (`runtime/pins.json`), not from the `08e15ff`
   beta that the sections above target. The cursor and rows patches apply to both unchanged; the
@@ -135,3 +135,68 @@ faster). Windows and Linux are unchanged: the patches stay opt-in there, as desc
 - **Run log.** The run log shows `fairbeam: note: native CPU patches requested (...)` and, from openEMS
   itself, one `Experimental CPU ...` line per patch that was applied (six lines with PML, one with
   MUR). Without those lines the run used the plain engine.
+
+## Qualified Windows rc3 pack
+
+The Windows CPU pin uses `openems-windows-x64-0.37.0rc3-g12cd91de2-ncpu1-r1`.
+It combines openEMS `12cd91de21548987b835ce21f10fd8421d74da78` and the three verified rc3 patches
+with the original rc3 CSXCAD, Python wheels and distribution tools. It does not require CUDA.
+The required Boost vc143 runtime libraries are included alongside the original vc145 libraries.
+The archive and matching modified-source archive are published together in `fairbeam-releases`.
+
+Windows defaults activate only when `OPENEMS_INSTALL_PATH` (then `CSXCAD_INSTALL_PATH`, then
+`C:\opt\openEMS`) contains the qualified `openems-pack.json` declaration. The installer verifies
+the pinned archive hash; the marker itself is a capability declaration, not an authenticity check.
+Unmarked official/external installs and GPU packages are unchanged. `FAIRBEAM_NATIVE_CPU=0`
+disables the default; explicit values for individual patch variables are preserved.
+
+On 18 October 2026, a Ryzen 9 7900X with four workers ran the patch starter, both excitation
+directions of the two-port microstrip, and a PML dipole. All retained raw complex port arrays,
+mesh/frequency arrays and available far-field arrays were exactly equal to both the official
+Windows rc3 package and a same-source unpatched build. The complete microstrip S matrix was
+also exactly equal; its largest singular value squared stayed below one. All runs met their
+existing energy criterion at the same timestep counts. A clean installed archive repeated the
+same numeric comparisons successfully, with native defaults enabled by its marker.
+
+Single-run solver timings (not a robust timing distribution) were:
+
+| Case | Official rc3 | Qualified candidate | Timesteps |
+| --- | ---: | ---: | ---: |
+| Patch starter, MUR | 49.28 s | 47.44 s | 18,507 |
+| Microstrip, port 1 | 4.74 s | 3.57 s | 7,040 |
+| Microstrip, port 2 | 4.63 s | 3.53 s | 7,040 |
+| Dipole, PML | 38.33 s | 31.58 s | 8,505 |
+
+These are optimization-parity checks, not a new physical/mesh convergence study or a universal
+speed guarantee. MUR models do not execute the UPML cursor/rows patches. Earlier fixed-step
+beta-engine microbenchmarks must not be used as the speed claim for this rc3 package.
+
+### Patch-specific follow-up
+
+The same 138,852-cell patch was also run with 1, 2, 4 and 8 workers on the qualified installed
+pack. Solver times were 48.89, 46.29, 47.38 and 56.54 seconds respectively. All 14 retained
+numeric arrays matched the official reference exactly, and all runs stopped after 18,507
+timesteps. Repeating eight then two workers gave 57.13 and 47.24 seconds, again with exact
+array equality. The eight-worker penalty persisted; the smaller two-versus-four difference
+does not establish a robust winner. This is one host, not a portable optimal-thread rule.
+The existing Auto cap of four workers for small grids remains unchanged.
+
+Further patch optimization should profile worker synchronization, MUR boundary updates and
+core field-loop addressing separately. This model does not exercise UPML, so the PML speedup
+cannot be extrapolated to it. The multithreaded compressed engine already uses the SIMD energy
+calculation; replacing a presumed scalar fallback is not an applicable optimization. Any new
+candidate must retain the same mesh, feed, precision and exact stopping criterion and repeat
+raw complex port/far-field comparisons before activation.
+
+`scripts/build-openems-windows-pack.py` packages a qualified staged build; it does not compile or
+publish one. Supply the original pinned Windows archive, a staged native build, the patched
+source checkout, the qualification folder, build provenance, Boost license text and a fresh
+output directory. It checks the upstream hash, source revision, seven patched source hashes,
+patch/two-port/dipole equality records, and qualified DLL hashes. The companion source archive
+contains the modified source and CMake/compiler provenance. Use the existing pinned dependency
+manifest/triplet/overlay under `scripts/native-cpu` to reproduce the dependency prefix; adapt the
+recorded source/build/dependency paths to the local machine. The build uses MSVC 19.42 x64,
+Release `/MD /O2 /Ob2 /DNDEBUG /fp:precise`, with unchanged flush-to-zero behavior.
+
+Existing upstream binary provenance exceptions remain in the third-party license inventory.
+In particular, retaining the original `szip.dll` does not establish libaec provenance for it.

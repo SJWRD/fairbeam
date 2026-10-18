@@ -10,7 +10,7 @@ import { renderNotices } from './licenses/render.mjs';
 import { licenseInputHash } from './licenses/fingerprint.mjs';
 const root = fileURLToPath(new URL('../', import.meta.url));
 process.chdir(root);
-export const inputs = ['package.json', 'package-lock.json', 'src-tauri/Cargo.toml', 'src-tauri/Cargo.lock', 'runtime/pins.json', 'runtime/requirements.txt', 'runtime/install.py', 'runtime/setup-runtime.sh', 'runtime/setup-runtime.ps1', 'scripts/build-openems-macos-pack.py', 'scripts/install-openems-macos.sh', 'vite.config.ts', 'scripts/third-party-licenses.py', 'scripts/third-party-licenses.mjs', 'scripts/licenses/fingerprint.mjs', 'scripts/licenses/render.mjs', 'scripts/licenses/exceptions.json', 'scripts/build-site.mjs', 'scripts/licenses/solver-components.json', 'scripts/licenses/crate-sources.json'];
+export const inputs = ['package.json', 'package-lock.json', 'src-tauri/Cargo.toml', 'src-tauri/Cargo.lock', 'runtime/pins.json', 'runtime/requirements.txt', 'runtime/install.py', 'runtime/setup-runtime.sh', 'runtime/setup-runtime.ps1', 'scripts/build-openems-macos-pack.py', 'scripts/build-openems-windows-pack.py', 'scripts/install-openems-macos.sh', 'vite.config.ts', 'scripts/third-party-licenses.py', 'scripts/third-party-licenses.mjs', 'scripts/licenses/fingerprint.mjs', 'scripts/licenses/render.mjs', 'scripts/licenses/exceptions.json', 'scripts/build-site.mjs', 'scripts/licenses/solver-components.json', 'scripts/licenses/crate-sources.json'];
 // The app's own version changes on every release and does not affect third-party notices, so it is
 // blanked before hashing the manifests that carry it. Dependency versions are still fingerprinted.
 const hash = f => licenseInputHash(f, readFileSync(f, 'utf8'));

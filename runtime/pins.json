@@ -16,9 +16,10 @@
     "version": "v0.37.0-rc3",
     "windows-x64": {
       "kind": "msvc-zip",
-      "url": "https://github.com/thliebig/openEMS-Project/releases/download/v0.37.0-rc3/openEMS_x64_v0.37.0-rc3_msvc.zip",
-      "sha256": "948d04e67a0b7ee4b149176e746b23e609a8ac46c525ba75d6c11071f354339a",
-      "size": 65175361
+      "url": "https://github.com/ismailakdag/fairbeam-releases/releases/download/openems-windows-x64-0.37.0rc3-g12cd91de2-ncpu1-r1/openems-windows-x64-0.37.0rc3-g12cd91de2-ncpu1-r1.zip",
+      "sha256": "eb3fa7ac628fdf9018e0a18d30beb1a2ec41da311cb5fe01ada988ee055356d7",
+      "size": 63581747,
+      "note": "openEMS 12cd91de2 with native CPU patches; official rc3 CSXCAD and Python wheels retained; scripts/build-openems-windows-pack.py"
     },
     "macos-arm64": {
       "kind": "macos-pack",
