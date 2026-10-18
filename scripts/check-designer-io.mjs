@@ -124,9 +124,9 @@ for(const x of [a,b,c,d,guarded]){x.io.dispose();x.core.dispose();}
  assert.equal(x.log.findLast(e=>e[0]==='put')[3],'workspace-1','retry uses actual workspace revision');
  assert.equal(x.core.dirty(),false);assert.equal(x.core.persistencePending(),false);
  assert.deepEqual(calls,[['same','workspace-1',false],['same','workspace-2',false]]);
- // Even unchanged design data stays pending when the results/document save is cancelled.
+ // An ambiguous external write failure stays pending even with unchanged design data.
  finish=deferred();put=x.nextPut();pending=x.io.save();put.resolve(response('workspace-3'));
- await Promise.resolve();finish.reject(Error('Save cancelled'));
+ await Promise.resolve();finish.reject(Error('External reply lost'));
  assert.equal(await pending,false);assert.equal(x.core.dirty(),true);
  // Replacing the session while the external stage is pending retires its response.
  finish=deferred();put=x.nextPut();pending=x.io.save();put.resolve(response('workspace-4'));await Promise.resolve();

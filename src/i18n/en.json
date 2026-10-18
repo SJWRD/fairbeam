@@ -1,8 +1,10 @@
 {
+  "runner.modelUnavailable": "The selected model is unavailable. Reopen the design or model, then try again.",
   "document.open": "Open project…",
   "document.desktopRequired": "Open this project in the desktop app to use its adjacent results folder.",
   "document.conflict": "The document was not overwritten. Reopen it or use Save As to keep a separate copy. {error}",
   "document.saveCancelled": "File save cancelled. Your changes remain in the workspace; save again to write the .fb file.",
+  "document.saveCancelledClean": "File save cancelled.",
   "document.openWarnings": "The design opened with {count} result notices. Expand Project file in the tree to review them.",
   "document.saveWarnings": "Project saved. Result notices: {count}. Expand Project file in the tree to review them.",
   "document.resultsPending": "New results are ready. Save the project to include them in the .fb file.",

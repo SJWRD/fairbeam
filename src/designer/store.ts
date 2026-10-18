@@ -223,7 +223,13 @@ export const defaultDesignerIO = createDesignerIO(defaultDesignerSession, {
   stopPreview, forgetPreviewFailure, resetParamAsks: () => setParamAsks([]),
   schedulePreview: () => schedulePreview(0), applyModelEntry,
   restoreModelSelection: f => selectModel(f?.id ?? ""),
-  persistSavedDesign: persistNativeDocument,
+  persistSavedDesign: async (f, hash, copy) => {
+    const result = await persistNativeDocument(f, hash, copy);
+    // A Save As copy has a new workspace key. Load its real parameter metadata before
+    // sessionIO selects it; that session still checks ownership after this await.
+    if (result && "file" in result && result.file) await refreshModels();
+    return result;
+  },
   // the first picture of the opened design is its saved opening view, if it has one
   openedDesign: () => {
     const pose = validPose(unwrap(draft).view);

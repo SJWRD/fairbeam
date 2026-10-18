@@ -829,10 +829,15 @@ export function setUnsavedDesignCheck(check: (key: string) => boolean) { unsaved
 /** Submit a single run of the current model. `extra` adds per-run options (frequency points). Returns
  * the job, or null when it was not submitted (the reason is in submitError / fieldErrors). */
 export async function startRun(extra: { points?: number; cells?: number } = {}): Promise<Job | null> {
-  const m = currentModel();
-  if (!m || submitting()) return null;
+  if (submitting()) return null;
   setSubmitError(null);
   setSubmitErrorDetail("");
+  const m = currentModel();
+  if (!m) {
+    setFieldErrors(reconcile({}));
+    setSubmitError(t("runner.modelUnavailable"));
+    return null;
+  }
   if (unsavedDesign(m.key)) {
     // the server runs the file on disk: the edits on screen would silently not be simulated
     setSubmitError(t("runner.unsavedDesign"));

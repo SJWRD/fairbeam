@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {build} from 'vite';
 import {readFileSync} from 'node:fs';
 import {fileURLToPath} from 'node:url';
+import {stripTypeScriptTypes} from 'node:module';
 const root=fileURLToPath(new URL('../',import.meta.url)).replaceAll('\\','/');
 const built=await build({root,configFile:false,logLevel:'silent',resolve:{conditions:['browser']},plugins:[{
  name:'native-save-entry',resolveId(id){if(id.endsWith('native-save-entry'))return '\0native-save-entry';},
@@ -10,15 +11,17 @@ const built=await build({root,configFile:false,logLevel:'silent',resolve:{condit
   `export {createDesignerSession} from ${JSON.stringify(root+'src/designer/sessionCore.ts')};`,
   `export {createDesignerIO} from ${JSON.stringify(root+'src/designer/sessionIO.ts')};`,
   `export * as native from ${JSON.stringify(root+'src/lib/nativeDocuments.ts')};`,
+  `export * as runner from ${JSON.stringify(root+'src/runner/store.ts')};`,
+  `export {api} from ${JSON.stringify(root+'src/runner/api.ts')};`,
   `export {createRoot,createEffect,createSignal} from 'solid-js';`,
  ].join('\n');},
 }],build:{write:false,minify:false,lib:{entry:'native-save-entry',formats:['es']}}});
-const previous=new Map(['localStorage','sessionStorage','window'].map(key=>[key,Object.getOwnPropertyDescriptor(globalThis,key)]));
+const previous=new Map(['localStorage','sessionStorage','window','EventSource'].map(key=>[key,Object.getOwnPropertyDescriptor(globalThis,key)]));
 const memory=new Map(),storage={getItem:key=>memory.get(key)??null,setItem:(key,value)=>memory.set(key,String(value)),removeItem:key=>memory.delete(key)};
 globalThis.localStorage={getItem:()=>null,setItem(){},removeItem(){}};globalThis.sessionStorage=storage;
 const code=(Array.isArray(built)?built[0]:built).output.find(x=>x.type==='chunk').code;
 const url='data:text/javascript;base64,'+Buffer.from(code).toString('base64');
-const {createDesignerSession,createDesignerIO,native:n,createRoot,createEffect,createSignal}=await import(url);
+const {createDesignerSession,createDesignerIO,native:n,runner,api,createRoot,createEffect,createSignal}=await import(url);
 const tick=async()=>{for(let i=0;i<12;i++)await Promise.resolve();};
 const deferred=()=>{let resolve;const promise=new Promise(yes=>resolve=yes);return{promise,resolve};};
 const design={schema:'fairbeam.design/1',model:{id:'embedded-model',name:'Antenna'},params:[],materials:[],parts:[],ports:[],resistors:[],simulation:{},mesh:{}};
@@ -27,6 +30,9 @@ const response=(file=f)=>({status:'saved',handle:'grant-A',path:'/Antenna.fb',fi
 const job=(id,status='done',model=f.id)=>({id,model,status,bundle:status==='done'?`${id}.json`:null,finished:status==='done'?Number(id.replace(/\D/g,''))||1:null});
 const old=job('old'),running=job('run-1','running');
 let nativeReply=()=>Promise.resolve(response()),readDesign=async()=>f,nativeCalls=0,writes=0;
+let refreshModels=async()=>{},restoreModelSelection=()=>{};
+const adapterSource=readFileSync(root+'src/designer/store.ts','utf8').match(/persistSavedDesign: (async \(f, hash, copy\) => \{[\s\S]*?\n  \}),/)[1];
+const persistSavedDesign=Function('persistNativeDocument','refreshModels',`return (${stripTypeScriptTypes(adapterSource)});`)(n.persistNativeDocument,()=>refreshModels());
 globalThis.window={__TAURI_INTERNALS__:{invoke:async()=>{nativeCalls++;return nativeReply();}}};
 const core=createDesignerSession();
 const [jobs,setJobs]=createSignal([old,running]),[scope,setScope]=createSignal(f.backup_scope);
@@ -37,12 +43,19 @@ createRoot(dispose=>{disposeEffects=dispose;
 });
 const io=createDesignerIO(core,{
  transport:{design:id=>readDesign(id),saveDesign:async()=>({hash:`workspace-${++writes}`,validation:{valid:true,checks:[]}})},
- rememberLastDesign(){},readBackup(){return null;},clearBackup(){},stopPreview(){},forgetPreviewFailure(){},resetParamAsks(){},schedulePreview(){},applyModelEntry(){},restoreModelSelection(){},
- persistSavedDesign:n.persistNativeDocument,
+ rememberLastDesign(){},readBackup(){return null;},clearBackup(){},stopPreview(){},forgetPreviewFailure(){},resetParamAsks(){},schedulePreview(){},applyModelEntry(){},
+ restoreModelSelection:file=>restoreModelSelection(file),persistSavedDesign,
 });
 try {
  n.resetNativeDocumentResults(f,jobs(),scope());n.rememberNativeDocument(response());core.takeFile(f);
  assert.equal(core.dirty(),false,'existing history is the explicit Open baseline');
+ // Cancelling a clean Save As is a neutral action, not an external-write failure.
+ nativeReply=async()=>({status:'canceled'});
+ assert.equal(await io.saveAs(),false);assert.equal(core.dirty(),false);
+ assert.equal(core.persistencePending(),false);assert.equal(core.file().id,f.id);
+ assert.equal(core.message().text,'File save cancelled.');
+ assert.equal(n.nativeDocumentFor(f).handle,'grant-A','cancel retains the existing binding');
+ nativeCalls=0;nativeReply=async()=>response();
  // Native Save remains available for a clean design: first save and attachment refresh are meaningful.
  const source=readFileSync(root+'src/designer/DesignWorkspace.tsx','utf8');
  const disabled=source.match(/<RButton icon=\{Save\}[^\n]+disabled=\{([^\n]+)\} \/>/)[1];
@@ -68,7 +81,7 @@ try {
  setJobs(structuredClone(jobs()));assert.equal(core.dirty(),false,'missing/skipped references cannot produce a warning loop');
 
  const third=job('run-3');setJobs([...jobs(),third]);nativeReply=async()=>({status:'canceled'});
- assert.equal(await io.save(),false);assert.equal(core.resultsPending(),true);assert.equal(core.persistencePending(),true);
+ assert.equal(await io.save(),false);assert.equal(core.resultsPending(),true);assert.equal(core.persistencePending(),false);
  nativeReply=async()=>{throw Error('disk full');};assert.equal(await io.save(),false);assert.equal(core.resultsPending(),true);
  nativeReply=async()=>response();assert.equal(await io.save(),true);assert.equal(core.dirty(),false);
  setJobs([...jobs(),job('run-4')]);io.releaseDraft();assert.equal(io.isReleased(),true);
@@ -96,9 +109,25 @@ try {
  // Existing pending source results are acknowledged normally by a successful Save As.
  const sourceFile={...f,id:'copy-source',document_id:'copy-source-uuid'};
  const savedCopy={...f,id:'saved-copy',document_id:'saved-copy-uuid'};
+ const sourceEntry={key:sourceFile.id,file:sourceFile.file,kind:'design',model:design.model,params:[]};
+ const copyEntry={...sourceEntry,key:savedCopy.id,file:savedCopy.file,params:[{key:'length',type:'float',default:10,minimum:1,maximum:20}]};
+ runner.setModels([sourceEntry]);let refreshCount=0;
+ api.models=async()=>{await tick();refreshCount++;return [sourceEntry,copyEntry];};
+ refreshModels=runner.refreshModels;
+ restoreModelSelection=file=>{assert.ok(runner.models().some(m=>m.key===file.id),'the copy must be listed before selection/Run');runner.selectModel(file.id);};
  core.takeFile(sourceFile);setJobs([]);n.resetNativeDocumentResults(sourceFile,jobs(),scope());n.rememberNativeDocument(response(sourceFile));
  setJobs([job('source-1','done',sourceFile.id)]);nativeReply=async()=>response(savedCopy);
  assert.equal(core.resultsPending(),true);assert.equal(await io.saveAs(),true);assert.equal(core.file().id,savedCopy.id);assert.equal(core.dirty(),false);
+ assert.equal(refreshCount,1,'Save As awaits the refreshed workspace list');
+ assert.equal(runner.currentModel().key,savedCopy.id);assert.equal(runner.values.length,'10','copy parameter defaults are ready immediately');
+ const submissions=[];api.submit=async payload=>{submissions.push(payload);return{id:'immediate-copy-run',model:payload.model,status:'queued'};};
+ api.runs=async()=>[];
+ globalThis.EventSource=class {addEventListener(){}close(){}};
+ assert.equal((await runner.startRun()).model,savedCopy.id);
+ assert.equal(submissions.length,1);assert.equal(submissions[0].model,savedCopy.id);assert.equal(submissions[0].params.length,10);
+ runner.detach();runner.selectModel('missing-copy');runner.setSubmitErrorDetail('obsolete detail');
+ assert.equal(await runner.startRun(),null);assert.match(runner.submitError(),/model is unavailable/i);assert.equal(runner.submitErrorDetail(),'');assert.equal(submissions.length,1);
+ refreshModels=async()=>{};restoreModelSelection=()=>{};
  // A source completion after the copy request starts must retain the source session.
  core.takeFile(sourceFile);setJobs([]);n.resetNativeDocumentResults(sourceFile,jobs(),scope());
  setJobs([job('source-2','done',sourceFile.id)]);
@@ -109,6 +138,42 @@ try {
  assert.equal(core.file().id,sourceFile.id);assert.notEqual(core.file().hash,sourceHash);
  assert.equal(core.resultsPending(),true);assert.equal(core.persistencePending(),true);
  assert.match(core.message().text,/copy saved/i);
+
+ // A cancelled picker preserves real work, but never creates it on a clean document.
+ for(const change of ['clean','dirty','pending','results','late-edit','late-result','undo-during-picker']) {
+  const current={...f,id:`cancel-${change}`,document_id:`uuid-${change}`};core.takeFile(current);setJobs([]);
+  n.resetNativeDocumentResults(current,jobs(),scope());n.rememberNativeDocument(response(current));
+  if(change==='dirty'||change==='undo-during-picker')core.edit(d=>d.model.description='Saved only to workspace');
+  if(change==='pending')core.setPersistencePending(true);
+  if(change==='results')setJobs([job('cancel-result','done',current.id)]);
+  const cancelWait=deferred();nativeReply=()=>cancelWait.promise;const cancel=io.saveAs();await tick();
+  if(change==='late-edit')core.edit(d=>d.model.description='Later draft');
+  if(change==='late-result')setJobs([job('later-result','done',current.id)]);
+  if(change==='undo-during-picker')core.undo();
+  cancelWait.resolve({status:'canceled'});assert.equal(await cancel,false);
+  assert.equal(core.file().id,current.id);assert.match(core.file().hash,/^workspace-/);
+  assert.equal(core.file().design,current.design,'cancellation keeps the external saved baseline');
+  assert.equal(core.dirty(),change!=='clean',change);
+  assert.equal(core.persistencePending(),['dirty','pending','undo-during-picker'].includes(change),change);
+  assert.match(core.message().text,change==='clean'?/^File save cancelled\.$/:/changes remain/);
+  if(change==='dirty'){core.undo();assert.equal(core.dirty(),true,'Undo cannot conceal a workspace write missing from the external document');}
+ }
+ // The newly added catalog await cannot take over another document or newer draft.
+ for(const change of ['edit','replace','results']) {
+  const current={...f,id:`refresh-${change}`,document_id:`refresh-uuid-${change}`};core.takeFile(current);setJobs([]);
+  n.resetNativeDocumentResults(current,jobs(),scope());n.rememberNativeDocument(response(current));
+  const refreshWait=deferred();let refreshing=false;refreshModels=()=>{refreshing=true;return refreshWait.promise;};nativeReply=async()=>response(savedCopy);
+  let selections=0;restoreModelSelection=()=>selections++;
+  const copy=io.saveAs();await tick();assert.equal(refreshing,true);
+  if(change==='edit')core.edit(d=>d.model.description='Newer draft');
+  if(change==='replace')core.takeFile({...f,id:'replacement-owner',hash:'replacement-hash',backup_scope:'workspace-B'});
+  if(change==='results')setJobs([job('during-refresh','done',current.id)]);
+  refreshWait.resolve();assert.equal(await copy,false);assert.equal(selections,0);
+  assert.equal(core.file().id,change==='replace'?'replacement-owner':current.id);
+  assert.equal(core.dirty(),change!=='replace');
+  if(change==='replace')assert.equal(core.file().hash,'replacement-hash');
+ }
+ refreshModels=async()=>{};restoreModelSelection=()=>{};
 
  // Even a previously clean truncated journal needs a conservative reminder after reload.
  const oldLarge={...f,id:'clean-large-history'};

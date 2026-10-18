@@ -18,7 +18,7 @@ assert.deepEqual(calls[0],{command:'native_document_save',args:{request:{handle:
 assert.equal(native.nativeDocumentFor(original).handle,'native-grant');
 assert.equal(native.nativeDocumentFor(file('one','other-workspace')),undefined);
 result={status:'canceled'};
-await assert.rejects(native.persistNativeDocument(original,'workspace-newer',false),/cancel/i);
+assert.deepEqual(await native.persistNativeDocument(original,'workspace-newer',false),{canceled:true});
 assert.equal(native.nativeDocumentFor(original).handle,'native-grant','cancel does not retire the existing grant');
 let finish;result=()=>new Promise(resolve=>finish=resolve);
 const delayed=native.persistNativeDocument(original,'snapshot',false);

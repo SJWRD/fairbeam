@@ -143,7 +143,7 @@ export async function restoreNativeDocumentBinding(file: DesignFile): Promise<vo
 
 /** The shell retains both path and external revision. The viewer sends only a granted handle
  * and the exact workspace revision already saved by the designer. */
-export async function persistNativeDocument(file: DesignFile, hash: string, saveAs: boolean): Promise<{ file?: DesignFile; warnings: string[] } | void> {
+export async function persistNativeDocument(file: DesignFile, hash: string, saveAs: boolean): Promise<{ canceled: true } | { file?: DesignFile; warnings: string[] } | void> {
   if (!nativeDocumentsAvailable()) return;
   if (hasDocumentResultScope(file) && !nativeDocumentFor(file)) await restoreNativeDocumentBinding(file);
   const current = nativeDocumentFor(file);
@@ -152,7 +152,7 @@ export async function persistNativeDocument(file: DesignFile, hash: string, save
     request: { handle: current?.handle, modelId: file.id, workspaceHash: hash, saveAs,
       suggestedName: `${file.design.model.name || file.id}.fb` },
   });
-  if (result.status === "canceled") throw new Error(t("document.saveCancelled"));
+  if (result.status === "canceled") return { canceled: true };
   // Another Open of this UUID may have selected a different location meanwhile. A late save
   // remains committed on disk, but must not retarget that newer selection's next Save.
   if (nativeDocumentFor(file) === current) {

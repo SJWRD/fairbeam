@@ -10,15 +10,17 @@ release. Existing design JSON and result bundles remain supported.
   paths to the running window. Queued requests wait while a modal window is open. Unsaved
   changes are handled before opening a queued document.
 - Save writes the workspace revision first, then the selected `.fb` file. The first save opens
-  a native file picker. Canceling or failing that second step keeps the draft marked unsaved;
-  retry uses the workspace revision that was actually written.
+  a native file picker. Canceling keeps existing unsaved edits and results pending, but does not
+  mark a clean document changed. A failed write retains a retry reminder; retry uses the workspace
+  revision that was actually written.
 - Save remains available for an unchanged writable design, so newly completed runs can be added
   without editing geometry. Completions observed in the current document's workspace mark it
   unsaved. A successful save acknowledges the results it started with; later completions still
   need another save. Results skipped by the storage adapter produce a persistent warning.
 - Save As creates a separate document identity and editable workspace copy. Choose a new filename:
   replacing an existing destination through Save As is currently refused, even if the native
-  picker offered an overwrite confirmation.
+  picker offered an overwrite confirmation. The model list is refreshed before selecting the
+  copy, so a simulation can start immediately with its own model and parameters.
 - Reopening a document uses its stable UUID instead of importing another workspace copy. Moving
   the `.fb` file and its adjacent result folder together preserves relative result references.
 - Project file details in the model tree show the location and each referenced result's status.
@@ -34,6 +36,14 @@ The completion reminder uses a bounded per-window session journal of job identif
 contents. It survives a renderer reload, but is not an authoritative attachment ledger and does
 not survive a full app restart. Explicit Open establishes a fresh baseline from the selected
 document; Save can still collect eligible completed runs from that document's workspace history.
+
+## Existing JSON files
+
+The `.fb` format is additive. Existing `.design.json` designs and JSON result bundles still open
+through File > Open or import/drop. Legacy Antenlab design and result schema names are still
+recognized. Importing a JSON design creates an editable workspace copy; it does not rewrite the
+source JSON file. A desktop Save can then create a separate `.fb` project. JSON export remains
+available for interchange, and importing a result-only bundle does not invent an editable design.
 
 ## Format
 

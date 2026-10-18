@@ -19,9 +19,9 @@ export interface DesignerIODependencies {
   restoreModelSelection: (file: DesignFile | null) => void;
   /** a design was opened (and its backup, if any, restored): the 3D view takes the draft's opening view */
   openedDesign?: (file: DesignFile) => void;
-  /** Persist the saved workspace revision in its selected native document. A failed/cancelled
-   * external save keeps the new workspace hash but never marks the draft fully saved. */
-  persistSavedDesign?: (file: DesignFile, hash: string, saveAs: boolean) => Promise<{ file?: DesignFile; warnings?: string[] } | void>;
+  /** Persist the saved workspace revision in its selected native document. Cancellation keeps
+   * the previous saved baseline; an ambiguous write failure also retains a retry reminder. */
+  persistSavedDesign?: (file: DesignFile, hash: string, saveAs: boolean) => Promise<{ canceled: true } | { file?: DesignFile; warnings?: string[] } | void>;
 }
 /** IO owns no global registration or viewport: dependencies belong to its captured session. */
 export function createDesignerIO(core: Core, deps: DesignerIODependencies) {
@@ -137,6 +137,18 @@ export function createDesignerIO(core: Core, deps: DesignerIODependencies) {
       let warnings: string[] = [];
       try {
         const persisted = await deps.persistSavedDesign?.(f, res.hash, copy);
+        if (!currentSave()) return false;
+        if (persisted && "canceled" in persisted) {
+          batch(() => {
+            // A cancelled picker wrote no external file. Keep real pending work, including
+            // workspace edits that could otherwise be hidden by Undo after cancellation.
+            setFile({ ...f, hash: res.hash });
+            core.setPersistencePending(core.persistencePending() || JSON.stringify(d) !== JSON.stringify(f.design));
+            setConflict(null);
+            setMessage({ tone: "warn", text: t(dirty() ? "document.saveCancelled" : "document.saveCancelledClean"), sticky: true });
+          });
+          return false;
+        }
         replacement = persisted?.file;
         warnings = persisted?.warnings ?? [];
       } catch (error) {
