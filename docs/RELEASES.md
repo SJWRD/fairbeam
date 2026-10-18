@@ -142,8 +142,9 @@ editing them, or the prefill stops working.
 
 ## Runtime components
 
-- **Windows openEMS:** the official MSVC build. It is pinned by URL and SHA-256 in
-  `runtime/pins.json`, and nothing of it is republished.
+- **Windows openEMS:** the pinned MSVC package includes the native CPU and time-domain HDF5
+  batching patches. Its URL, SHA-256 and build provenance are recorded in `runtime/pins.json`;
+  retain corresponding sources and notices with the runtime release.
 - **macOS openEMS pack:** built with `scripts/build-openems-macos-pack.py` (docs/DESKTOP.md), then
   released under its own tag. The pack contains its license texts and `NOTICE.md`, and the NOTICE is
   also a separate asset. Create it with `--latest=false` so that it never becomes the latest
@@ -176,6 +177,24 @@ editing them, or the prefill stops working.
 
 One entry per release, newest first. The installers are on the
 [release page](https://github.com/ismailakdag/fairbeam-releases/releases) of each version.
+
+### 0.8.0, 2026-10-18
+
+- Portable `.fb` documents with native Open, Save and Save As, while keeping support for
+  existing JSON designs. Saving a JSON design as `.fb` preserves the source JSON.
+- Completed runs are saved automatically beside the document in separate `runs/*-v2`
+  result directories, with checksummed packages. Unsaved design changes are not silently saved.
+- macOS document saves preserve Finder extended attributes and ACLs; Unicode-normalized
+  searches match decomposed file names and paths.
+- Updated Windows CPU runtime and Windows-only HDF5 time-domain batching. macOS keeps its
+  existing CPU runtime and GPU behavior. Elmer and coax remain experimental; this release
+  does not establish convergence or accuracy for arbitrary designs.
+- **Known Windows limitation:** on some installations Fairbeam may not appear in the initial
+  Open With picker. Choose **Open With > Choose another app > Choose an app on your PC** and
+  select `%LOCALAPPDATA%\Fairbeam\fairbeam.exe`, then choose **Always**. Cold double-click,
+  Open With and delivery to an already running app were verified after this explicit choice;
+  automatic first-install discovery remains unresolved. Opening `.fb` from within Fairbeam
+  is also available.
 
 ### 0.7.8, 2026-10-17
 
