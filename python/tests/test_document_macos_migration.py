@@ -44,8 +44,12 @@ class PortableResultMigrationTests(unittest.TestCase):
             bundle = (folder / "metadata" / meta["bundle_file"]).resolve()
             self.assertEqual(doc.digest(bundle.read_bytes()), ref["sha256"])
         for name, value in attrs.items():
-            import os
-            self.assertEqual(os.getxattr(case.path, name), value)
+            # Python's os.*xattr API is Linux-only; use macOS's native tool.
+            result = subprocess.run(
+                ["xattr", "-px", name, str(case.path)],
+                check=True, capture_output=True, text=True,
+            )
+            self.assertEqual(bytes.fromhex(result.stdout), value)
         self.assertEqual(len(case.bridge.open(case.path)["results"]), 2)
 
     def test_v1_results_survive_completion_and_v2_export(self):
