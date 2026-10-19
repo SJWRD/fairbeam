@@ -76,7 +76,10 @@ pub struct SaveRequest {
 fn validate_draft_request(request: &SaveRequest) -> Result<(), Value> {
     if let Some(design) = &request.draft_design {
         if request.handle.is_some() || !design.is_object() {
-            return Err(error("A draft snapshot requires a first unbound document save", 400));
+            return Err(error(
+                "A draft snapshot requires a first unbound document save",
+                400,
+            ));
         }
     }
     Ok(())
@@ -310,6 +313,13 @@ impl Selections {
             .unwrap_or(Value::Null)
     }
 
+    /// Retire only this OS-open request. Existing document grants and files are untouched.
+    fn dismiss_pending(&mut self, handle: &str) -> bool {
+        let before = self.pending.len();
+        self.pending.retain(|entry| entry.handle != handle);
+        self.pending.len() != before
+    }
+
     fn grant(&self, handle: &str) -> Result<Grant, Value> {
         self.grants
             .get(handle)
@@ -503,9 +513,9 @@ async fn open_selected(
     let state = app.state::<NativeDocuments>();
     let mut selections = state.0.lock().unwrap();
     let result = selections.remember(selected, response, pending.clone(), "opened", client)?;
-    // Cancellation and failures leave the OS request queued. Only a successful open consumes it.
+    // Success consumes the request here; the viewer explicitly dismisses cancellations/failures.
     if let Some(handle) = pending {
-        selections.pending.retain(|entry| entry.handle != handle);
+        selections.dismiss_pending(&handle);
     }
     Ok(result)
 }
@@ -562,7 +572,7 @@ pub fn native_document_next_open(
     exclude: Option<Vec<String>>,
 ) -> Result<Value, Value> {
     // This is only a peek: no filesystem read or backend mutation precedes the viewer's
-    // unsaved-work confirmation. The same handle remains pending when the viewer cancels.
+    // unsaved-work confirmation. Deferred requests remain pending until opened or dismissed.
     let exclude = exclude.unwrap_or_default();
     if exclude.len() > MAX_PENDING_OPENS || exclude.iter().any(|handle| handle.len() > 80) {
         return Err(error("Invalid pending-document exclusions", 400));
@@ -573,6 +583,15 @@ pub fn native_document_next_open(
         .lock()
         .unwrap()
         .next_open(&exclude))
+}
+
+#[tauri::command]
+pub fn native_document_dismiss_pending(app: AppHandle, handle: String) -> bool {
+    app.state::<NativeDocuments>()
+        .0
+        .lock()
+        .unwrap()
+        .dismiss_pending(&handle)
 }
 
 #[tauri::command]
@@ -998,7 +1017,7 @@ mod tests {
         selections.queue(PathBuf::from("second.FB"));
         let first = selections.next_open(&[]);
         assert_eq!(first["displayName"], "first.fb");
-        assert_eq!(selections.next_open(&[]), first); // peeking/canceling never consumes a request
+        assert_eq!(selections.next_open(&[]), first); // peeking never consumes a request
         let exclude = [first["handle"].as_str().unwrap().to_owned()];
         assert_eq!(selections.next_open(&exclude)["displayName"], "second.FB");
         assert_eq!(selections.pending.len(), 2); // excluded requests remain available for retry
@@ -1022,6 +1041,62 @@ mod tests {
             selections.queue(PathBuf::from(format!("{i}.fb")));
         }
         assert_eq!(selections.pending.len(), MAX_PENDING_OPENS);
+    }
+
+    #[test]
+    fn dismissed_os_open_does_not_precede_later_or_explicitly_reopened_paths() {
+        let mut selections = Selections::default();
+        let client = crate::server::test_document_client(12345);
+        selections
+            .remember(
+                PathBuf::from("Already open.fb"),
+                document_response("existing", 'a'),
+                Some("existing-grant".into()),
+                "opened",
+                client.clone(),
+            )
+            .unwrap();
+        let existing = selections.restore("existing", &client);
+        selections.queue(PathBuf::from("Canceled.fb"));
+        selections.queue(PathBuf::from("Later.fb"));
+        let canceled = selections.next_open(&[])["handle"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        assert!(!selections.dismiss_pending("Canceled.fb")); // Paths cannot act as handles.
+        assert!(selections.dismiss_pending(&canceled));
+        assert!(selections.pending_path(&canceled).is_err());
+        assert_eq!(selections.next_open(&[])["displayName"], "Later.fb");
+        assert!(!selections.dismiss_pending(&canceled)); // Safe after success or duplicate cleanup.
+        selections.queue(PathBuf::from("Canceled.fb"));
+        let reopened = selections.pending.back().unwrap().handle.clone();
+        assert_ne!(reopened, canceled);
+        assert!(!selections.dismiss_pending(&canceled));
+        assert_eq!(
+            selections.pending_path(&reopened).unwrap(),
+            PathBuf::from("Canceled.fb")
+        );
+        assert_eq!(selections.grants.len(), 1); // No new filesystem grant.
+        assert_eq!(selections.restore("existing", &client), existing); // Existing Save still works.
+    }
+
+    #[test]
+    fn dismissed_failed_os_open_releases_queue_capacity() {
+        let mut selections = Selections::default();
+        for i in 0..MAX_PENDING_OPENS {
+            selections.queue(PathBuf::from(format!("{i}.fb")));
+        }
+        let failed = selections.next_open(&[])["handle"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        assert!(selections.dismiss_pending(&failed));
+        selections.queue(PathBuf::from("New request.fb"));
+        assert_eq!(selections.pending.len(), MAX_PENDING_OPENS);
+        assert_eq!(
+            selections.pending.back().unwrap().path,
+            PathBuf::from("New request.fb")
+        );
     }
 
     #[test]

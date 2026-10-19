@@ -15,7 +15,7 @@ import { openDroppedFile } from "./runner/dropFile";
 import Home from "./home/Home";
 import { DesignDock, DesignKeys, DesignSide, DesignTreePanel, DrawHint, Ribbon } from "./designer/DesignWorkspace";
 import { file as designFile, draft as designDraft, removeSelected, canRemove, save as saveDesign, enterDesign, reopenLastDesign, openNativeDocument, undo as undoDesign, redo as redoDesign } from "./designer/store";
-import { nativeDocumentsAvailable, pendingNativeDocument } from "./lib/nativeDocuments";
+import { dismissPendingNativeDocument, nativeDocumentsAvailable, pendingNativeDocument } from "./lib/nativeDocuments";
 import SaveAsDialog, { canSaveAs, openSaveAs, saveAsOpen, setSaveAsOpen } from "./designer/SaveAsDialog";
 import { MeshViewPanel } from "./designer/MeshView";
 import MainArea from "./designer/MainArea";
@@ -266,29 +266,44 @@ export default function App() {
     // a reload does not drop the open design: it comes back once the example bundle is in (it must
     // not replace the design's preview) and the server has listed its models
     if (await probe && !disposed) {
-      let ready = false, busy = false;
+      let ready = false, busy = false, receivedOpenRequest = false;
       const attempted = new Set<string>();
       const hasOpenModal = () => !!document.querySelector(".scrim, [aria-modal='true'], dialog[open]");
       const openPending = async () => {
         if (!ready || busy || !nativeDocumentsAvailable() || hasOpenModal()) return false;
         busy = true;
         try {
+          // A temporary IPC failure must not resurrect a canceled request on the next OS
+          // event. Keep it excluded until the idempotent native dismissal succeeds.
+          for (const handle of attempted) {
+            try { await dismissPendingNativeDocument(handle); attempted.delete(handle); }
+            catch { /* Retry cleanup on the next poll; other queued requests remain usable. */ }
+          }
           const pending = await pendingNativeDocument([...attempted]);
           // A modal can open while the shell is finding the next request. Leave the
           // request queued until it closes; do not replace its underlying document.
           if (!ready || hasOpenModal()) return false;
           if (!pending || attempted.has(pending.handle)) return false;
-          const opened = await openNativeDocument(pending.handle, pending.displayName);
-          // A save or another open may be finishing. Retry that request on the next poll;
-          // cancellation and errors wait for another explicit OS-open event.
-          if (opened !== null) attempted.add(pending.handle);
-          return opened === true;
+          receivedOpenRequest = true;
+          let opened: boolean | null = false;
+          try {
+            opened = await openNativeDocument(pending.handle, pending.displayName);
+            return opened === true;
+          } finally {
+            // Null means a save/open is finishing: retry on the next poll. A final result,
+            // cancellation or thrown failure consumes only this request.
+            if (opened !== null) {
+              attempted.add(pending.handle);
+              await dismissPendingNativeDocument(pending.handle);
+              attempted.delete(pending.handle);
+            }
+          }
         } catch { return false; } finally { busy = false; }
       };
       ready = true;
-      if (!(await openPending()) && !disposed && !attempted.size) await reopenLastDesign();
+      if (!(await openPending()) && !disposed && !receivedOpenRequest) await reopenLastDesign();
       if (disposed) { ready = false; return; }
-      const onOpen = () => { attempted.clear(); void openPending(); };
+      const onOpen = () => { void openPending(); };
       window.addEventListener("fairbeam:native-document-open", onOpen);
       // OS launch can arrive while the renderer was starting; the shell keeps the queue.
       const timer = nativeDocumentsAvailable() ? setInterval(() => void openPending(), 2500) : undefined;

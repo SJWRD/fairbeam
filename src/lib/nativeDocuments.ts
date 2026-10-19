@@ -139,6 +139,8 @@ async function invoke<T>(command: string, args?: Record<string, unknown>): Promi
 }
 export const pickNativeDocument = (handle?: string) => invoke<DocumentOpen>("native_document_open", { handle });
 export const pendingNativeDocument = (exclude: string[] = []) => invoke<{ handle: string; displayName: string } | null>("native_document_next_open", { exclude });
+/** Consume a canceled/failed OS request without revoking an opened document's grant. */
+export const dismissPendingNativeDocument = (handle: string) => invoke<boolean>("native_document_dismiss_pending", { handle });
 
 /** A renderer reload may recover an existing shell grant. Never replace the current workspace
  * design with a cached file, and never infer authorization from a saved browser path. */
