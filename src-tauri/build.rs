@@ -21,6 +21,7 @@ fn main() {
         "native_document_save",
         "native_document_next_open",
         "native_document_restore",
+        "native_document_archive",
         "get_general_settings",
         "set_update_check_on_start",
         "check_updates_now",

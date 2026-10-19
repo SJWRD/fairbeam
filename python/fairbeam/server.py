@@ -76,6 +76,7 @@ import math
 import os
 import re
 import shutil
+import socket
 import subprocess
 import sys
 import threading
@@ -624,7 +625,12 @@ class App:
             if job.kind == "research" and not job.bundle:
                 return  # cavity/periodic results have no ordinary viewer bundle
             if self.projects_dir.exists():
-                rebuild_index(self.projects_dir)
+                try:
+                    rebuild_index(self.projects_dir)
+                except (OSError, ValueError) as exc:
+                    # The bundle already exists. An unavailable optional index must
+                    # not strand convergence or suppress the prior completion hook.
+                    print(f"fairbeam serve: result index was not updated: {type(exc).__name__}", flush=True)
             if job.kind != "research":
                 self.studies.on_finished(job)  # a mesh convergence study queues its next density
 
@@ -1844,6 +1850,10 @@ class Handler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
     app: App  # set on the server class
 
+    def handle_one_request(self):
+        self._body_read = 0
+        return super().handle_one_request()
+
     def log_message(self, fmt, *args):  # quieter than the default; skip SSE/health noise
         if getattr(self.server, "quiet", False):
             return
@@ -1882,6 +1892,41 @@ class Handler(BaseHTTPRequestHandler):
         self.close_connection = True  # an unread request body must not leak into the next request
         self._send(status, json.dumps({"error": message, "status": status, **extra}, default=str).encode(),
                    "application/json; charset=utf-8", {"Connection": "close"})
+        self._finish_rejection()
+
+    def _finish_rejection(self):
+        """Deliver an early refusal before closing over an in-flight request body.
+
+        Windows can reset a socket closed with unread input, losing the already-sent
+        error response. Half-close the response first, then discard a bounded amount
+        of input. Nothing is parsed or authorized here, and slow/oversized bodies
+        cannot hold a handler indefinitely. Connections are never reused.
+        """
+        try:
+            remaining = int(self.headers.get("Content-Length") or 0) - getattr(self, "_body_read", 0)
+        except ValueError:
+            return
+        if remaining <= 0:
+            return
+        remaining = min(remaining, 64 * 1024)
+        deadline = time.monotonic() + 0.1
+        previous_timeout = self.connection.gettimeout()
+        try:
+            self.wfile.flush()
+            self.connection.shutdown(socket.SHUT_WR)
+            while remaining > 0:
+                budget = deadline - time.monotonic()
+                if budget <= 0:
+                    break
+                self.connection.settimeout(budget)
+                chunk = self.rfile.read1(min(remaining, 8192))
+                if not chunk:
+                    break
+                remaining -= len(chunk)
+        except OSError:
+            pass  # response is already sent; a vanished/slow peer needs no retry
+        finally:
+            self.connection.settimeout(previous_timeout)
 
     def _guard(self) -> bool:
         peer = self.client_address[0] if self.client_address else ""
@@ -1913,6 +1958,7 @@ class Handler(BaseHTTPRequestHandler):
         if n > limit:
             raise ApiError(413, "request body too large")
         raw = self.rfile.read(n) if n else b"{}"
+        self._body_read = n
         try:
             body = json.loads(raw or b"{}")
         except (json.JSONDecodeError, UnicodeDecodeError):

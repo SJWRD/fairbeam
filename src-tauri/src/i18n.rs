@@ -88,6 +88,7 @@ const TEXTS: &[(&str, &str, &str)] = &[
     ),
     ("update-install", "Install and restart", "Kur ve yeniden başlat"),
     ("update-later", "Later", "Daha sonra"),
+    ("update-ready", "The update is downloaded. Install and restart now? Running simulations, including those started during the download, will be cancelled. Choose Later to keep working.", "Güncelleme indirildi. Şimdi kurulup yeniden başlatılsın mı? İndirme sırasında başlatılanlar dahil, süren simülasyonlar iptal edilecek. Çalışmaya devam etmek için Daha sonra'yı seçin."),
     ("update-failed-title", "Update failed", "Güncelleme başarısız"),
     ("update-failed", "The update could not be installed: {error}", "Güncelleme kurulamadı: {error}"),
     ("update-move-title", "Move Fairbeam to Applications", "Fairbeam uygulamasını Uygulamalar klasörüne taşıyın"),

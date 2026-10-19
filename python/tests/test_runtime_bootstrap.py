@@ -14,7 +14,6 @@ import unittest
 
 SCRIPT = Path(__file__).resolve().parents[2] / "runtime" / "setup-runtime.ps1"
 POWERSHELL = r"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe"
-PORTS = range(5510, 5541)
 
 
 def ps_string(value):
@@ -60,16 +59,20 @@ foreach ($definition in $ast.EndBlock.Statements) {
     )
 
 
+class LocalHTTPServer(http.server.ThreadingHTTPServer):
+    # HTTPServer enables SO_REUSEADDR. On Windows that allows two live listeners
+    # to claim the same address, sending a proxy request to the wrong fixture.
+    allow_reuse_address = False
+
+    def server_bind(self):
+        if os.name == "nt":
+            self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
+        super().server_bind()
+
+
 class LocalServer:
     def __init__(self, handler):
-        for port in PORTS:
-            try:
-                self.server = http.server.ThreadingHTTPServer(("127.0.0.1", port), handler)
-                break
-            except OSError:
-                continue
-        else:
-            raise RuntimeError("No test port available in 5510-5540")
+        self.server = LocalHTTPServer(("127.0.0.1", 0), handler)
         self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
 
     @property
@@ -94,6 +97,15 @@ class QuietHandler(http.server.BaseHTTPRequestHandler):
 @unittest.skipUnless(os.name == "nt" and Path(POWERSHELL).is_file(),
                      "requires Windows PowerShell 5.1")
 class RuntimeBootstrapDownload(unittest.TestCase):
+    def test_concurrent_proxy_and_origin_have_distinct_exclusive_ports(self):
+        with LocalServer(QuietHandler) as origin, LocalServer(QuietHandler) as proxy:
+            self.assertNotEqual(origin.server.server_port, proxy.server.server_port)
+            if os.name == "nt":
+                with socket.socket() as intruder:
+                    intruder.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+                    with self.assertRaises(OSError):
+                        intruder.bind(origin.server.server_address)
+
     def download(self, url, destination, payload, proxy_env=None):
         return run_powershell(
             "Get-Pinned %s %s %s 'download-test'" % (

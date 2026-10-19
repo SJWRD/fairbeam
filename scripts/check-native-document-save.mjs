@@ -48,6 +48,8 @@ const io=createDesignerIO(core,{
  rememberLastDesign(){},readBackup(){return null;},clearBackup(){},stopPreview(){},forgetPreviewFailure(){},resetParamAsks(){},schedulePreview(){},applyModelEntry(){},
  restoreModelSelection:file=>restoreModelSelection(file),persistSavedDesign,persistUnsavedDesign,
 });
+const adopted=[];
+io.observeSavedDocumentReplacement((before,after)=>adopted.push([before.id,after.id]));
 try {
  for(const outcome of ['saved','cancel','clean-cancel','failure','late-edit','late-open','open-after-fork']) {
   const source={...f,id:`legacy-${outcome}`,document_id:undefined};
@@ -57,6 +59,7 @@ try {
   globalThis.window.__TAURI_INTERNALS__.invoke=async(command,args)=>{nativeCalls++;request=args.request;return wait.promise;};
   let ready=0;
   if(outcome==='open-after-fork')restoreModelSelection=()=>queueMicrotask(()=>core.takeFile({...f,id:'after-fork-owner',hash:'after-fork-hash'}));
+  const previousAdoptions=adopted.length;
   const operation=io.saveBeforeLeaving(()=>ready++);await tick();
   assert.equal(writes,beforeWrites,'first native save never writes the legacy source JSON');
   assert.deepEqual(request.draftDesign,draftAtSave);assert.equal(request.workspaceHash,source.hash);
@@ -69,6 +72,8 @@ try {
   else wait.resolve(response(fork));
   assert.equal(await operation,outcome==='saved');
   assert.equal(ready,outcome==='saved'?1:0,'only the intentionally saved and still-current replacement may leave');
+  assert.equal(adopted.length-previousAdoptions,['saved','open-after-fork'].includes(outcome)?1:0,'auxiliary drafts migrate only when the save actually adopts its replacement');
+  if(adopted.length>previousAdoptions)assert.deepEqual(adopted.at(-1),[source.id,fork.id]);
   restoreModelSelection=()=>{};
   assert.equal(writes,beforeWrites);
   if(outcome==='saved'){assert.equal(core.file().id,fork.id);assert.equal(core.dirty(),false);}

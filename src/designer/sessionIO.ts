@@ -28,6 +28,12 @@ export interface DesignerIODependencies {
 /** IO owns no global registration or viewport: dependencies belong to its captured session. */
 export function createDesignerIO(core: Core, deps: DesignerIODependencies) {
   let disposed = false;
+  const savedDocumentObservers = new Set<(previous: DesignFile, next: DesignFile) => void>();
+  /** Auxiliary drafts follow this session only when its own Save adopts a new document. */
+  function observeSavedDocumentReplacement(observer: (previous: DesignFile, next: DesignFile) => void) {
+    savedDocumentObservers.add(observer);
+    return () => { savedDocumentObservers.delete(observer); };
+  }
   const alive = () => !disposed && !core.isDisposed();
   const { file, saving, asyncState, setLoading, setMessage, setSaving, snapshot, conflict,
     setFile, setConflict, showSaveNote, setServerChecks, setChecksTicket, setServerErrors, dirty } = core;
@@ -178,7 +184,13 @@ export function createDesignerIO(core: Core, deps: DesignerIODependencies) {
           return false;
         }
         deps.clearBackup(f);
-        take(replacement);
+        // Publish the new identity and migrate auxiliary drafts in one batch, before
+        // navigation observers can mistake the successful save for an unrelated Open.
+        const next = replacement;
+        batch(() => {
+          take(next);
+          for (const observer of savedDocumentObservers) observer(f, next);
+        });
         const replacementTicket = asyncState.ticket();
         deps.restoreModelSelection(replacement);
         deps.schedulePreview();
@@ -250,11 +262,12 @@ export function createDesignerIO(core: Core, deps: DesignerIODependencies) {
   function cancelNavigation() { asyncState.cancelNavigation(); navigationTarget = null; }
   function dispose() {
     if (disposed) return;
+    savedDocumentObservers.clear();
     disposed = true; cancelNavigation(); released = null;
     asyncState.invalidatePreview();
     if (!core.isDisposed()) { setLoading(false); setSaving(false); }
   }
-  return { take, openDesign, save, saveExplicit, saveAs, saveBeforeLeaving, restoreRecoveredDraft, applyValidation, isReleased, dispose,
+  return { take, openDesign, save, saveExplicit, saveAs, saveBeforeLeaving, restoreRecoveredDraft, applyValidation, isReleased, dispose, observeSavedDocumentReplacement,
     navigationTarget: () => navigationTarget,
     setNavigationTarget: (id: string | null) => { if (alive()) navigationTarget = id; },
     releaseDraft: () => { if (alive()) released = { draft: asyncState.ticket(), results: core.pendingResultsToken() }; },

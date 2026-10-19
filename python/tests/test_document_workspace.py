@@ -6,9 +6,11 @@ from pathlib import Path
 import tempfile
 from types import SimpleNamespace
 import unittest
+import uuid
 from unittest import mock
 
 from fairbeam import documents as doc, modelfiles
+from fairbeam import document_workspace
 from fairbeam.design import blank_design
 from fairbeam.document_workspace import DocumentWorkspace
 
@@ -138,6 +140,74 @@ class DocumentWorkspaceTests(unittest.TestCase):
         self.bridge._write_state(duplicate)
         with self.assertRaisesRegex(doc.DocumentConflict, "Multiple documents"):
             self.bridge.document_id_for(saved["file"]["id"])
+
+    def test_identity_lookup_ignores_foreign_and_malformed_metadata(self):
+        file = self.workspace_design()
+        saved = self.bridge.save(self.path, file["id"], file["hash"])
+        state_path = self.bridge._state_path(saved["document"]["id"])
+        foreign = {
+            "notes.json": b"[1,2]",
+            "._" + state_path.name: b"\x00\x05\x16\x07\xff\xfe",
+            state_path.stem + " copy.json": state_path.read_bytes(),
+            str(uuid.uuid4()) + ".json": b"\xff\xfe",
+            str(uuid.uuid4()) + ".json": b"{",
+            str(uuid.uuid4()) + ".json": b"[]",
+            str(uuid.uuid4()) + ".json": b'{"schema":"some.other/1"}',
+        }
+        for name, raw in foreign.items():
+            (self.bridge.state_dir / name).write_bytes(raw)
+        with self.assertLogs("fairbeam.document_workspace", level="WARNING"):
+            self.assertEqual(self.bridge.document_id_for(saved["file"]["id"]), saved["document"]["id"])
+        # First-save discovery for an unrelated JSON design must also remain usable.
+        another = self.root / "another.fb"
+        with self.assertLogs("fairbeam.document_workspace", level="WARNING"):
+            copied = self.bridge.save(another, file["id"], file["hash"])
+        self.assertTrue(another.is_file())
+        self.assertNotEqual(copied["document"]["id"], saved["document"]["id"])
+        for name, raw in foreign.items():
+            self.assertEqual((self.bridge.state_dir / name).read_bytes(), raw)
+
+    def test_identity_lookup_keeps_mismatched_binding_fail_closed(self):
+        file = self.workspace_design()
+        saved = self.bridge.save(self.path, file["id"], file["hash"])
+        state = self.bridge._state(saved["document"]["id"])
+        state["id"] = str(uuid.uuid4())
+        self.bridge._state_path(saved["document"]["id"]).write_text(json.dumps(state), encoding="utf-8")
+        with self.assertRaisesRegex(doc.DocumentError, "identity"):
+            self.bridge.document_id_for(saved["file"]["id"])
+
+    def test_identity_lookup_skips_an_unreadable_unrelated_state(self):
+        file = self.workspace_design()
+        saved = self.bridge.save(self.path, file["id"], file["hash"])
+        unrelated = self.bridge.state_dir / (str(uuid.uuid4()) + ".json")
+        unrelated.write_bytes(b"{}")
+        read = document_workspace._json_file
+        def unreadable(path):
+            if path == unrelated:
+                raise PermissionError("access denied")
+            return read(path)
+        with mock.patch.object(document_workspace, "_json_file", side_effect=unreadable):
+            with self.assertLogs("fairbeam.document_workspace", level="WARNING") as messages:
+                self.assertEqual(self.bridge.document_id_for(saved["file"]["id"]), saved["document"]["id"])
+        self.assertTrue(any(unrelated.name in line for line in messages.output))
+
+    def test_identity_lookup_skips_unrelated_state_with_unavailable_lstat(self):
+        file = self.workspace_design()
+        saved = self.bridge.save(self.path, file["id"], file["hash"])
+        unrelated = self.bridge.state_dir / (str(uuid.uuid4()) + ".json")
+        unrelated.write_bytes(b"{}")
+        lstat = Path.lstat
+        for error in (FileNotFoundError("state disappeared after listing"), PermissionError("access denied")):
+            with self.subTest(error=type(error).__name__):
+                def unavailable(path, *args, **kwargs):
+                    if path == unrelated:
+                        raise error
+                    return lstat(path, *args, **kwargs)
+                with mock.patch.object(Path, "lstat", autospec=True, side_effect=unavailable):
+                    with self.assertLogs("fairbeam.document_workspace", level="WARNING") as messages:
+                        self.assertEqual(self.bridge.document_id_for(saved["file"]["id"]), saved["document"]["id"])
+                self.assertTrue(any(unrelated.name in line for line in messages.output))
+        self.assertEqual(unrelated.read_bytes(), b"{}")
 
     def test_unbound_save_after_restart_copies_key_without_reading_original_document(self):
         file = self.workspace_design()

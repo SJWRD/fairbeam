@@ -50,6 +50,7 @@ def archive(workspace, model_id: str, expected_path: str, expected_results: str)
             exists = folder.exists() or folder.is_symlink()
             if exists:
                 _tree(folder)
+                results_stat = folder.lstat()
                 document_stat = path.lstat()
                 # A copied .fb may still refer to this sidecar. Keep both intact in that case.
                 for sibling in path.parent.iterdir():
@@ -65,6 +66,14 @@ def archive(workspace, model_id: str, expected_path: str, expected_results: str)
                             if os.path.samestat(sibling.lstat(), document_stat):
                                 continue
                             other, _ = doc.read(sibling)
+                            other_folder = path.parent / doc._basename(other["results_directory"])
+                            try:
+                                other_stat = other_folder.lstat()
+                            except FileNotFoundError:
+                                other_stat = None
+                            if other_stat is not None and (doc._linked(other_stat)
+                                    or not stat.S_ISDIR(other_stat.st_mode)):
+                                raise doc.DocumentError("Sibling results must use a real directory, not a link")
                         except (doc.DocumentError, OSError) as exc:
                             # An unreadable real document might share the sidecar. Keep
                             # the protection, but identify what the user needs to check.
@@ -72,7 +81,10 @@ def archive(workspace, model_id: str, expected_path: str, expected_results: str)
                                 f"Cannot check sibling document '{sibling.name}' for shared results; "
                                 "check that file or remove only the list entry"
                             ) from exc
-                        if os.path.normcase(other["results_directory"]) == os.path.normcase(expected_results):
+                        # APFS/exFAT/SMB can resolve different case or Unicode
+                        # spellings to the same directory even on POSIX, where
+                        # normcase does nothing. lstat avoids following a link.
+                        if (other_stat is not None and os.path.samestat(other_stat, results_stat)):
                             raise doc.DocumentConflict("Another document shares this results folder; remove only the list entry")
             recovery_root = path.parent / "Fairbeam Deleted"
             if recovery_root == folder:

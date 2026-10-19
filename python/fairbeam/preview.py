@@ -161,9 +161,9 @@ def design_checks(design: dict, overrides: dict, bundle: dict | None, build_erro
 
 
 def model_files(models_dir: str | Path) -> list[Path]:
-    """The model files in a folder: ``*.py`` and ``*.design.json`` (not starting with ``_``)."""
+    """Model files, excluding private helpers and macOS AppleDouble metadata."""
     d = Path(models_dir)
-    return sorted(p for p in [*d.glob("*.py"), *d.glob("*.design.json")] if not p.name.startswith("_"))
+    return sorted(p for p in [*d.glob("*.py"), *d.glob("*.design.json")] if not p.name.startswith(("_", "._")))
 
 
 def describe_models(models_dir: str | Path) -> list[dict]:

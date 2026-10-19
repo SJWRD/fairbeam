@@ -8,6 +8,7 @@ equality of per-run parameter overrides and solver settings.
 from __future__ import annotations
 
 import json
+import logging
 import os
 from pathlib import Path
 import stat
@@ -20,6 +21,7 @@ from ._filelocks import model_lock
 STATE_SCHEMA = "fairbeam.document-workspace/1"
 RUN_SCHEMA = "fairbeam.document-run/1"
 MAX_STATE = 16 * 1024 * 1024
+_LOG = logging.getLogger(__name__)
 
 
 def _research_source(model: str, metadata: dict | None) -> dict | None:
@@ -194,11 +196,35 @@ class DocumentWorkspace:
         for path in self.state_dir.iterdir():
             if path.suffix != ".json":
                 continue
-            candidate = _uuid(path.stem)
-            value = _json_file(path)
-            if value.get("schema") != STATE_SCHEMA or value.get("id") != candidate:
+            try:
+                candidate = _uuid(path.stem)
+            except doc.DocumentError:
+                _LOG.warning("Skipping foreign document workspace file %s", path.name)
+                continue
+            # A recognized state path must never follow a link. Keep this check
+            # outside tolerant JSON parsing so linked metadata fails closed.
+            try:
+                doc._regular(path)
+            except OSError as exc:
+                _LOG.warning("Skipping unavailable document workspace file %s: %s", path.name, exc)
+                continue
+            try:
+                value = _json_file(path)
+            except (OSError, doc.DocumentError) as exc:
+                _LOG.warning("Skipping unreadable document workspace file %s: %s", path.name, exc)
+                continue
+            if value.get("schema") != STATE_SCHEMA:
+                _LOG.warning("Skipping foreign document workspace file %s", path.name)
+                continue
+            # This is an actual binding, not an unrelated/partial JSON file.
+            # Do not hide a contradictory identity or duplicate ownership.
+            if value.get("id") != candidate:
                 raise doc.DocumentError("Document workspace identity is invalid")
-            modelfiles.check_id(value.get("model_id"))
+            try:
+                modelfiles.check_id(value.get("model_id"))
+            except modelfiles.ModelFileError as exc:
+                _LOG.warning("Skipping malformed document workspace file %s: %s", path.name, exc)
+                continue
             if value["model_id"] != model_id:
                 continue
             if identity is not None:

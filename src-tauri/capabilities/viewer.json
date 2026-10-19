@@ -19,6 +19,7 @@
     "allow-native-document-save",
     "allow-native-document-next-open",
     "allow-native-document-restore",
+    "allow-native-document-archive",
     "allow-get-general-settings",
     "allow-set-update-check-on-start",
     "allow-check-updates-now",
