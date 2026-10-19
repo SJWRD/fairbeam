@@ -4,6 +4,7 @@ import ParamForm from "../runner/ParamForm";
 import ProgressCard from "../runner/ProgressCard";
 import RunHistory from "../runner/RunHistory";
 import { ApiError, isTerminal } from "../runner/api";
+import { runSlug } from "../lib/runSlug";
 import {
   attach,
   closeRunPanel,
@@ -57,7 +58,7 @@ import { t } from "../i18n";
 import NumberField from "./NumberField";
 import { isDesktopShell } from "../lib/telemetry";
 
-const slug = (s: string) => s.replace(/[^A-Za-z0-9._-]+/g, "-").replace(/^[-.]+|[-.]+$/g, "").toLowerCase().slice(0, 100);
+
 
 /** One sweep axis: parameter, range or list, and the resulting values. */
 function AxisEditor(props: { index: number }) {
@@ -235,7 +236,7 @@ export default function RunPanel() {
     return d ? { total: d.seconds * n, each: d.seconds } : null;
   };
   const fileName = () => {
-    const s = slug(runName());
+    const s = runSlug(runName());
     if (!s) return null;
     return sweeping() ? `${s}--${axes.map((a) => `${a.key}-…`).join("--")}.json` : `${s}.json`;
   };

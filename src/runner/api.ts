@@ -6,6 +6,7 @@ import type { Check as DesignCheck } from "../designer/checks";
 import type { ConvergenceStudy } from "../designer/convergence";
 import type { TemplateKey } from "../designer/templates";
 import { t } from "../i18n/index.ts";
+import { serverMessage } from "../lib/serverMessages";
 
 /** The optional managed Elmer package (python/fairbeam/elmer_runtime.py). */
 export interface ElmerRuntime {
@@ -455,7 +456,11 @@ export class ApiError extends Error {
      * next to the human message; empty when the server gave its own message */
     public detail = "",
   ) {
-    super(message);
+    super(serverMessage(data, message));
+    const details = data.field_details;
+    if (details && typeof details === "object" && !Array.isArray(details))
+      this.fields = Object.fromEntries(Object.entries(fields).map(([key, text]) =>
+        [key, serverMessage((details as Record<string, unknown>)[key], text)]));
   }
 }
 
@@ -491,8 +496,8 @@ async function call<T>(method: "GET" | "POST" | "PUT", path: string, body?: unkn
   if (!r.ok) {
     const d = (data ?? {}) as { error?: string; fields?: Record<string, string> };
     if (path !== "/health" && r.status >= 500) failureHook?.();
-    // the server's own message is shown as it is; a bare failure gets a human sentence, and the
-    // status and path go to a Details disclosure instead of standing alone ("HTTP 500")
+    // Known codes are localized by ApiError; older/unknown responses retain the server text.
+    // Bare failures keep status and path in Details instead of standing alone ("HTTP 500").
     throw new ApiError(d.error ?? t("api.serverError"), r.status, d.fields ?? {}, (data ?? {}) as Record<string, unknown>,
       d.error ? "" : `HTTP ${r.status} · ${method} /api${path}`);
   }

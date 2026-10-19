@@ -1,3 +1,4 @@
+import { serverMessage } from "./serverMessages";
 import { t } from "../i18n/index.ts";
 import { errorText } from "./errorText.ts";
 
@@ -46,6 +47,8 @@ export function nativeErrorMessage(error: unknown, document = false): string {
   const value = error && typeof error === "object" ? error as { code?: unknown; status?: unknown; error?: unknown } : undefined;
   const key = typeof value?.code === "string" ? KEYS[value.code] : undefined;
   if (key) return t(key);
+  const localized = serverMessage(value, "");
+  if (localized) return localized;
   const message = typeof value?.error === "string" ? value.error : errorText(error);
   return document && value?.status === 409 ? t("document.conflict", { error: message }) : message;
 }

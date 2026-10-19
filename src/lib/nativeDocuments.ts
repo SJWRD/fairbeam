@@ -3,6 +3,7 @@ import type { DesignFile } from "../runner/api";
 import type { Design } from "../designer/types";
 import { t } from "../i18n";
 import { nativeErrorMessage } from "./nativeErrors";
+import { serverWarnings, type ServerMessage } from "./serverMessages";
 
 export interface DocumentResult {
   file: string; sha256: string; design_sha256: string; provenance: "source-design";
@@ -11,7 +12,7 @@ export interface DocumentResult {
 export interface NativeDocument {
   status: "opened" | "saved"; handle: string; path: string; file: DesignFile;
   document: { id: string; path: string; revision: string; results_directory: string };
-  results: DocumentResult[]; warnings: string[];
+  results: DocumentResult[]; warnings: string[]; warning_details?: (ServerMessage | null)[];
 }
 export type NativeDocumentBinding = Omit<NativeDocument, "file" | "status"> & {
   file: Pick<DesignFile, "id" | "backup_scope">;
@@ -170,5 +171,5 @@ export async function persistNativeDocument(file: DesignFile, hash: string, save
     acknowledgeResults(file, candidates);
     if (result.file.id !== file.id) resetNativeDocumentResults(result.file, observedJobs, observedScope);
   }
-  return { ...(result.file.id === file.id ? {} : { file: result.file }), warnings: result.warnings };
+  return { ...(result.file.id === file.id ? {} : { file: result.file }), warnings: serverWarnings(result.warnings, result.warning_details) };
 }
