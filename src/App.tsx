@@ -40,7 +40,7 @@ const PcbImportDialog = lazy(() => import("./components/PcbImportDialog"));
 const UsageStatsPrompt = lazy(() => import("./components/UsageStatsPrompt"));
 import { PreviewBadge, RunNotice } from "./runner/Overlays";
 import { openExamples } from "./runner/designRun";
-import { openUserProject } from "./runner/openProject";
+import { openUserProject, retryUserProject } from "./runner/openProject";
 import { fileDropHandlers } from "./lib/fileDrop";
 import { currentModel, probeServer, recheckServer, runOpen, setRunOpen, watchServer } from "./runner/store";
 import { setStartedPythonModel, startedPythonModel } from "./runner/startPython";
@@ -118,7 +118,7 @@ export default function App() {
     if (!error) { dismissToast("load-error"); return; }
     const file = failedProject();
     showToast(error, { tone: "error", key: "load-error", onClose: () => setLoadError(null),
-      action: file ? { label: t("common.retry"), run: () => void loadProject(file) } : undefined });
+      action: file ? { label: t("common.retry"), run: () => void retryUserProject(file) } : undefined });
   });
   // Refreshing the list is independent of opening a file: keep both recovery actions available.
   createEffect(() => {

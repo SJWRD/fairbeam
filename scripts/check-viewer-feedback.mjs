@@ -10,7 +10,7 @@ import solid from 'vite-plugin-solid';
 const root=fileURLToPath(new URL('../',import.meta.url)).replaceAll('\\','/');
 const baseline=process.env.FAIRBEAM_TEST_BASELINE;
 const modules=['state.ts','workspace.ts','designer/navModel.ts','home/projectList.ts','runner/designRun.ts',
-  'designer/dockState.ts','designer/layoutState.ts','compare/store.ts','runner/dropFile.ts','lib/toast.ts','i18n/index.ts','runner/optimizationText.ts'];
+  'designer/dockState.ts','designer/layoutState.ts','compare/store.ts','runner/dropFile.ts','lib/toast.ts','i18n/index.ts','runner/optimizationText.ts','runner/openProject.ts','runner/store.ts'];
 const original=new Map();
 if(baseline) for(const path of ['src/state.ts','src/designer/navModel.ts','src/home/projectList.ts','src/runner/designRun.ts','src/compare/store.ts'])
   original.set(root+path,execFileSync('git',['show',`${baseline}:${path}`],{cwd:root,encoding:'utf8'}));
@@ -27,7 +27,7 @@ globalThis.document=stub;
 globalThis.localStorage={getItem:key=>storage.get(key)??null,setItem:(key,value)=>storage.set(key,String(value)),removeItem:key=>storage.delete(key)};
 globalThis.requestAnimationFrame=()=>1;
 globalThis.fetch=async()=>({ok:true,json:async()=>({runs:[],models:[]})});
-const {m0:state,m1:workspace,m2:nav,m3:projects,m4:run,m5:dock,m6:layout,m7:compare,m8:drop,m9:toast,m10:i18n,m11:opt}=
+const {m0:state,m1:workspace,m2:nav,m3:projects,m4:run,m5:dock,m6:layout,m7:compare,m8:drop,m9:toast,m10:i18n,m11:opt,m12:userOpen,m13:runner}=
   await import(`data:text/javascript;base64,${Buffer.from(chunk.code).toString('base64')}`);
 const failures=[];let checks=0;
 const check=async(name,fn)=>{try{await fn();checks++;console.log(`ok ${name}`);}catch(error){failures.push(name+': '+error.message);console.log(`FAIL ${name}: ${error.message}`);}};
@@ -71,6 +71,44 @@ await check('#205 local file intent clears a previous retry while its read is pe
   const held=pending();const load=state.loadFile({name:'new.json',text:()=>held.promise});
   assert.equal(state.loadError(),null);assert.equal(state.failedProject(),null);
   held.resolve(JSON.stringify(patch));assert.equal(await load,true);
+});
+await check('#205 Retry action uses the ownership-aware viewer entry point',()=>{
+  const app=readFileSync(root+'src/App.tsx','utf8');
+  assert.match(app,/action: file \? \{ label: t\("common.retry"\), run: \(\) => void retryUserProject\(file\)/);
+});
+await check('#205 Retry finishing after Start cannot replace the last viewer file',async()=>{
+  open();workspace.setAppMode('results');const held=pending();globalThis.fetch=()=>held.promise;
+  const retry=userOpen.retryUserProject('abandoned.json');workspace.setAppMode('home');
+  held.resolve(response(true,patch));assert.equal(await retry,false);
+  assert.equal(workspace.appMode(),'home');assert.equal(state.source(),'own-result.json');assert.equal(state.loadError(),null);
+});
+await check('#205 leaving and returning to Results still cancels an older Retry',async()=>{
+  open();workspace.setAppMode('results');const held=pending();globalThis.fetch=()=>held.promise;
+  const retry=userOpen.retryUserProject('abandoned.json');workspace.setAppMode('home');workspace.setAppMode('results');
+  held.resolve(response(true,patch));assert.equal(await retry,false);assert.equal(state.source(),'own-result.json');
+});
+await check('#205 selecting another model cancels Retry before its preview arrives',async()=>{
+  open();workspace.setAppMode('results');runner.selectModel('previous');
+  const held=pending();globalThis.fetch=()=>held.promise;const retry=userOpen.retryUserProject('abandoned.json');
+  runner.selectModel('new-model');held.resolve(response(true,patch));assert.equal(await retry,false);
+  assert.equal(runner.modelKey(),'new-model');assert.equal(state.source(),'own-result.json');
+});
+await check('#205 newer project loads own their error and Retry target',async()=>{
+  open();workspace.setAppMode('results');const first=pending(),second=pending();let reads=0;
+  globalThis.fetch=()=>++reads===1?first.promise:second.promise;
+  const retry=userOpen.retryUserProject('old.json'),newer=state.loadProject('new.json');
+  second.resolve(response(false));await newer;first.resolve(response(true,patch));assert.equal(await retry,false);
+  assert.equal(state.failedProject(),'new.json');assert.ok(state.loadError().includes('new.json'));assert.equal(state.source(),'own-result.json');
+});
+await check('#205 an abandoned Retry failure does not restore its obsolete error',async()=>{
+  open();workspace.setAppMode('results');const held=pending();globalThis.fetch=()=>held.promise;
+  const retry=userOpen.retryUserProject('old.json');workspace.setAppMode('home');held.resolve(response(false));
+  assert.equal(await retry,false);assert.equal(state.loadError(),null);assert.equal(state.failedProject(),null);
+});
+await check('#205 current Retry succeeds and leaves the selected screen unchanged',async()=>{
+  open();workspace.setAppMode('results');state.setLoadError('previous');state.setFailedProject('recovered.json');
+  globalThis.fetch=async()=>response(true,patch);assert.equal(await userOpen.retryUserProject('recovered.json'),true);
+  assert.equal(state.source(),'recovered.json');assert.equal(workspace.appMode(),'results');assert.equal(state.loadError(),null);assert.equal(state.failedProject(),null);
 });
 await check('#183 failed and superseded reference imports report truthful outcomes',async()=>{
   open();const result=await compare.importReferenceFile({name:'bad.s1p',text:async()=>''});
