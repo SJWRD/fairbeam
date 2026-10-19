@@ -52,26 +52,36 @@ def ps_string(value):
     return "'" + str(value).replace("'", "''") + "'"
 
 
-def run_powershell(body, proxy_env=None):
+def powershell_setup():
     # Loading the file itself would execute the installer. Parse its top-level
     # function definitions instead, so every request in these tests is local.
-    setup = """
+    return """
 [Console]::Error.WriteLine('[bootstrap-test] powershell-started')
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
-[Console]::OutputEncoding = New-Object System.Text.UTF8Encoding $false
+# This fixture only needs a .NET constructor. New-Object would first autoload
+# Microsoft.PowerShell.Utility, scanning the caller's inherited module paths.
+[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)
+[Console]::Error.WriteLine('[bootstrap-test] encoding-ready')
 $Invariant = [Globalization.CultureInfo]::InvariantCulture
 $tokens = $null
 $parseErrors = $null
+[Console]::Error.WriteLine('[bootstrap-test] parse-started')
 $ast = [System.Management.Automation.Language.Parser]::ParseFile(%s, [ref]$tokens, [ref]$parseErrors)
+[Console]::Error.WriteLine('[bootstrap-test] script-parsed')
 if ($parseErrors.Count) { throw ($parseErrors | Out-String) }
 foreach ($definition in $ast.EndBlock.Statements) {
     if ($definition -is [System.Management.Automation.Language.FunctionDefinitionAst]) {
+        [Console]::Error.WriteLine('[bootstrap-test] defining-function=' + $definition.Name)
         . ([scriptblock]::Create($definition.Extent.Text))
     }
 }
 [Console]::Error.WriteLine('[bootstrap-test] functions-loaded')
 """ % ps_string(SCRIPT)
+
+
+def run_powershell(body, proxy_env=None):
+    setup = powershell_setup()
     command = (setup + "\n[Console]::Error.WriteLine('[bootstrap-test] call-started')\n" + body
                + "\n[Console]::Error.WriteLine('[bootstrap-test] call-finished')\n")
     # -EncodedCommand takes base64-encoded UTF-16LE, independent of the console
@@ -206,6 +216,18 @@ class RuntimeBootstrapDiagnostics(unittest.TestCase):
 @unittest.skipUnless(os.name == "nt" and Path(POWERSHELL).is_file(),
                      "requires Windows PowerShell 5.1")
 class RuntimeBootstrapDownload(unittest.TestCase):
+    def test_function_loader_does_not_require_module_autoload(self):
+        # A fresh PowerShell process has not loaded Microsoft.PowerShell.Utility.
+        # Loading definitions must not start module discovery before Get-Pinned
+        # is even called. The product functions keep their normal dependencies.
+        setup = "$PSModuleAutoLoadingPreference = 'None'\n" + powershell_setup()
+        with patch(f"{__name__}.powershell_setup", return_value=setup):
+            result = run_powershell("Write-Line ([Console]::Out) 'functions ready'")
+        self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+        self.assertEqual(result.stdout.strip(), "functions ready")
+        for phase in ("encoding-ready", "parse-started", "script-parsed", "functions-loaded", "call-finished"):
+            self.assertIn(f"[bootstrap-test] {phase}", result.stderr)
+
     def test_concurrent_proxy_and_origin_have_distinct_exclusive_ports(self):
         with LocalServer(QuietHandler) as origin, LocalServer(QuietHandler) as proxy:
             self.assertNotEqual(origin.server.server_port, proxy.server.server_port)
