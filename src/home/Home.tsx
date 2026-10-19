@@ -100,10 +100,13 @@ export default function Home() {
   const designs = createMemo(() => models().filter((m) => !m.readonly && (m.error ? m.file?.endsWith(".design.json") : m.kind === "design")));
   const designActions = createDesignActions(designs);
   const shownDesigns = createMemo(() => visibleProjects(designs(), designQuery(), designSort(), favoritesOnly(), favoriteKeys()));
+  const [designLimit, setDesignLimit] = createSignal(5);
+  createEffect(on([designQuery, designSort, favoritesOnly], () => setDesignLimit(5)));
+  const displayedDesigns = createMemo(() => shownDesigns().slice(0, designLimit()));
   const showUnknownModifiedNote = () => designSort() === "modified" && hasUndatedProjects(designs());
   const toggleFavorite = (key: string, button: HTMLButtonElement) => {
     const removingFocusedRow = favoritesOnly() && favoriteKeys().has(key) && document.activeElement === button;
-    const rows = shownDesigns();
+    const rows = displayedDesigns();
     const position = rows.findIndex((entry) => entry.key === key);
     const neighbor = rows[position + 1] ?? rows[position - 1];
     const next = new Set(favoriteKeys());
@@ -126,16 +129,20 @@ export default function Home() {
   // deleting a design: the row asks first; the server moves the file into its history folder
   const [confirming, setConfirming] = createSignal<string | null>(null);
   const [deleting, setDeleting] = createSignal(false);
+  const [removeFiles, setRemoveFiles] = createSignal(false);
   const [delNote, setDelNote] = createSignal<{ tone: "good" | "bad"; text: string } | null>(null);
   const remove = async (key: string, fileName: string) => {
     setDeleting(true);
     setDelNote(null);
     try {
-      await deleteDesign(key);
-      setDelNote({ tone: "good", text: t("home.designs.deleted", { file: fileName }) });
+      const entry = designs().find(m => m.key === key);
+      const project = removeFiles() && isDesktopShell() && entry?.document?.results_directory
+        ? { path: entry.document.path, results_directory: entry.document.results_directory } : undefined;
+      const recovery = await deleteDesign(key, project);
+      setDelNote({ tone: "good", text: project ? t("home.designs.archived", { path: recovery }) : t("home.designs.deleted", { file: fileName }) });
     } catch (err) {
       const a = err as ApiError;
-      setDelNote({ tone: "bad", text: a.status === 0 ? t("home.serverUnreachable") : a.message });
+      setDelNote({ tone: "bad", text: a.status === 0 ? t("home.serverUnreachable") : a.message || String((err as { error?: string }).error ?? err) });
     } finally {
       setDeleting(false);
       setConfirming(null);
@@ -323,8 +330,8 @@ export default function Home() {
                 <Show when={showUnknownModifiedNote()}><p class="home-modified-note muted" role="note">{t("home.designs.unknownModified")}</p></Show>
                 <Show when={designs().length} fallback={<p class="muted">{t("home.designs.empty")}</p>}>
                   <Show when={shownDesigns().length} fallback={<p class="muted" role="status">{favoritesOnly() && !designQuery().trim() ? t("home.designs.noFavorites") : t("home.designs.noMatches")}</p>}>
-                    <ul class="home-list" id="home-design-list">
-                    <For each={shownDesigns()}>{(m) => (
+                    <ul class="home-list" id="home-design-list" tabIndex={-1}>
+                    <For each={displayedDesigns()}>{(m) => (
                       <li data-home-design={m.key} onContextMenu={(event) => designActions.open(event, m)} onKeyDown={(event) => designActions.keydown(event, m)}>
                         <Show when={confirming() === m.key} fallback={
                           <div class="home-row">
@@ -334,7 +341,7 @@ export default function Home() {
                                 <span class="home-item-sub">{loadError(m.error!)}</span>
                               </div>
                             }>
-                              <button class="home-item" onClick={() => enterDesign(m.key)}
+                              <button id={`home-open-${m.key}`} class="home-item" onClick={() => enterDesign(m.key)}
                                 aria-label={m.document ? `${m.model?.name ?? m.key}. ${t("home.designs.documentCopy", { path: projectLocation(m).full })}` : undefined}>
                                 <span class="home-item-name" title={m.model?.name ?? m.key}>{m.model?.name ?? m.key}</span>
                                 <span class="home-item-sub home-project-location" title={projectLocation(m).full}>
@@ -351,13 +358,22 @@ export default function Home() {
                             <button class="icon-btn icon-btn-sm home-rename" data-home-rename={m.key}
                               aria-label={t("home.designs.renameAria", { name: m.model?.name ?? m.key })} title={t("home.designs.renameTitle")}
                               onClick={() => designActions.rename(m)}><Pencil size={14} aria-hidden="true" /></button>
-                            <button id={`home-delete-${m.key}`} class="icon-btn home-del" onClick={() => { setDelNote(null); setConfirming(m.key); focusAfterRender(`home-keep-${m.key}`); }}
+                            <button id={`home-delete-${m.key}`} class="icon-btn home-del" onClick={() => { setRemoveFiles(false); setDelNote(null); setConfirming(m.key); focusAfterRender(`home-keep-${m.key}`); }}
                               aria-label={t("home.designs.deleteAria", { name: m.model?.name ?? m.key })} title={t("home.designs.deleteTitle")}><Trash2 size={14} /></button>
                           </div>
                         }>
                           <div class="home-confirm" role="group" aria-label={t("home.designs.confirm", { name: m.model?.name ?? m.key })}
                             onKeyDown={(e) => { if (e.key === "Escape" && !deleting()) { e.preventDefault(); setConfirming(null); focusAfterRender(`home-delete-${m.key}`); } }}>
                             <span>{withName(t("home.designs.confirm"), m.model?.name ?? m.key)}{file()?.id === m.key && dirty() ? ` ${t("home.designs.unsavedLost")}` : ""} <span class="muted">{t("home.designs.movesToHistory")}</span></span>
+                            <Show when={isDesktopShell() && m.document?.results_directory}>
+                              <label class="home-remove-files">
+                                <input type="checkbox" checked={removeFiles()} disabled={deleting()} onChange={e => setRemoveFiles(e.currentTarget.checked)} />
+                                <span>{t("home.designs.archiveFiles")}<small>{t("home.designs.archiveNote")}</small>
+                                  <small class="mono">{m.document!.path}</small>
+                                  <small class="mono">{m.document!.results_directory}</small>
+                                </span>
+                              </label>
+                            </Show>
                             <div class="cluster-sm">
                               <button class="btn btn-sm home-del-btn" disabled={deleting()} aria-label={t("home.designs.deleteAria", { name: m.model?.name ?? m.key })}
                                 onClick={() => remove(m.key, m.file)}>{deleting() ? t("home.designs.deleting") : t("common.delete")}</button>
@@ -370,6 +386,20 @@ export default function Home() {
                       </li>
                     )}</For>
                     </ul>
+                    <Show when={shownDesigns().length > 5}>
+                      <div class="cluster-sm home-list-pagination">
+                        <span class="muted" role="status">{t("home.designs.showing", { count: displayedDesigns().length, total: shownDesigns().length })}</span>
+                        <Show when={designLimit() < shownDesigns().length}>
+                          <button class="btn btn-ghost btn-sm" aria-controls="home-design-list" onClick={() => {
+                            const next = shownDesigns()[designLimit()]; setDesignLimit(n => n + 5);
+                            if (next) focusAfterRender(`home-open-${next.key}`);
+                          }}>{t("home.designs.showMore")}</button>
+                        </Show>
+                        <Show when={designLimit() > 5}>
+                          <button class="btn btn-ghost btn-sm" aria-controls="home-design-list" onClick={() => { setDesignLimit(5); focusAfterRender("home-design-list"); }}>{t("home.designs.showLess")}</button>
+                        </Show>
+                      </div>
+                    </Show>
                   </Show>
                 </Show>
                 <designActions.Note />
@@ -434,15 +464,15 @@ export default function Home() {
                     const copyReason = () => !online() ? t("examples.copy.cantOpen", { reason: t("examples.copy.noServer") })
                       : !sourceModel() ? t("home.examples.noSource") : null;
                     return <li>
-                      <div class="home-row">
+                      <div class="home-row home-example-row">
                         <button class="home-item" onClick={() => openUserProject(p.file)} title={p.file}>
                           <span class="home-item-name" title={p.label}>{p.label}</span>
                           <span class="home-item-sub">{[p.detail, p.results ? "" : t("home.examples.geometryOnly")].filter(Boolean).join(" · ")}</span>
                         </button>
-                        <button class="icon-btn icon-btn-sm home-copy" disabled={!!copyReason()} data-example-copy={p.file}
+                        <button class="btn btn-ghost btn-sm home-copy" disabled={!!copyReason()} data-example-copy={p.file}
                           aria-label={t("home.examples.openAsNewAria", { name: p.label })} title={copyReason() ?? t("home.examples.copyTitle")}
                           onClick={() => { if (sourceModel()) openExampleCopy(sourceModel()!.key, p.file); }}>
-                          <CopyPlus size={14} aria-hidden="true" />
+                          <CopyPlus size={14} aria-hidden="true" /> {t("home.examples.createCopy")}
                         </button>
                       </div>
                     </li>;

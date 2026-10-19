@@ -4832,5 +4832,17 @@
   "elmerDesign.pec": "Use PEC walls on all six enclosure faces and on PEC solids.",
   "elmerDesign.setup": "Elmer setup and history",
   "elmerDesign.resultHint": "Two eigenfrequencies near the target, not necessarily the lowest modes. Results appear in solver history. Mesh convergence and physical accuracy have not been certified.",
-  "document.autoSaveFailed": "Could not automatically save results beside the project. Results remain in the workspace; use Save to retry. {error}"
+  "document.autoSaveFailed": "Could not automatically save results beside the project. Results remain in the workspace; use Save to retry. {error}",
+  "home.designs.showing": "Showing {count} of {total}",
+  "home.designs.showMore": "Show 5 more",
+  "home.designs.showLess": "Show less",
+  "home.examples.createCopy": "Create design copy",
+  "home.designs.archiveDesktop": "Removing portable project files requires the desktop app.",
+  "home.designs.archiveFiles": "Also remove the .fb file and its results folder from their current location",
+  "home.designs.archiveNote": "These files move together to Fairbeam Deleted beside the project, where you can recover them. Workspace history and cached runs are kept. This does not free disk space.",
+  "home.designs.archived": "Project removed. Recover the file and results together from: {path}",
+  "settings.appearance.presets": "Coordinated themes",
+  "settings.appearance.presetsNote": "Apply interface, accent, chart and 3D colors together. Custom colors are reset; simulation settings stay unchanged.",
+  "settings.appearance.preset.forest": "Forest · dark green",
+  "settings.appearance.preset.academic": "Academic · light blue"
 }

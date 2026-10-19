@@ -4751,5 +4751,17 @@
   "elmerDesign.pec": "Kapalı hacmin altı yüzünde ve PEC katılarda PEC sınır koşulu kullan.",
   "elmerDesign.setup": "Elmer kurulumu ve geçmiş",
   "elmerDesign.resultHint": "Hedefe yakın iki özfrekans; en düşük modlar olmak zorunda değildir. Sonuçlar çözücü geçmişinde görünür. Mesh yakınsaması ve fiziksel doğruluk onaylanmamıştır.",
-  "document.autoSaveFailed": "Sonuçlar proje yanına otomatik kaydedilemedi. Sonuçlar çalışma alanında duruyor; yeniden denemek için Kaydet kullanın. {error}"
+  "document.autoSaveFailed": "Sonuçlar proje yanına otomatik kaydedilemedi. Sonuçlar çalışma alanında duruyor; yeniden denemek için Kaydet kullanın. {error}",
+  "home.designs.showing": "{total} tasarımdan {count} tanesi gösteriliyor",
+  "home.designs.showMore": "5 tane daha göster",
+  "home.designs.showLess": "Daha az göster",
+  "home.examples.createCopy": "Tasarım kopyası oluştur",
+  "home.designs.archiveDesktop": "Taşınabilir proje dosyalarını kaldırmak için masaüstü uygulaması gerekir.",
+  "home.designs.archiveFiles": ".fb dosyasını ve sonuç klasörünü de mevcut konumlarından kaldır",
+  "home.designs.archiveNote": "Bu dosyalar, geri alabilmeniz için projenin yanındaki Fairbeam Deleted klasörüne birlikte taşınır. Çalışma alanı geçmişi ve önbellekteki çalışmalar korunur. Bu işlem disk alanı boşaltmaz.",
+  "home.designs.archived": "Proje kaldırıldı. Dosya ve sonuçları birlikte geri alabileceğiniz konum: {path}",
+  "settings.appearance.presets": "Uyumlu temalar",
+  "settings.appearance.presetsNote": "Arayüz, vurgu, grafik ve 3B renklerini birlikte uygular. Özel renkler sıfırlanır; simülasyon ayarları değişmez.",
+  "settings.appearance.preset.forest": "Forest · koyu yeşil",
+  "settings.appearance.preset.academic": "Academic · açık mavi"
 }

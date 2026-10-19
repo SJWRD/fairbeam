@@ -35,6 +35,7 @@ pub(crate) fn test_document_client(port: u16) -> DocumentClient {
 pub enum DocumentOperation {
     Open,
     Save,
+    Archive,
 }
 
 const DOCUMENT_RESPONSE_LIMIT: usize = 64 * 1024 * 1024;
@@ -51,7 +52,7 @@ impl DocumentClient {
         let error = |message: &str| serde_json::json!({"error": message, "status": 503});
         let body = serde_json::to_vec(body).map_err(|_| error("Invalid document request"))?;
         let limit = match operation {
-            DocumentOperation::Open => DOCUMENT_REQUEST_LIMIT,
+            DocumentOperation::Open | DocumentOperation::Archive => DOCUMENT_REQUEST_LIMIT,
             DocumentOperation::Save => DOCUMENT_SAVE_REQUEST_LIMIT,
         };
         if body.len() > limit {
@@ -60,6 +61,7 @@ impl DocumentClient {
         let path = match operation {
             DocumentOperation::Open => "/api/native-document/open",
             DocumentOperation::Save => "/api/native-document/save",
+            DocumentOperation::Archive => "/api/native-document/archive",
         };
         let address = SocketAddr::from(([127, 0, 0, 1], self.port));
         let mut stream = TcpStream::connect_timeout(&address, Duration::from_secs(2))
@@ -407,6 +409,7 @@ mod tests {
     fn document_channel_uses_only_its_child_and_private_token() {
         for (operation, path, body) in [
             (DocumentOperation::Open, "/api/native-document/open", serde_json::json!({"path":"example.fb"})),
+            (DocumentOperation::Archive, "/api/native-document/archive", serde_json::json!({"model_id":"fb_project"})),
             (DocumentOperation::Save, "/api/native-document/save", serde_json::json!({"design":{"name":"x".repeat(20000)}})),
         ] {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();

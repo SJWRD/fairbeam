@@ -33,7 +33,7 @@ import { confirmDraftDiscard } from "../lib/ConfirmDialog";
 import { createdNote, type TemplateKey } from "./templates";
 import { applyPythonScript, replaceDesignContent, type PythonApplyOutcome } from "./pythonApply";
 import { localeTag, t } from "../i18n/index.ts";
-import { pickNativeDocument, persistNativeDocument, rememberNativeDocument, restoreNativeDocumentBinding, observeNativeDocumentResults, nativeResultsPendingToken, resetNativeDocumentResults, nativeDocumentFor, nativeDocumentsAvailable, hasDocumentResultScope } from "../lib/nativeDocuments";
+import { archiveNativeProject, pickNativeDocument, persistNativeDocument, rememberNativeDocument, restoreNativeDocumentBinding, observeNativeDocumentResults, nativeResultsPendingToken, resetNativeDocumentResults, nativeDocumentFor, nativeDocumentsAvailable, hasDocumentResultScope } from "../lib/nativeDocuments";
 import { createDocumentResultAutosave } from "../lib/documentResultAutosave";
 import { showToast } from "../lib/toast";
 
@@ -1341,10 +1341,10 @@ export function createParam(p: DesignParam, at?: number) {
 
 /** Delete a design (the server moves the file into its history folder). If it is open, it is
  * closed (unsaved changes are dropped) and the start screen shows. Throws the server's error. */
-export async function deleteDesign(id: string): Promise<string> {
+export async function deleteDesign(id: string, project?: import("../lib/nativeDocuments").ProjectRemoval): Promise<string> {
   const owner = file(), ticket = asyncState.ticket();
   const scope = owner?.id === id ? owner.backup_scope : health()?.backup_scope;
-  const res = await api.deleteDesign(id, scope);
+  const res = project ? await archiveNativeProject(id, project, scope) : await api.deleteDesign(id, scope);
   const sameDocument = asyncState.isDocumentCurrent(ticket);
   if (sameDocument && defaultDesignerIO.navigationTarget() === id) {
     asyncState.cancelNavigation();
@@ -1375,5 +1375,5 @@ export async function deleteDesign(id: string): Promise<string> {
   }
   if (sameDocument && modelKey() === id) selectModel("");
   await refreshModels();
-  return res.moved_to;
+  return "recovery_path" in res ? String(res.recovery_path) : res.moved_to;
 }
