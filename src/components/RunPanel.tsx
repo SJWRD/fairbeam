@@ -141,6 +141,9 @@ export default function RunPanel() {
     heading.focus();
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "Escape" || exportOpen() || dialog() || e.defaultPrevented) return;
+      // This listener mounts before most modal listeners. Leave their Escape untouched,
+      // including the native read-only example choice, so the preview behind them stays put.
+      if (document.querySelector('[aria-modal="true"], dialog[open]')) return;
       const target = e.target as HTMLElement | null;
       if (target?.tagName === "SELECT") return; // let an open select close first
       if (target?.closest(".cm-editor")) return; // Escape belongs to the editor (search panel, selection)

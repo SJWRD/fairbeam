@@ -131,13 +131,25 @@ export function ExprField(props: {
   });
   const onBlur = () => { setText(null); offer(); };
   const onFocus = () => { dismissed = false; offer(); };
+  const onEscape = (e: KeyboardEvent) => {
+    if (e.key !== "Escape" || e.defaultPrevented) return;
+    const hasOffer = offering() && unknown().some((key) => paramOfferOwners()[key] === offerEntry.id);
+    const hasTypedFormat = text() !== null && text() !== String(props.value ?? "");
+    if (!hasOffer && !hasTypedFormat) return; // an unchanged field leaves Cancel to its dialog
+    e.preventDefault();
+    e.stopPropagation();
+    // An offer control is about to disappear. Restore its owning field first; its focus
+    // handler may offer again, so the dismissal below must happen afterwards.
+    input.focus();
+    setText(null); setOffering(false); offerEntry.active = false; dismissed = true; refreshParamOfferOwners();
+  };
   return (
-    <div class="dz-field" classList={{ "dz-compact": props.compact, "dz-inline": props.inline }}>
+    <div class="dz-field" classList={{ "dz-compact": props.compact, "dz-inline": props.inline }} onKeyDown={onEscape}>
       <label class="dz-label" for={id()}>{props.label}{props.unit ? <span class="dz-unit"> {props.unit}</span> : null}</label>
       <input autocomplete="off" ref={input} id={id()} title={props.inline ? detail() || String(props.value ?? "") : undefined} class="rp-input dz-input mono" type="text" spellcheck={false} value={text() ?? props.value ?? ""}
         aria-invalid={bad()} aria-describedby={describedBy()} classList={{ "dz-input-warn": !bad() && issue()?.severity === "warning" }}
         onFocus={onFocus} onInput={(e) => { setText(e.currentTarget.value); props.onChange(toExpr(e.currentTarget.value)); }} onBlur={onBlur}
-        onKeyDown={(e) => { if (e.key === "Enter" && offer()) e.preventDefault(); if (e.key === "Escape") { setText(null); setOffering(false); offerEntry.active = false; dismissed = true; refreshParamOfferOwners(); } }} />
+        onKeyDown={(e) => { if (e.key === "Enter" && offer()) e.preventDefault(); }} />
       <span id={messageId} class="dz-value" classList={{ "dz-bad": bad(), "dz-warn": !bad() && issue()?.severity === "warning" }}>{detail()}</span>
       <Show when={offering()}><For each={unknown().filter((key) => paramOfferOwners()[key] === offerEntry.id)}>{(key) =>
         <InlineParam ask={{ key, unit: props.unit, insertAt: props.newParamAt }} onCreated={() => input.focus()} />

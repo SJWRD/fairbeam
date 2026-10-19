@@ -262,7 +262,7 @@ export function createDesignerSession(effects: DesignerSessionEffects = {}) {
       return { text: snapshot(), undo: undoStack(), redo: redoStack(), history: [...history], position: historyPosition, file: file()?.id, metadataRevision: savedMetadataRevision, sessionId, documentRevision: asyncState.ticket().document };
     }
     /** Whether the draft differs from the mark. */
-    const changedSince = (mark: HistoryMark) => snapshot() !== mark.text;
+    const changedSince = (mark: HistoryMark) => (loaded() ? draftText() : snapshot()) !== mark.text;
     /** Go back to the mark. Refuse another design or metadata superseded by a saved rename. */
     function rollbackTo(mark: HistoryMark): boolean {
       if (disposed || mark.sessionId !== sessionId || mark.documentRevision !== asyncState.ticket().document || file()?.id !== mark.file || mark.metadataRevision !== savedMetadataRevision) return false;
