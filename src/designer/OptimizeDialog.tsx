@@ -4,7 +4,7 @@ import { useModal } from "../lib/dialog";
 import OptimizePanel from "../runner/OptimizePanel";
 import { t } from "../i18n";
 import type { Job } from "../runner/api";
-import { attachDesignOptimize, optimizeDialogOpen, prepareDesignOptimize, setOptimizeDialogOpen, setDesignDockTab } from "../runner/designRun";
+import { attachDesignOptimize, optimizeDialogOpen, prepareDesignSubmission, setOptimizeDialogOpen, setDesignDockTab } from "../runner/designRun";
 
 const [opening, setOpening] = createSignal(false);
 const [openError, setOpenError] = createSignal<string | null>(null);
@@ -20,8 +20,8 @@ export async function openDesignerOptimize() {
   setOpenError(null);
   setOptimizeDialogOpen(true);
   try {
-    const error = await prepareDesignOptimize(isCurrent);
-    if (isCurrent()) setOpenError(error);
+    const prepared = await prepareDesignSubmission(isCurrent);
+    if (isCurrent()) setOpenError(prepared.error ?? (prepared.target?.isCurrent() ? null : t("runner.optimize.notSaved")));
   } catch (e) {
     if (isCurrent()) setOpenError(e instanceof Error ? e.message : String(e));
   } finally { if (mine === preparation) setOpening(false); }

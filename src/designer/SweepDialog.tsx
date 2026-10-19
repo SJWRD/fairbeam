@@ -6,7 +6,7 @@ import { saveDownload } from "../lib/download";
 import { api, isTerminal } from "../runner/api";
 import {
   attachDesignOptimize,
-  prepareDesignOptimize,
+  prepareDesignSubmission,
   setDesignDockTab,
   setSweepDialogOpen,
   sweepDialogOpen,
@@ -38,6 +38,7 @@ import type { ParameterSweepDefinition, ParameterSweepSequence } from "./types";
 import { t } from "../i18n";
 import { paramLabelText } from "../lib/paramLabel";
 import { currentSchema } from "../lib/legacy";
+import { showToast } from "../lib/toast";
 
 const empty = (): ParameterSweepDefinition => ({
   schema: "fairbeam.parameter-sweep/1",
@@ -51,12 +52,15 @@ const [notice, setNotice] = createSignal("");
 const [info, setInfo] = createSignal("");
 export async function openDesignerSweep() {
   const savedAxes = axes.map((axis) => ({ ...axis }));
-  const err = await prepareDesignOptimize();
+  const prepared = await prepareDesignSubmission();
+  if (prepared.error || !prepared.target?.isCurrent()) {
+    showToast(prepared.error ?? t("runner.optimize.notSaved"), { tone: "error", key: "designer-sweep-prepare" });
+    return;
+  }
   // Preparing the design selects a different model in the shared Run panel. Restore its axes after
   // the RunPanel model-change effect has had a chance to discard axes for that model.
   setAxes(savedAxes);
-  if (err) setNotice(err);
-  else setNotice("");
+  setNotice("");
   setInfo("");
   setSelected(0);
   setSweepDialogOpen(true);
@@ -73,7 +77,9 @@ function Content() {
   const designCells = () => draftMeshStats()?.nodes;
   let box: HTMLDivElement | undefined;
   let input: HTMLInputElement | undefined;
-  const close = () => setSweepDialogOpen(false);
+  let dialogActive = true;
+  onCleanup(() => { dialogActive = false; });
+  const close = () => { dialogActive = false; setSweepDialogOpen(false); };
   useModal(
     () => box,
     close,
@@ -150,10 +156,11 @@ function Content() {
     setInfo("");
     try {
       if (!draft.parameter_sweep) editParameterSweep(definition());
-      const err = await prepareDesignOptimize();
-      if (err) throw new Error(err);
-      const f = file();
-      if (!f) throw new Error(t("sweep.err.noDesign"));
+      const prepared = await prepareDesignSubmission(() => dialogActive);
+      if (!dialogActive) return;
+      if (prepared.error) throw new Error(prepared.error);
+      if (!prepared.target?.isCurrent()) throw new Error(t("sweep.err.noDesign"));
+      const f = prepared.target.file;
       const base: Record<string, number> = Object.fromEntries(
         draft.params
           .filter((p) => p.expr === undefined)
@@ -179,7 +186,7 @@ function Content() {
         setBottomDockCollapsed(false);
       }
     } catch (e) {
-      setNotice(e instanceof Error ? e.message : String(e));
+      if (dialogActive) setNotice(e instanceof Error ? e.message : String(e));
     } finally {
       setSubmitting(false);
     }

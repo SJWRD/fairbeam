@@ -2,15 +2,15 @@
 // for the result. It saves the design first when it has unsaved changes and refuses while the
 // Checks list has errors; the run itself goes through the run store (src/runner/store.ts), and
 // its progress and results show in the designer's bottom dock (RunDock.tsx).
-import { createSignal, For, onMount, Show } from "solid-js";
+import { createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { CircleAlert, Play, X } from "lucide-solid";
 import { useModal } from "../lib/dialog";
-import { engine as storedEngine, engineSource, health, lastManualThreads, probeServer, selectModel, serverState, setThreads, submitError, submitErrorDetail, submitting, threads as storedThreads } from "../runner/store";
-import { setRunDialogOpen, startDesignRun, storedPoints } from "../runner/designRun";
+import { engine as storedEngine, engineSource, health, lastManualThreads, probeServer, serverState, setThreads, submitError, submitErrorDetail, submitting, threads as storedThreads } from "../runner/store";
+import { prepareDesignSubmission, setRunDialogOpen, startDesignRun, storedPoints } from "../runner/designRun";
 import { cellsText, estimateText } from "./meshStats";
 import { draftEstimate, draftExcitedPorts, draftMeshStats } from "./draftMesh";
 import { PreflightNote } from "./PreflightNote";
-import { addPort, applyFix, checks, conflict, dirty, draft, errorCount, file, focusPath, save, saving } from "./store";
+import { addPort, applyFix, checks, defaultDesignerSession, dirty, draft, errorCount, file, focusPath, saving } from "./store";
 import { openDesignerOptimize } from "./OptimizeDialog";
 import { readGeneralSettings } from "../lib/generalSettings";
 import { autoThreads } from "../lib/autoThreads";
@@ -30,7 +30,9 @@ const ENGINE_LABEL: Record<string, string> = { cpu: "run.engine.cpu", gpu: "run.
 export default function RunDialog() {
   let box: HTMLDivElement | undefined;
   let first: HTMLSelectElement | HTMLInputElement | undefined;
-  const close = () => setRunDialogOpen(false);
+  let dialogActive = true;
+  onCleanup(() => { dialogActive = false; });
+  const close = () => { dialogActive = false; setRunDialogOpen(false); };
   useModal(() => box, close, () => first);
 
   const engines = () => health()?.engines ?? ["cpu"];
@@ -74,25 +76,26 @@ export default function RunDialog() {
 
   const run = async (e: Event) => {
     e.preventDefault();
-    const f = file();
-    if (!f || busy() || pointsBad() || threadsBad()) return;
+    if (!file() || busy() || pointsBad() || threadsBad()) return;
+    const request = defaultDesignerSession.asyncState.ticket();
     setErr(null);
-    if (serverState() !== "online" && !(await probeServer())) {
-      setErr(t("run.err.server"));
-      return;
-    }
     setBusy(true);
     try {
-      if (dirty() || conflict()) await save();
-      if (dirty() || conflict()) {
-        setErr(t("run.err.notSaved"));
+      if (serverState() !== "online" && !(await probeServer())) {
+        if (dialogActive) setErr(t("run.err.server"));
         return;
       }
+      if (!dialogActive || !defaultDesignerSession.asyncState.isDraftCurrent(request)) return;
+      const prepared = await prepareDesignSubmission(() => dialogActive);
+      if (!dialogActive) return;
+      if (prepared.error) { setErr(prepared.error); return; }
+      if (!prepared.target?.isCurrent()) { setErr(t("run.err.notSaved")); return; }
       if (errorCount() > 0) return; // the list below says what to fix
-      selectModel(f.id);
       const job = await startDesignRun({ engine: eng(), threads: eng() === "gpu" ? 1 : thr(), points: points(), name: name().trim() });
       if (job) close();
       else setErr(submitError() ?? t("run.err.notStarted"));
+    } catch (error) {
+      if (dialogActive) setErr(error instanceof Error ? error.message : String(error));
     } finally {
       setBusy(false);
     }

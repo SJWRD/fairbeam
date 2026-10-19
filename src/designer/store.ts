@@ -268,7 +268,7 @@ export const defaultDesignerIO = createDesignerIO(defaultDesignerSession, {
     setOpeningView(pose && draft.model?.id ? { modelId: draft.model.id, ...pose } : null);
   },
 });
-export const { openDesign, save, saveExplicit, saveBeforeLeaving } = defaultDesignerIO;
+export const { openDesign, save, saveExplicit, saveBeforeLeaving, prepareSavedDesign } = defaultDesignerIO;
 export const saveNativeDocumentAs = defaultDesignerIO.saveAs;
 const { take, applyValidation, isReleased } = defaultDesignerIO;
 

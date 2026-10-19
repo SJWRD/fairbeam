@@ -14,6 +14,7 @@ const root = fileURLToPath(new URL('../', import.meta.url)).replaceAll('\\', '/'
 // The picker harness owns browser globals and timers; keep those fixtures out of
 // this suite's independently bundled designer store.
 execFileSync(process.execPath, [fileURLToPath(new URL('./check-model-picker-discard.mjs', import.meta.url))], { stdio: 'inherit' });
+execFileSync(process.execPath, [fileURLToPath(new URL('./check-design-submission-owner.mjs', import.meta.url))], { stdio: 'inherit' });
 const built = await build({
   root, configFile: false, logLevel: 'silent', resolve: { conditions: ['browser'] },
   plugins: [{

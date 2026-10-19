@@ -8,7 +8,7 @@ import { CircleAlert, LoaderCircle, Play, TriangleAlert, X } from "lucide-solid"
 import "../styles/convergence.css";
 import { useModal } from "../lib/dialog";
 import { api, isTerminal } from "../runner/api";
-import { attachDesignOptimize, prepareDesignOptimize } from "../runner/designRun";
+import { attachDesignOptimize, prepareDesignSubmission } from "../runner/designRun";
 import { engine, health, jobs, refreshRuns, runSettings, setEngine } from "../runner/store";
 import type { Bundle } from "../types";
 import {
@@ -17,7 +17,7 @@ import {
 } from "./convergence";
 import { PreflightNote } from "./PreflightNote";
 import { cellsText, durationText, estimateText, estimateTime, meshStats, type TimeEstimate } from "./meshStats";
-import { draft, edit, file } from "./store";
+import { draft, edit } from "./store";
 import { setBottomDockCollapsed } from "./layoutState";
 import type { Design } from "./types";
 import { fmt, t } from "../i18n";
@@ -44,7 +44,9 @@ type Estimate = { density: number; cells: number | null; nodes?: number; est: Ti
 
 function Content(props: { studyId: string | null }) {
   let box: HTMLDivElement | undefined;
-  const close = () => setOpen(null);
+  let dialogActive = true;
+  onCleanup(() => { dialogActive = false; });
+  const close = () => { dialogActive = false; setOpen(null); };
   useModal(() => box, close, () => box?.querySelector<HTMLElement>("input,button"));
   const [studyId, setStudyId] = createSignal(props.studyId);
   const [notice, setNotice] = createSignal("");
@@ -105,10 +107,11 @@ function Content(props: { studyId: string | null }) {
     setBusy(true);
     setNotice("");
     try {
-      const err = await prepareDesignOptimize(); // saves the design and refuses check errors
-      if (err) throw new Error(err);
-      const f = file();
-      if (!f) throw new Error(t("conv.err.noDesign"));
+      const prepared = await prepareDesignSubmission(() => dialogActive); // saves the design and refuses check errors
+      if (!dialogActive) return;
+      if (prepared.error) throw new Error(prepared.error);
+      if (!prepared.target?.isCurrent()) throw new Error(t("conv.err.noDesign"));
+      const f = prepared.target.file;
       const res = await api.submitConvergence({ model: f.id, params: {}, densities: planned(), ...(largestNodes() ? { cells: largestNodes() } : {}), tolerances: tol(), max_runs: runs(), ...runSettings() });
       setStudyId(res.study.id);
       setStudy(res.study);
@@ -118,7 +121,7 @@ function Content(props: { studyId: string | null }) {
         setBottomDockCollapsed(false);
       }
     } catch (e) {
-      setNotice(e instanceof Error ? e.message : String(e));
+      if (dialogActive) setNotice(e instanceof Error ? e.message : String(e));
     } finally {
       setBusy(false);
     }

@@ -6,6 +6,8 @@ import type { createDesignerSession } from "./sessionCore";
 import { fmt, t } from "../i18n/index.ts";
 
 type Core = ReturnType<typeof createDesignerSession>;
+/** The exact saved document authorized by a Run/Optimize action, including its own native fork. */
+export interface SavedDesignTarget { file: DesignFile; isCurrent: () => boolean }
 export interface DesignerIODependencies {
   transport: { design: typeof api.design; saveDesign: (file: DesignFile, design: Design, hash: string) => ReturnType<typeof api.saveDesign> };
   rememberLastDesign: (file: DesignFile) => void;
@@ -249,6 +251,26 @@ export function createDesignerIO(core: Core, deps: DesignerIODependencies) {
     onReady?.();
     return true;
   }
+  async function prepareSavedDesign(isCurrent: () => boolean = () => true): Promise<SavedDesignTarget | null> {
+    if (!alive() || !isCurrent() || core.loading() || saving() || !file()) return null;
+    let ticket = asyncState.ticket();
+    let target = file()!;
+    if (dirty() || conflict()) {
+      let continued = false;
+      const saved = await saveBeforeLeaving(() => {
+        // This continuation alone may adopt our Save's new fb_ identity. Reading file()
+        // after an arbitrary await would also adopt a competing Open or a failed Save.
+        ticket = asyncState.ticket();
+        target = file()!;
+        continued = true;
+      });
+      if (!saved || !continued) return null;
+    }
+    const ownsTarget = () => alive() && isCurrent() && asyncState.isDraftCurrent(ticket)
+      && file()?.id === target.id && file()?.hash === target.hash && file()?.backup_scope === target.backup_scope
+      && !core.loading() && !saving() && !dirty() && !conflict();
+    return ownsTarget() ? { file: target, isCurrent: ownsTarget } : null;
+  }
   /** Explicit recovery is an undoable edit, never a replacement of the saved file/hash. */
   function restoreRecoveredDraft(design: Design): boolean {
     const f = file();
@@ -268,7 +290,7 @@ export function createDesignerIO(core: Core, deps: DesignerIODependencies) {
     asyncState.invalidatePreview();
     if (!core.isDisposed()) { setLoading(false); setSaving(false); }
   }
-  return { take, openDesign, save, saveExplicit, saveAs, saveBeforeLeaving, restoreRecoveredDraft, applyValidation, isReleased, dispose, observeSavedDocumentReplacement,
+  return { take, openDesign, save, saveExplicit, saveAs, saveBeforeLeaving, prepareSavedDesign, restoreRecoveredDraft, applyValidation, isReleased, dispose, observeSavedDocumentReplacement,
     navigationTarget: () => navigationTarget,
     setNavigationTarget: (id: string | null) => { if (alive()) navigationTarget = id; },
     releaseDraft: () => { if (alive()) released = { draft: asyncState.ticket(), results: core.pendingResultsToken() }; },
