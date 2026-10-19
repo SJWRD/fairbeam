@@ -50,14 +50,20 @@ def archive(workspace, model_id: str, expected_path: str, expected_results: str)
             exists = folder.exists() or folder.is_symlink()
             if exists:
                 _tree(folder)
+                document_stat = path.lstat()
                 # A copied .fb may still refer to this sidecar. Keep both intact in that case.
                 for sibling in path.parent.iterdir():
                     # AppleDouble files contain filesystem metadata, not a document.
                     # They commonly accompany Finder-opened projects on exFAT/SMB.
                     if sibling.name.startswith("._"):
                         continue
-                    if sibling != path and sibling.suffix.lower() == ".fb":
+                    if sibling.suffix.lower() == ".fb":
                         try:
+                            # Directory entries can use a different case or Unicode
+                            # normalization from the opened path. Compare filesystem
+                            # identity without following links, not names or document IDs.
+                            if os.path.samestat(sibling.lstat(), document_stat):
+                                continue
                             other, _ = doc.read(sibling)
                         except (doc.DocumentError, OSError) as exc:
                             # An unreadable real document might share the sidecar. Keep

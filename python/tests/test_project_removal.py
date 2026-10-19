@@ -1,7 +1,9 @@
 import copy
+import os
 from pathlib import Path
 import tempfile
 import unittest
+import unicodedata
 from unittest import mock
 
 from fairbeam import documents as doc, modelfiles
@@ -58,6 +60,45 @@ class ProjectRemovalTests(unittest.TestCase):
             self.remove()
         self.assertTrue(self.path.exists())
         self.assertTrue(self.folder.exists())
+
+    def _remove_with_directory_alias(self, alias_name):
+        alias = self.root / alias_name
+        # APFS/exFAT can resolve this spelling natively. On filesystems that
+        # distinguish the names, use a hard link to supply the same file identity.
+        if not alias.exists():
+            os.link(self.path, alias)
+        self.assertTrue(os.path.samefile(alias, self.path))
+        before = self.path.read_bytes()
+        iterdir = Path.iterdir
+
+        def entries(parent):
+            if parent == self.root:
+                return iter([alias])
+            return iterdir(parent)
+
+        with mock.patch.object(Path, "iterdir", entries):
+            result = self.remove()
+        recovery = Path(result["recovery_path"])
+        self.assertEqual((recovery / self.path.name).read_bytes(), before)
+        self.assertEqual((recovery / self.folder.name / "S11.csv").read_bytes(), b"preserve results")
+
+    def test_nfd_directory_entry_for_nfc_opened_document(self):
+        alias_name = unicodedata.normalize("NFD", self.path.name)
+        self.assertNotEqual(alias_name, self.path.name)
+        self._remove_with_directory_alias(alias_name)
+
+    def test_case_alias_directory_entry_for_opened_document(self):
+        self._remove_with_directory_alias(self.path.name.upper())
+
+    def test_finder_duplicate_with_same_document_id_still_blocks(self):
+        duplicate = self.root / "Finder duplicate.fb"
+        duplicate.write_bytes(self.path.read_bytes())
+        self.assertFalse(os.path.samefile(duplicate, self.path))
+        with self.assertRaisesRegex(doc.DocumentConflict, "shares"):
+            self.remove()
+        self.assertTrue(self.path.exists())
+        self.assertTrue(self.folder.exists())
+        self.assertFalse((self.root / "Fairbeam Deleted").exists())
 
     def test_appledouble_siblings_are_not_read_as_documents(self):
         # AppleDouble magic plus non-UTF-8 metadata, as on exFAT/FAT/SMB.
