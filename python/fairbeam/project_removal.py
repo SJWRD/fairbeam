@@ -52,8 +52,20 @@ def archive(workspace, model_id: str, expected_path: str, expected_results: str)
                 _tree(folder)
                 # A copied .fb may still refer to this sidecar. Keep both intact in that case.
                 for sibling in path.parent.iterdir():
+                    # AppleDouble files contain filesystem metadata, not a document.
+                    # They commonly accompany Finder-opened projects on exFAT/SMB.
+                    if sibling.name.startswith("._"):
+                        continue
                     if sibling != path and sibling.suffix.lower() == ".fb":
-                        other, _ = doc.read(sibling)
+                        try:
+                            other, _ = doc.read(sibling)
+                        except (doc.DocumentError, OSError) as exc:
+                            # An unreadable real document might share the sidecar. Keep
+                            # the protection, but identify what the user needs to check.
+                            raise doc.DocumentConflict(
+                                f"Cannot check sibling document '{sibling.name}' for shared results; "
+                                "check that file or remove only the list entry"
+                            ) from exc
                         if os.path.normcase(other["results_directory"]) == os.path.normcase(expected_results):
                             raise doc.DocumentConflict("Another document shares this results folder; remove only the list entry")
             recovery_root = path.parent / "Fairbeam Deleted"

@@ -59,6 +59,41 @@ class ProjectRemovalTests(unittest.TestCase):
         self.assertTrue(self.path.exists())
         self.assertTrue(self.folder.exists())
 
+    def test_appledouble_siblings_are_not_read_as_documents(self):
+        # AppleDouble magic plus non-UTF-8 metadata, as on exFAT/FAT/SMB.
+        metadata = b"\x00\x05\x16\x07\x00\x02\x00\x00\xff\xfe"
+        sibling = self.root / ("._" + self.path.name)
+        sibling.write_bytes(metadata)
+        with mock.patch.object(doc, "read", wraps=doc.read) as read:
+            result = self.remove()
+        self.assertNotIn(sibling, [call.args[0] for call in read.call_args_list])
+        self.assertTrue((Path(result["recovery_path"]) / self.path.name).is_file())
+        self.assertTrue((Path(result["recovery_path"]) / self.folder.name / "S11.csv").is_file())
+
+    def test_corrupt_real_sibling_is_named_and_nothing_moves(self):
+        sibling = self.root / "Unfinished download.fb"
+        sibling.write_bytes(b"\xff\xfe")
+        with self.assertRaisesRegex(doc.DocumentConflict, "Unfinished download\\.fb"):
+            self.remove()
+        self.assertTrue(self.path.is_file())
+        self.assertTrue(self.folder.is_dir())
+        self.assertFalse((self.root / "Fairbeam Deleted").exists())
+
+    def test_unreadable_real_sibling_is_named_and_nothing_moves(self):
+        sibling = self.root / "Protected.fb"
+        sibling.write_bytes(b"placeholder")
+        read = doc.read
+        def unreadable(path):
+            if path == sibling:
+                raise PermissionError("access denied")
+            return read(path)
+        with mock.patch.object(doc, "read", side_effect=unreadable):
+            with self.assertRaisesRegex(doc.DocumentConflict, "Protected\\.fb"):
+                self.remove()
+        self.assertTrue(self.path.is_file())
+        self.assertTrue(self.folder.is_dir())
+        self.assertFalse((self.root / "Fairbeam Deleted").exists())
+
     def test_changed_document_or_displayed_paths_are_rejected(self):
         with self.assertRaises(doc.DocumentConflict):
             archive(self.workspace, self.key, str(self.path), "wrong.results")
