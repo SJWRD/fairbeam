@@ -18,7 +18,7 @@ import { parameterUses, pathOwner, renameParameter } from "./paramRefs";
 import { openParametersTab, setParameterRanges } from "./dockState";
 import { appMode, setAppMode } from "../workspace";
 import { designChecks, mergeChecks, type Check, type CheckFix } from "./checks";
-import { checkMessage } from "./checkText";
+import { checkMessage, parameterErrorTitle } from "./checkText";
 import { validColor, validOpacity } from "./colors";
 import { designMaterial, type LibraryMaterial } from "./materials";
 import { designMaterialFromUser, type UserMaterial } from "./userMaterials";
@@ -38,8 +38,8 @@ import { createDocumentResultAutosave } from "../lib/documentResultAutosave";
 import { showToast } from "../lib/toast";
 
 export const defaultDesignerSession = createDesignerSession({
-  edited: () => { quickPreview(); schedulePreview(); },
-  restored: () => { quickPreview(); schedulePreview(0); },
+  edited: (previewChanged) => { if (previewChanged) { quickPreview(); schedulePreview(); } },
+  restored: (previewChanged) => { if (previewChanged) { quickPreview(); schedulePreview(0); } },
 });
 export const { file, setFile, draft, setDraft, selection, setSelection, loading, setLoading, saving, setSaving,
   message, setMessage, serverErrors, setServerErrors, conflict, setConflict, serverChecks, setServerChecks,
@@ -858,7 +858,7 @@ export const fieldId = (path: string) => `dz-${path.replace(/[^\w]/g, "-")}`;
 export function applyFix(set: CheckFix["set"]) {
   // the paths come from the server's last check; after an edit (or with the server offline) they
   // may point at another item, so the fix waits for the checks of the current draft
-  if (!checksTicket() || !asyncState.isDraftCurrent(checksTicket()!)) {
+  if (!checksTicket() || !asyncState.isPreviewCurrent(checksTicket()!)) {
     setMessage({ tone: "warn", text: t("store.checksCatchingUp") });
     return;
   }
@@ -1141,7 +1141,7 @@ export function setOpacity(kind: "parts" | "materials", indices: number[], opaci
 /** Why `key` cannot be the new key of parameter `i` (the inline error under the key cell), or null. */
 export function paramKeyProblem(i: number, key: string): string | null {
   const bad = paramKeyError(key);
-  if (bad) return `${bad[0].toUpperCase()}${bad.slice(1)}.`;
+  if (bad) return `${parameterErrorTitle(bad)}.`;
   return (draft.params ?? []).some((q, j) => j !== i && q.key === key) ? t("params.keyTwice") : null;
 }
 

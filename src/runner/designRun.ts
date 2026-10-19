@@ -135,13 +135,15 @@ export async function startDesignRun(opts: { engine: string; threads: number; po
 }
 
 /** Prepare the shared optimizer form from the latest saved designer model and values. */
-export async function prepareDesignOptimize(): Promise<string | null> {
+export async function prepareDesignOptimize(isCurrent: () => boolean = () => true): Promise<string | null> {
   const f = designFile();
   if (!f) return t("runner.optimize.noDesign");
   if (dirty() || conflict()) await save();
+  if (!isCurrent()) return null;
   if (dirty() || conflict()) return t("runner.optimize.notSaved");
   if (checks().some((c) => c.severity === "error")) return t("runner.optimize.fixErrors");
   await refreshModels();
+  if (!isCurrent()) return null;
   if (!models().some((m) => m.key === f.id)) return t("runner.optimize.notAvailable");
   selectModel(f.id, bundle());
   return null;

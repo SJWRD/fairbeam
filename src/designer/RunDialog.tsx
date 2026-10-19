@@ -75,7 +75,7 @@ export default function RunDialog() {
   const run = async (e: Event) => {
     e.preventDefault();
     const f = file();
-    if (!f || busy()) return;
+    if (!f || busy() || pointsBad() || threadsBad()) return;
     setErr(null);
     if (serverState() !== "online" && !(await probeServer())) {
       setErr(t("run.err.server"));
@@ -156,16 +156,16 @@ export default function RunDialog() {
               <Show when={engineOrigin()}><span class="dz-value dz-wrap">{engineOrigin()}</span></Show>
             </label>
             <Show when={eng() === "cpu"} fallback={<p class="dz-value dz-wrap" title={t("run.gpuNote")}>{t("run.gpuNote")}</p>}>
-              <label class="dz-field">
-                <span class="dz-label">{t("run.threads")} <span class="dz-unit">1–{cpu()}</span></span>
+              <div class="dz-field">
+                <label class="dz-label" for="rd-threads">{t("run.threads")} <span class="dz-unit">1–{cpu()}</span></label>
                 <label class="gs-check"><input type="checkbox" checked={thr() === 0}
                   onChange={(e) => { const n = e.currentTarget.checked ? 0 : Math.min(cpu(), lastManualThreads() || autoCount()); setThr(n); setThreads(n); }} /> {t("run.threads.auto")}</label>
                 <Show when={thr() !== 0}>
-                  <NumberField class="rp-input dz-input mono" min="1" max={cpu()} step="1" value={thr()}
-                    aria-invalid={threadsBad()} onInput={(e) => { const n = Number(e.currentTarget.value); setThr(n); if (Number.isInteger(n) && n >= 1 && n <= cpu()) setThreads(n); }} />
+                  <NumberField id="rd-threads" class="rp-input dz-input mono" min="1" max={cpu()} step="1" value={Number.isFinite(thr()) ? thr() : ""}
+                    aria-invalid={threadsBad()} aria-describedby="rd-threads-hint" onInput={(e) => { const n = e.currentTarget.valueAsNumber; setThr(n); if (Number.isInteger(n) && n >= 1 && n <= cpu()) setThreads(n); }} />
                 </Show>
-                <span class="dz-value dz-wrap" classList={{ "dz-bad": threadsBad() }}>{threadsBad() ? t("run.threads.bad", { max: cpu() }) : thr() === 0 ? autoHint() : t("run.threads.hint", { n: autoCount() })}</span>
-              </label>
+                <span id="rd-threads-hint" class="dz-value dz-wrap" classList={{ "dz-bad": threadsBad() }}>{threadsBad() ? t("run.threads.bad", { max: cpu() }) : thr() === 0 ? autoHint() : t("run.threads.hint", { n: autoCount() })}</span>
+              </div>
             </Show>
             <label class="dz-field">
               <span class="dz-label">{t("run.points")}</span>

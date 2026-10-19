@@ -40,7 +40,9 @@ export function parseCsv(text: string): TransferRow[] {
 
 export function parseTransfer(text: string, format: "csv" | "json"): TransferRow[] {
   if (format === "csv") return parseCsv(text);
-  const value: unknown = JSON.parse(text.replace(/^\uFEFF/, ""));
+  let value: unknown;
+  try { value = JSON.parse(text.replace(/^\uFEFF/, "")); }
+  catch { throw new Error("JSON is not valid. Check quotes, commas and brackets."); }
   if (!Array.isArray(value)) throw new Error("JSON must be an array of parameter objects.");
   return value.map((v, i) => {
     if (!v || typeof v !== "object" || fields.some((k) => typeof (v as Record<string, unknown>)[k] !== "string")) throw new Error(`JSON row ${i + 1} must contain string fields: ${fields.join(", ")}.`);

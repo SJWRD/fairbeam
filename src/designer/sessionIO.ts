@@ -3,7 +3,7 @@ import type { Design } from "./types";
 import type { Check } from "./checks";
 import type { api, ApiError, DesignFile, Validation } from "../runner/api";
 import type { createDesignerSession } from "./sessionCore";
-import { t } from "../i18n/index.ts";
+import { fmt, t } from "../i18n/index.ts";
 
 type Core = ReturnType<typeof createDesignerSession>;
 export interface DesignerIODependencies {
@@ -72,7 +72,7 @@ export function createDesignerIO(core: Core, deps: DesignerIODependencies) {
       batch(() => {
         core.restoreBackup(b.design, new Date(b.at).getTime());
       });
-      const at = new Date(b.at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+      const at = fmt.dateTime(b.at, { hour: "2-digit", minute: "2-digit" });
       setMessage({ tone: "warn", text: t("store.restored", { at }), sticky: true });
     }
     deps.openedDesign?.(f);

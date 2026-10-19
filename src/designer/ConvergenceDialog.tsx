@@ -21,6 +21,7 @@ import { draft, edit, file } from "./store";
 import { setBottomDockCollapsed } from "./layoutState";
 import type { Design } from "./types";
 import { fmt, t } from "../i18n";
+import NumberField from "../components/NumberField";
 
 /** open: null closed; studyId null shows the setup, else that study's progress and report */
 const [open, setOpen] = createSignal<{ studyId: string | null } | null>(null);
@@ -53,12 +54,14 @@ function Content(props: { studyId: string | null }) {
   const parsed = createMemo(() => parseDensities(densText()));
   const runs = () => Number(maxRuns());
   const tol = () => ({ f_pct: Number(tolF()), s11_db: Number(tolS()), dmax_db: Number(tolD()) });
+  const toleranceBad = (text: string) => !Number.isFinite(Number(text)) || Number(text) <= 0;
+  const runsBad = () => !Number.isInteger(runs()) || runs() < 2 || runs() > 12;
   const planned = () => planDensities(parsed().values, runs());
   const blocker = () => meshBlocker(draft);
   const setupError = () => {
     if (blocker()) return blocker();
     if (parsed().error) return parsed().error!;
-    if (!Number.isInteger(runs()) || runs() < 2 || runs() > 12) return t("conv.err.maxRuns");
+    if (runsBad()) return t("conv.err.maxRuns");
     if (Object.values(tol()).some((v) => !Number.isFinite(v) || v <= 0)) return t("conv.err.tolerances");
     if (planned().length < 2) return t("conv.err.twoDensities");
     return null;
@@ -176,16 +179,16 @@ function Content(props: { studyId: string | null }) {
                 <input autocomplete="off" class="rp-input mono" aria-label={t("conv.densities")} value={densText()} onInput={(e) => setDensText(e.currentTarget.value)} />
               </label>
               <label class="rp-mini">{t("conv.tol.f")}
-                <input autocomplete="off" class="rp-input mono" aria-label={t("conv.tol.f.aria")} inputmode="decimal" value={tolF()} onInput={(e) => setTolF(e.currentTarget.value)} />
+                <NumberField class="rp-input mono" aria-label={t("conv.tol.f.aria")} step="any" value={tolF()} aria-invalid={toleranceBad(tolF())} aria-describedby={toleranceBad(tolF()) ? "cv-setup-error" : undefined} onInput={(e) => setTolF(e.currentTarget.value)} />
               </label>
               <label class="rp-mini">{t("conv.tol.s11")}
-                <input autocomplete="off" class="rp-input mono" aria-label={t("conv.tol.s11.aria")} inputmode="decimal" value={tolS()} onInput={(e) => setTolS(e.currentTarget.value)} />
+                <NumberField class="rp-input mono" aria-label={t("conv.tol.s11.aria")} step="any" value={tolS()} aria-invalid={toleranceBad(tolS())} aria-describedby={toleranceBad(tolS()) ? "cv-setup-error" : undefined} onInput={(e) => setTolS(e.currentTarget.value)} />
               </label>
               <label class="rp-mini">{t("conv.tol.dmax")}
-                <input autocomplete="off" class="rp-input mono" aria-label={t("conv.tol.dmax.aria")} inputmode="decimal" value={tolD()} onInput={(e) => setTolD(e.currentTarget.value)} />
+                <NumberField class="rp-input mono" aria-label={t("conv.tol.dmax.aria")} step="any" value={tolD()} aria-invalid={toleranceBad(tolD())} aria-describedby={toleranceBad(tolD()) ? "cv-setup-error" : undefined} onInput={(e) => setTolD(e.currentTarget.value)} />
               </label>
               <label class="rp-mini" title={t("conv.maxRuns.title")}>{t("conv.maxRuns")}
-                <input autocomplete="off" class="rp-input mono" aria-label={t("conv.maxRuns")} inputmode="numeric" value={maxRuns()} onInput={(e) => setMaxRuns(e.currentTarget.value)} />
+                <NumberField class="rp-input mono" aria-label={t("conv.maxRuns")} min="2" max="12" step="1" value={maxRuns()} aria-invalid={runsBad()} aria-describedby={runsBad() ? "cv-setup-error" : undefined} onInput={(e) => setMaxRuns(e.currentTarget.value)} />
               </label>
               <Show when={engines().length > 1}>
                 <label class="rp-mini">{t("run.engine")}
@@ -275,7 +278,7 @@ function Content(props: { studyId: string | null }) {
 
           <Show when={!studyId() && !setupError()}><PreflightNote cells={largestNodes()} engine={engine()} /></Show>
           <Show when={(!studyId() && setupError()) || notice()}>
-            <p class="status-block status-critical" role="alert"><CircleAlert size={14} aria-hidden="true" />{notice() || setupError()}</p>
+            <p id="cv-setup-error" class="status-block status-critical" role="alert"><CircleAlert size={14} aria-hidden="true" />{notice() || setupError()}</p>
           </Show>
           <div class="cv-actions">
             <Show when={studyId()} fallback={

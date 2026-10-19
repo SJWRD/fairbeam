@@ -4791,5 +4791,18 @@
   "panel.name.geometryExport": "Geometri dışa aktarımı",
   "panel.name.render": "Görsel oluşturma",
   "panel.name.packageExport": "Paket dışa aktarımı",
-  "panel.name.array": "Dizi paneli"
+  "panel.name.array": "Dizi paneli",
+  "history.restoredBackup": "Yedek geri yüklendi",
+  "opt.dialog.preparing": "Kaydedilmiş tasarım optimizasyon için hazırlanıyor…",
+  "opt.dialog.retry": "Yeniden dene",
+  "checks.msg.parameter-import.quote": "{n}. karakterde beklenmeyen tırnak işareti.",
+  "checks.msg.parameter-import.unclosed": "CSV, tırnak içindeki bir alan tamamlanmadan bitiyor.",
+  "checks.msg.parameter-import.header": "CSV başlığı şu alanlardan oluşmalı: {fields}.",
+  "checks.msg.parameter-import.columns": "CSV dosyasının {row}. satırında {n} sütun olmalı.",
+  "checks.msg.parameter-import.json": "JSON geçerli değil. Tırnakları, virgülleri ve parantezleri kontrol edin.",
+  "checks.msg.parameter-import.array": "JSON, parametre nesnelerinden oluşan bir dizi olmalı.",
+  "checks.msg.parameter-import.fields": "JSON dosyasının {row}. satırında şu metin alanları bulunmalı: {fields}.",
+  "checks.msg.parameter-import.duplicate": "İçe aktarılan veride parametre anahtarı yineleniyor.",
+  "checks.msg.parameter-import.existing": "Bu parametre anahtarı mevcut tasarımda yineleniyor.",
+  "checks.msg.parameter-import.required": "İfade gerekli."
 }

@@ -4872,5 +4872,18 @@
   "panel.name.geometryExport": "Geometry export",
   "panel.name.render": "Render image",
   "panel.name.packageExport": "Package export",
-  "panel.name.array": "Array panel"
+  "panel.name.array": "Array panel",
+  "history.restoredBackup": "Restored backup",
+  "opt.dialog.preparing": "Preparing the saved design for optimization…",
+  "opt.dialog.retry": "Try again",
+  "checks.msg.parameter-import.quote": "Unexpected quote at character {n}.",
+  "checks.msg.parameter-import.unclosed": "CSV ends inside a quoted field.",
+  "checks.msg.parameter-import.header": "CSV header must be: {fields}.",
+  "checks.msg.parameter-import.columns": "CSV row {row} must have {n} columns.",
+  "checks.msg.parameter-import.json": "JSON is not valid. Check quotes, commas and brackets.",
+  "checks.msg.parameter-import.array": "JSON must be an array of parameter objects.",
+  "checks.msg.parameter-import.fields": "JSON row {row} must contain string fields: {fields}.",
+  "checks.msg.parameter-import.duplicate": "Duplicate key in import.",
+  "checks.msg.parameter-import.existing": "This key is duplicated in the current design.",
+  "checks.msg.parameter-import.required": "Expression is required."
 }

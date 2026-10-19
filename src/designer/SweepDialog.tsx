@@ -41,7 +41,7 @@ import { currentSchema } from "../lib/legacy";
 
 const empty = (): ParameterSweepDefinition => ({
   schema: "fairbeam.parameter-sweep/1",
-  sequences: [{ name: "Sequence 1", axes: [] }],
+  sequences: [{ name: t("sweep.sequenceN", { n: 1 }), axes: [] }],
 });
 const [selected, setSelected] = createSignal(0);
 const [runId, setRunId] = createSignal<string | null>(null);
@@ -272,7 +272,7 @@ function Content() {
                   const n = definition().sequences.length;
                   put([
                     ...definition().sequences,
-                    { name: `Sequence ${n + 1}`, axes: [] },
+                    { name: t("sweep.sequenceN", { n: n + 1 }), axes: [] },
                   ]);
                   setSelected(n);
                 }}

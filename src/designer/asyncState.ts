@@ -28,9 +28,9 @@ export class DesignerAsyncState {
     this.preview++;
   }
 
-  editDraft(): void {
+  editDraft(previewChanged = true): void {
     this.revision++;
-    this.preview++;
+    if (previewChanged) this.preview++;
   }
 
   invalidatePreview(): void { this.preview++; }
@@ -48,6 +48,6 @@ export class DesignerAsyncState {
   }
 
   isPreviewCurrent(ticket: ReturnType<DesignerAsyncState["ticket"]>): boolean {
-    return this.isDraftCurrent(ticket) && ticket.preview === this.preview;
+    return this.isDocumentCurrent(ticket) && ticket.preview === this.preview;
   }
 }
