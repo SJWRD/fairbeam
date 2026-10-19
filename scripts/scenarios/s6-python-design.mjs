@@ -70,5 +70,54 @@ export default {
       assert.equal(opened.source, runPanelSourceId, 'the Design retains the new model as its Python source');
       assert.match(await s.text('.python-panel .python-panel-code'), /def build\(/, 'the Design code panel shows editable Python source');
     }, { settle: 500 });
+
+    const editorState = () => s.page.evaluate(async () => {
+      const editor = await import('/src/editor/store.ts');
+      const runner = await import('/src/runner/store.ts');
+      return {id:editor.file()?.id,text:editor.draft(),dirty:editor.dirty(),selected:runner.modelKey()};
+    });
+    const openCodeFromStart = async id => {
+      await s.click('header.screen.start',{sel:'.mode-switch button'});await s.wait('.home');
+      await s.clickSel(`[data-run-python-model="${id}"]`);await s.wait('#run-panel');
+      await s.click('runPanel.tab.code',{sel:'#rp-tab-code'});
+    };
+    const appendCode = async text => {
+      await (await s.wait('.code-pane .cm-content')).click();
+      await s.page.keyboard.down('Control');await s.page.keyboard.press('End');await s.page.keyboard.up('Control');
+      await s.page.keyboard.type(`\n# ${text}\n`);
+    };
+    let originalSource, editedSource;
+    await s.step('Start to another Python model asks before replacing edited source; Cancel retains its context',async()=>{
+      await s.page.setViewport({width:1920,height:1080});
+      await openCodeFromStart(sourceId);await s.wait('.code-pane .cm-content');
+      await s.waitFor(async id=>(await import('/src/editor/store.ts')).file()?.id===id,sourceId,{what:`source editor follows ${sourceId}`});
+      originalSource=(await editorState()).text;
+      await appendCode('Unsaved model-switch regression');editedSource=(await editorState()).text;
+      assert.notEqual(editedSource,originalSource);
+      await openCodeFromStart(runPanelSourceId);await s.wait('[role="dialog"]');
+      await s.click('common.cancel',{within:'[role="dialog"]'});await s.gone('[role="dialog"]');
+      await s.wait('.code-pane .cm-content');
+      const kept=await editorState();
+      assert.deepEqual(kept,{id:sourceId,text:editedSource,dirty:true,selected:sourceId});
+    });
+    await s.step('explicit Discard opens the selected model without writing the previous source',async()=>{
+      await openCodeFromStart(runPanelSourceId);await s.wait('[role="dialog"]');
+      await s.click('confirm.discard.button',{within:'[role="dialog"]'});await s.gone('[role="dialog"]');
+      await s.waitFor(async id=>(await import('/src/editor/store.ts')).file()?.id===id,runPanelSourceId);
+      assert.equal((await editorState()).dirty,false);
+      const onDisk=await s.page.evaluate(async id=>(await (await fetch(`/api/models/${id}/source`)).json()).source,sourceId);
+      assert.equal(onDisk,originalSource);
+    });
+    await s.step('saving source before switching preserves the edited file and needs no discard prompt',async()=>{
+      await openCodeFromStart(sourceId);await s.waitFor(async id=>(await import('/src/editor/store.ts')).file()?.id===id,sourceId);
+      await s.wait('.code-pane .cm-content');await appendCode('Saved model-switch regression');
+      const savedText=(await editorState()).text;
+      await s.click('editor.code.savePreview',{within:'.code-pane'});
+      await s.waitFor(async()=>{const e=await import('/src/editor/store.ts');return !e.saving()&&!e.dirty();},null,{timeout:30000,what:'source saved'});
+      await openCodeFromStart(runPanelSourceId);await s.waitFor(async id=>(await import('/src/editor/store.ts')).file()?.id===id,runPanelSourceId);
+      assert.equal(await s.page.$('[role="dialog"]'),null);
+      const onDisk=await s.page.evaluate(async id=>(await (await fetch(`/api/models/${id}/source`)).json()).source,sourceId);
+      assert.equal(onDisk,savedText);
+    });
   },
 };

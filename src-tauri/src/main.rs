@@ -87,10 +87,11 @@ struct Shell {
 }
 
 /// How the app is left: the window's own close (title-bar X, Alt+F4, Close Window) or Quit.
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 enum Leave {
     Window,
     Quit,
+    Update,
 }
 
 struct LeaveRequest {
@@ -98,10 +99,38 @@ struct LeaveRequest {
     leave: Leave,
     /// the viewer did not answer (hung page, script error): the next request leaves without asking
     silent: bool,
+    /// Updates obtain consent without destroying the window or exiting the process.
+    update_reply: Option<mpsc::Sender<bool>>,
+    /// Final consent reserves the shell until installation finishes or fails.
+    approved: bool,
+}
+
+impl LeaveRequest {
+    fn answer_update(&mut self, approved: bool) {
+        self.approved = approved;
+        if let Some(reply) = self.update_reply.take() {
+            let _ = reply.send(approved);
+        }
+    }
+
+    fn redirect_update(&mut self, leave: Leave) -> bool {
+        if self.leave != Leave::Update {
+            return false;
+        }
+        if !self.approved {
+            self.leave = leave;
+            self.silent = false;
+            if let Some(reply) = self.update_reply.take() {
+                let _ = reply.send(false);
+            }
+        }
+        // An install already committing must not be interrupted by a second close.
+        true
+    }
 }
 
 /// The window's close button, Alt+F4, Close Window, File > Exit and Quit / Cmd+Q all come here.
-/// The viewer is served from 127.0.0.1 and may call only `reveal_download`, so the shell asks it with
+/// The viewer is served from 127.0.0.1; the shell asks it with
 /// `window.fairbeamWindowClose(kind, id)` (src/designer/windowClose.ts) and asks again while the
 /// answer is "pending" (its Save / Don't save / Cancel dialog is open). "close" leaves, "cancel"
 /// keeps the window. A page without that function (the splash page) is left at once.
@@ -109,6 +138,9 @@ fn request_leave(app: &AppHandle, leave: Leave) {
     let shell = app.state::<Shell>();
     let mut guard = shell.leaving.lock().unwrap();
     if let Some(req) = guard.as_mut() {
+        if req.redirect_update(leave) {
+            return;
+        }
         // already asking: Quit wins over closing the window, and a page that does not answer
         // cannot keep the app open against a second request
         if leave == Leave::Quit {
@@ -131,6 +163,8 @@ fn request_leave(app: &AppHandle, leave: Leave) {
         id,
         leave,
         silent: false,
+        update_reply: None,
+        approved: false,
     });
     drop(guard);
     let app = app.clone();
@@ -151,16 +185,10 @@ fn ask_viewer(app: AppHandle, id: u64) {
             _ => return,
         };
         let Some(win) = app.get_webview_window("main") else {
+            finish_leave(&app, id, false);
             return;
         };
-        let kind = if leave == Leave::Quit {
-            "quit"
-        } else {
-            "window"
-        };
-        let script = format!(
-            "typeof window.fairbeamWindowClose === 'function' ? window.fairbeamWindowClose('{kind}', {id}) : 'close'"
-        );
+        let script = leave_script(leave, id);
         let (tx, rx) = mpsc::channel::<String>();
         if win
             .eval_with_callback(script, move |answer| {
@@ -168,12 +196,16 @@ fn ask_viewer(app: AppHandle, id: u64) {
             })
             .is_err()
         {
-            finish_leave(&app, id, true);
+            finish_leave(&app, id, leave != Leave::Update);
             return;
         }
         let answer = match rx.recv_timeout(Duration::from_secs(2)) {
             Ok(answer) => answer,
             Err(RecvTimeoutError::Timeout) => {
+                if leave == Leave::Update {
+                    finish_leave(&app, id, false);
+                    return;
+                }
                 // the page is busy or hung: keep waiting, but a second request leaves
                 set_silent(true);
                 match rx.recv() {
@@ -185,6 +217,10 @@ fn ask_viewer(app: AppHandle, id: u64) {
                 }
             }
             Err(RecvTimeoutError::Disconnected) => {
+                if leave == Leave::Update {
+                    finish_leave(&app, id, false);
+                    return;
+                }
                 set_silent(true);
                 return;
             }
@@ -201,6 +237,10 @@ fn ask_viewer(app: AppHandle, id: u64) {
                 return;
             }
             _ => {
+                if leave == Leave::Update {
+                    finish_leave(&app, id, false);
+                    return;
+                }
                 // a script error: stay open this time, a second request leaves
                 set_silent(true);
                 return;
@@ -209,12 +249,28 @@ fn ask_viewer(app: AppHandle, id: u64) {
     }
 }
 
+fn leave_script(leave: Leave, id: u64) -> String {
+    let (kind, missing) = match leave {
+        Leave::Window => ("window", "close"),
+        Leave::Quit => ("quit", "close"),
+        Leave::Update => ("update", "cancel"),
+    };
+    format!("typeof window.fairbeamWindowClose === 'function' ? window.fairbeamWindowClose('{kind}', {id}) : '{missing}'")
+}
+
 /// End request `id`; leave when the viewer said so.
 fn finish_leave(app: &AppHandle, id: u64, leave: bool) {
     let taken = {
         let shell = app.state::<Shell>();
         let mut guard = shell.leaving.lock().unwrap();
         if guard.as_ref().map(|r| r.id) != Some(id) {
+            return;
+        }
+        if let Some(req) = guard.as_mut().filter(|r| r.leave == Leave::Update) {
+            req.answer_update(leave);
+            if !leave {
+                guard.take();
+            }
             return;
         }
         guard.take()
@@ -227,11 +283,109 @@ fn finish_leave(app: &AppHandle, id: u64, leave: bool) {
 /// Leave without asking again; the server stops on RunEvent::Exit.
 fn leave_now(app: &AppHandle, leave: Leave) {
     match (leave, app.get_webview_window("main")) {
+        (Leave::Update, _) => {} // update consent is never permission to quit
         // destroy, not close: close would raise CloseRequested and ask again
         (Leave::Window, Some(win)) => {
             let _ = win.destroy();
         }
         _ => app.exit(0),
+    }
+}
+
+/// Held from final consent until install completion. No server or application lifetime changes
+/// happen here; the updater owns that continuation and cancellation keeps the app usable.
+pub(crate) struct UpdatePermit {
+    app: AppHandle,
+    id: u64,
+}
+
+impl Drop for UpdatePermit {
+    fn drop(&mut self) {
+        let shell = self.app.state::<Shell>();
+        let mut request = shell.leaving.lock().unwrap();
+        if request.as_ref().is_some_and(|r| r.id == self.id && r.leave == Leave::Update) {
+            request.take();
+        }
+        drop(request);
+        if let Some(window) = self.app.get_webview_window("main") {
+            let _ = window.eval(format!("window.fairbeamUpdateFinished?.({})", self.id));
+        }
+    }
+}
+
+pub(crate) fn approve_update(app: AppHandle) -> Option<UpdatePermit> {
+    let shell = app.state::<Shell>();
+    let mut request = shell.leaving.lock().unwrap();
+    if request.is_some() {
+        return None; // another close owns the viewer; never steal its decision
+    }
+    let id = {
+        let mut seq = shell.leave_seq.lock().unwrap();
+        *seq += 1;
+        *seq
+    };
+    let (reply, answer) = mpsc::channel();
+    *request = Some(LeaveRequest { id, leave: Leave::Update, silent: false,
+        update_reply: Some(reply), approved: false });
+    drop(request);
+    let permit = UpdatePermit { app: app.clone(), id };
+    thread::spawn(move || ask_viewer(app, id));
+    if answer.recv().unwrap_or(false) { Some(permit) } else { None }
+}
+
+fn update_committing(app: &AppHandle) -> bool {
+    app.state::<Shell>().leaving.lock().unwrap().as_ref()
+        .is_some_and(|r| r.leave == Leave::Update && r.approved)
+}
+
+#[cfg(test)]
+mod update_leave_tests {
+    use super::{leave_script, Leave, LeaveRequest};
+    use std::sync::mpsc;
+
+    fn pending() -> (LeaveRequest, mpsc::Receiver<bool>) {
+        let (reply, answer) = mpsc::channel();
+        (LeaveRequest { id: 1, leave: Leave::Update, silent: false,
+            update_reply: Some(reply), approved: false }, answer)
+    }
+
+    #[test]
+    fn update_never_assumes_missing_viewer_means_consent() {
+        let script = leave_script(Leave::Update, 12);
+        assert!(script.contains("('update', 12)"));
+        assert!(script.ends_with(": 'cancel'"));
+        assert!(leave_script(Leave::Window, 12).ends_with(": 'close'"));
+    }
+
+    #[test]
+    fn explicit_close_cancels_a_pending_update_without_leaving_twice() {
+        for leave in [Leave::Window, Leave::Quit] {
+            let (mut request, answer) = pending();
+            assert!(request.redirect_update(leave));
+            assert!(!answer.recv().unwrap());
+            assert_eq!(request.leave, leave);
+            assert!(!request.approved);
+            assert!(request.update_reply.is_none());
+        }
+    }
+
+    #[test]
+    fn approval_continues_update_and_keeps_commit_reserved() {
+        let (mut request, answer) = pending();
+        request.answer_update(true);
+        assert!(answer.recv().unwrap());
+        assert_eq!(request.leave, Leave::Update);
+        assert!(request.approved);
+        assert!(request.redirect_update(Leave::Quit));
+        assert_eq!(request.leave, Leave::Update, "no concurrent exit during install");
+    }
+
+    #[test]
+    fn cancellation_does_not_grant_install_permission() {
+        let (mut request, answer) = pending();
+        request.answer_update(false);
+        assert!(!answer.recv().unwrap());
+        assert!(!request.approved);
     }
 }
 
@@ -1944,6 +2098,9 @@ fn main() {
         .manage(Shell::default())
         .manage(native_document::NativeDocuments::default())
         .on_menu_event(|app, event| {
+            if update_committing(app) {
+                return;
+            }
             let close_window = event.id().as_ref() == "close-window";
             let id = event.id().as_ref();
             if close_window || id == "close-project" {

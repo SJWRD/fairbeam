@@ -48,7 +48,7 @@ import OptimizePanel from "../runner/OptimizePanel";
 import OptimizeProgress from "../runner/OptimizeProgress";
 import NewModelDialog from "../editor/NewModelDialog";
 import { radioGroupKeys } from "../lib/a11y";
-import { confirmDiscard, dialog, dirty, panelTab, setDialog, setPanelTab } from "../editor/store";
+import { confirmDiscard, dialog, dirty, panelTab, revokeDiscardApproval, setDialog, setPanelTab } from "../editor/store";
 import { confirmDiscard as confirmDesignDiscard, dirty as designDirty, enterDesign } from "../designer/store";
 import { appMode } from "../workspace";
 import { openPythonModelAsDesign } from "../designer/pythonModel";
@@ -316,7 +316,11 @@ export default function RunPanel() {
             const select = e.currentTarget.value;
             e.currentTarget.value = modelKey();
             void (async () => {
-              if (!(await confirmDiscard()) || !(await confirmDesignDiscard())) return;
+              if (!(await confirmDiscard(select))) return;
+              if (!(await confirmDesignDiscard())) {
+                revokeDiscardApproval(select);
+                return;
+              }
               // choosing a model here (a bundled one too) keeps this panel open: it is the model the Run panel follows
               batch(() => { selectModel(select, bundle()); setStartedPythonModel(select); });
               resetAxes(); runPreview();

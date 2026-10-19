@@ -93,6 +93,39 @@ export default {
       assert.equal(await s.page.evaluate(async () => (await import('/src/lib/unsavedWork.ts')).checkUnsavedWork(18002)), 'clear', 'reverting restored text clears its cached dirty state');
       await script(kept);
     });
+    await s.step('native first Save and Save As retain unapplied Python with their new identity', async () => {
+      const kept = await script();
+      for (const [attempt, copy, canceled] of [[1, false, true], [2, false, false], [3, true, false]]) {
+        const before = await s.store((_, m) => m.s.file().id);
+        const nextId = `python_save_${s.lang}_${ctx.stamp}_${attempt}`;
+        const result = await s.page.evaluate(async ({copy, canceled, nextId}) => {
+          const store = await import('/src/designer/store.ts');
+          const {api} = await import('/src/runner/api.ts');
+          const previous = window.__TAURI_INTERNALS__;
+          let target;
+          window.__TAURI_INTERNALS__ = {invoke: async (command, args) => {
+            if (command === 'native_document_restore') return null;
+            if (command !== 'native_document_save') throw new Error(`Unexpected native test command ${command}`);
+            if (canceled) return {status:'canceled'};
+            const file = await api.createDesign({id:nextId, name:nextId, design:args.request.draftDesign ?? JSON.parse(JSON.stringify(store.draft))});
+            target = file.id;
+            return {status:'saved',handle:`test-${nextId}`,path:`/${nextId}.fb`,file:{...file,document_id:nextId},
+              document:{id:nextId,path:`/${nextId}.fb`,revision:'test-revision',results_directory:`${nextId}.results`},results:[],warnings:[]};
+          }};
+          try { return {ok:await (copy ? store.saveNativeDocumentAs() : store.save()),id:store.file().id,target}; }
+          finally { if(previous) window.__TAURI_INTERNALS__=previous; else delete window.__TAURI_INTERNALS__; }
+        }, {copy,canceled,nextId});
+        assert.equal(result.ok,!canceled);
+        assert.equal(result.id,canceled?before:result.target);
+        await s.wait('.python-panel .cm-content');
+        assert.equal(await script(),kept,'successful Save adoption preserves the live Python editor');
+        await s.click('header.screen.start');await s.wait('.home');
+        await s.click('header.screen.design');await s.wait('.rb');
+        await s.click('ribbon.tab.post',{sel:'.rb-tab'});await s.clickSel('button[data-action="open-python"]');
+        await s.wait('.python-panel .cm-content');
+        assert.equal(await script(),kept,'restored text belongs to the current saved identity');
+      }
+    });
     await s.step('Done with unapplied changes asks before discarding', async () => {
       await s.clickSel('button[data-action="python-done"]');
       await s.wait('[role=dialog]');

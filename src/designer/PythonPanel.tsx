@@ -1,9 +1,9 @@
 import { createEffect, createSignal, lazy, on, onCleanup, Show } from "solid-js";
 import { Check, Copy, Download, Pencil, Play, X } from "lucide-solid";
 import { downloadFailedMessage, downloadMessage, saveDownload } from "../lib/download";
-import { applyPython, dirty, draft, exportPython, file, message, selection } from "./store";
+import { applyPython, defaultDesignerIO, dirty, draft, exportPython, file, message, selection } from "./store";
 import { serverState } from "../runner/store";
-import { api } from "../runner/api";
+import { api, type DesignFile } from "../runner/api";
 import { confirmDraftDiscard } from "../lib/ConfirmDialog";
 import { registerUnsavedWork } from "../lib/unsavedWork";
 import { t } from "../i18n";
@@ -32,10 +32,17 @@ const unapplied = () => editing() && editText() !== baseText();
 type PythonDraft = { text: string; base: string; source: string | null };
 const retained = new Map<string, PythonDraft>();
 let panelOwner = "";
-const ownerKey = () => JSON.stringify([file()?.backup_scope, file()?.id]);
+const documentKey = (document: DesignFile | null) => JSON.stringify([document?.backup_scope, document?.id]);
+const ownerKey = () => documentKey(file());
 function retainEdits() {
   if (panelOwner && unapplied()) retained.set(panelOwner, { text: editText(), base: baseText(), source: source() });
 }
+defaultDesignerIO.observeSavedDocumentReplacement((previous, next) => {
+  const before = documentKey(previous), after = documentKey(next);
+  const saved = retained.get(before);
+  if (saved) { retained.delete(before); retained.set(after, saved); }
+  if (panelOwner === before) panelOwner = after;
+});
 registerUnsavedWork("designer-python", {
   snapshot: () => {
     const drafts = new Map(retained);
@@ -130,9 +137,10 @@ export function closePythonPanel(restoreFocus = true, selectionFocus = false): v
 
 export function PythonPanel() {
   onCleanup(() => closePythonPanel(false));
-  // another design closes the panel; a save of this one (a new file object, same id) does not
+  // Another design closes the panel. Its own successful Save/Save As migrates
+  // panelOwner before this effect, keeping unapplied script text with the new document.
   // (not deferred: a deferred `on` passes no previous value on its first change)
-  createEffect(on(() => file()?.id, (id, prev) => { if (prev !== undefined && id !== prev) closePythonPanel(false); }));
+  createEffect(on(ownerKey, (key, prev) => { if (prev !== undefined && key !== prev && key !== panelOwner) closePythonPanel(false); }));
   // picking a part yields to the Inspector; the same selection set again (the save that the
   // export makes first re-selects it) does not close the panel
   createEffect(on(() => selection(), (s, prev) => {

@@ -186,7 +186,18 @@ One entry per release, newest first. The installers are on the
 - Add command-registration/manifest and capability checks to prevent missing native permissions.
 - Ask before native window close or Quit discards unsaved Python editor text. Retain unapplied
   designer Python text across Start, design switches and reopening the panel within the session.
+- Keep unapplied designer Python text attached to its document after first native Save or
+  Save As. Switching Python models also checks unsaved editor text and waits for pending saves.
+- Check unsaved work again after an update finishes downloading, before installation stops
+  the app. Cancel or Later keeps drafts intact; edits made during download are included.
 - Preserve decimal points while typing automatic mesh overrides in Simulation settings.
+- Protect shared result folders even when sibling documents use different case or Unicode
+  spellings for the same directory. Linked result folders remain protected.
+- Skip malformed or unrelated result-index and workspace metadata files without blocking
+  healthy projects. Failed index publication no longer prevents completed-run callbacks;
+  concurrent index writers use separate temporary files and Windows file retries.
+- Deliver rejected local API requests reliably when their body arrives after the headers.
+  Isolate Windows bootstrap proxy tests with exclusive, OS-assigned ports.
 - Removal remains recoverable through `Fairbeam Deleted`; this does not permanently erase files.
 
 ### 0.8.2, 2026-10-19
