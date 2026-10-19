@@ -1,4 +1,4 @@
-import { serverMessage } from "./serverMessages";
+import { serverMessage } from "./serverMessages.ts";
 import { t } from "../i18n/index.ts";
 import { errorText } from "./errorText.ts";
 

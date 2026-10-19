@@ -1,4 +1,4 @@
-import { hasKey, t } from "../i18n";
+import { hasKey, t } from "../i18n/index.ts";
 
 /** Optional, additive server metadata. Unrecognized codes retain their English diagnostic. */
 export interface ServerMessage { code: string; args?: Record<string, unknown> }
