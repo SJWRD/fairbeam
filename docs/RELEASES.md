@@ -178,6 +178,20 @@ editing them, or the prefill stops working.
 One entry per release, newest first. The installers are on the
 [release page](https://github.com/ismailakdag/fairbeam-releases/releases) of each version.
 
+### 0.8.2, 2026-10-19
+
+- Start shows five designs at a time, with Show more/Show less and search/filter support.
+  Example copy actions are labelled and grouped with their own example.
+- Optional project removal moves the portable `.fb` and its results folder together into
+  `Fairbeam Deleted` for recovery. It does not permanently erase files or free disk space;
+  local history and cached runs remain. Shared results, links and active runs stay protected.
+- Removal handles AppleDouble metadata siblings and Unicode/case aliases on macOS;
+  unreadable real sibling documents are identified in the error message.
+- Forest and Academic appearance presets apply coordinated interface and viewport colors.
+  Simulation settings are unchanged.
+- The Windows first-use Open With limitation documented for 0.8.0 remains unchanged.
+  Elmer and coax remain experimental; this release adds no solver accuracy claims.
+
 ### 0.8.1, 2026-10-18
 
 - Fix new-design creation staying on Start after the initial native `.fb` save changes
