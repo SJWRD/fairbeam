@@ -178,6 +178,14 @@ editing them, or the prefill stops working.
 One entry per release, newest first. The installers are on the
 [release page](https://github.com/ismailakdag/fairbeam-releases/releases) of each version.
 
+### 0.8.3, 2026-10-19
+
+- Fix the desktop permission error when choosing to remove a portable `.fb` document and
+  its results folder. The native archive command now has an app-manifest entry and viewer
+  permission. In 0.8.2 the blocked action left files intact; list-only removal was unaffected.
+- Add command-registration/manifest and capability checks to prevent missing native permissions.
+- Removal remains recoverable through `Fairbeam Deleted`; this does not permanently erase files.
+
 ### 0.8.2, 2026-10-19
 
 - Start shows five designs at a time, with Show more/Show less and search/filter support.
