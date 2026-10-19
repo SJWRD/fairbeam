@@ -53,12 +53,20 @@ class ConvergenceCancellationTest(unittest.TestCase):
         thread.start()
         return thread, errors
 
-    def join(self, task):
-        thread, errors = task
-        thread.join(5)
-        self.assertFalse(thread.is_alive(), "Stop/completion must not deadlock")
-        if errors:
-            raise errors[0]
+    def join(self, *tasks):
+        # Join every participant before reporting an error, so a failed completion
+        # cannot leave cancellation writing into a temporary directory being removed.
+        failures = []
+        for task in tasks:
+            if task is None:
+                continue
+            thread, errors = task
+            thread.join(5)
+            if thread.is_alive():
+                failures.append(AssertionError("Stop/completion must not deadlock"))
+            failures.extend(errors)
+        if failures:
+            raise failures[0]
 
     def test_stop_after_terminal_status_before_finished_hook_does_not_admit_next_density(self):
         first = self.start()
@@ -111,9 +119,7 @@ class ConvergenceCancellationTest(unittest.TestCase):
                 self.assertTrue(requested.wait(5))
             finally:
                 resume.set()
-                self.join(completing)
-                if stopping:
-                    self.join(stopping)
+                self.join(completing, stopping)
         self.assertEqual(len(self.manager.jobs), 1)
         self.assertEqual(self.studies.get("study")["convergence"]["reason"], "cancelled")
 
@@ -139,9 +145,7 @@ class ConvergenceCancellationTest(unittest.TestCase):
                 self.assertTrue(stopping.wait(5))
             finally:
                 resume.set()
-                self.join(completing)
-                if cancelling:
-                    self.join(cancelling)
+                self.join(completing, cancelling)
         self.assertEqual(len(self.manager.jobs), 2)
         self.assertEqual([j.status for j in self.manager.jobs.values()], ["done", "cancelled"])
         self.assertEqual(self.studies.get("study")["convergence"]["reason"], "cancelled")
