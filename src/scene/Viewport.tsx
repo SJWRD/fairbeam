@@ -17,6 +17,7 @@ import { cssVar } from "../lib/cssvar";
 import { downloadFailedMessage, saveDownloadUrl } from "../lib/download";
 import { downloadToast } from "../lib/toast";
 import { dims, freqText, num } from "../lib/format";
+import { modelToMm } from "../lib/modelUnits";
 import { fmt, t } from "../i18n";
 import type { Bundle, Part } from "../types";
 import {
@@ -1083,7 +1084,7 @@ export default function Viewport() {
       if (!b || !p) return "";
       const kind = p.type === "Material" ? t("viewport.part.dielectric", { eps: p.material ? fmt.num(p.material.eps_r, 4) : "?" }) : "PEC";
       const hidden = hiddenParts[p.name] ? t("viewport.part.hidden") : "";
-      return t("viewport.part.describe", { name: p.label ?? p.name, kind, dims: dims(p.bbox), hidden, n: i + 1, total: b.parts.length });
+      return t("viewport.part.describe", { name: p.label ?? p.name, kind, dims: dims(p.bbox, modelToMm(b)), hidden, n: i + 1, total: b.parts.length });
     }
     const onKey = (e: KeyboardEvent) => {
       if (e.defaultPrevented || e.target !== host || e.metaKey || e.ctrlKey || e.altKey || drawTool()) return;
@@ -1503,7 +1504,7 @@ export default function Viewport() {
         >
           <div class="vp-tip-name">{tipPart()!.label ?? tipPart()!.name}</div>
           <div class="vp-tip-row">{tipPart()!.type === "Material" ? t("viewport.tip.dielectric", { eps: tipPart()!.material ? fmt.num(tipPart()!.material!.eps_r, 4) : "?" }) : "PEC"}</div>
-          <div class="vp-tip-row mono">{dims(tipPart()!.bbox)}</div>
+          <div class="vp-tip-row mono">{dims(tipPart()!.bbox, modelToMm(bundle()))}</div>
           <Show when={tipPart()!.primitives.length > 1}>
             <div class="vp-tip-row">{t("viewport.tip.primitives", { count: tipPart()!.primitives.length })}</div>
           </Show>

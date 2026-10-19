@@ -71,8 +71,9 @@ export function timeUnit(s: number | null | undefined): string {
   return `${decimalComma() ? e.replace(".", ",") : e} s`;
 }
 
-export function dims(bbox: [number[], number[]]): string {
-  const d = bbox[1].map((v, i) => fmt.num(v - bbox[0][i], 3));
+/** A model-coordinate bounding box, displayed in mm using the bundle's modelToMm factor. */
+export function dims(bbox: [number[], number[]], toMm: number): string {
+  const d = bbox[1].map((v, i) => fmt.num((v - bbox[0][i]) * toMm, 3));
   return d.join(" × ") + " mm";
 }
 
