@@ -10,10 +10,42 @@ import subprocess
 import tempfile
 import threading
 import unittest
+from unittest.mock import patch
+from urllib.parse import unquote, urlsplit
 
 
 SCRIPT = Path(__file__).resolve().parents[2] / "runtime" / "setup-runtime.ps1"
 POWERSHELL = r"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe"
+ACTIVE_SERVERS = []
+DIAGNOSTIC_LIMIT = 2000
+
+
+def bounded_output(value, proxy_env=None):
+    """Keep timeout evidence small and never print proxy credentials or commands."""
+    if value is None:
+        return "<no output>"
+    text = value.decode("utf-8", errors="replace") if isinstance(value, bytes) else str(value)
+    secrets = []
+    for address in (proxy_env or {}).values():
+        secrets.append(address)
+        try:
+            uri = urlsplit(address if "://" in address else "http://" + address)
+            secrets.extend(unquote(part) for part in (uri.username, uri.password) if part)
+        except ValueError:
+            pass
+    for secret in sorted(filter(None, secrets), key=len, reverse=True):
+        text = text.replace(secret, "<redacted>")
+    if len(text) > DIAGNOSTIC_LIMIT:
+        return text[:DIAGNOSTIC_LIMIT] + "\n<truncated>"
+    return text
+
+
+def timeout_evidence(error, proxy_env=None):
+    servers = [server.snapshot() for server in ACTIVE_SERVERS]
+    return (f"Bootstrap PowerShell timed out after {error.timeout}s; "
+            f"local HTTP counters={servers}\n"
+            f"stdout:\n{bounded_output(error.stdout, proxy_env)}\n"
+            f"stderr:\n{bounded_output(error.stderr, proxy_env)}")
 
 
 def ps_string(value):
@@ -24,6 +56,7 @@ def run_powershell(body, proxy_env=None):
     # Loading the file itself would execute the installer. Parse its top-level
     # function definitions instead, so every request in these tests is local.
     setup = """
+[Console]::Error.WriteLine('[bootstrap-test] powershell-started')
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
 [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding $false
@@ -37,8 +70,10 @@ foreach ($definition in $ast.EndBlock.Statements) {
         . ([scriptblock]::Create($definition.Extent.Text))
     }
 }
+[Console]::Error.WriteLine('[bootstrap-test] functions-loaded')
 """ % ps_string(SCRIPT)
-    command = setup + "\n" + body + "\n"
+    command = (setup + "\n[Console]::Error.WriteLine('[bootstrap-test] call-started')\n" + body
+               + "\n[Console]::Error.WriteLine('[bootstrap-test] call-finished')\n")
     # -EncodedCommand takes base64-encoded UTF-16LE, independent of the console
     # code page and safe for Windows paths containing quotes or non-ASCII text.
     encoded = base64.b64encode(command.encode("utf-16le")).decode("ascii")
@@ -47,22 +82,43 @@ foreach ($definition in $ast.EndBlock.Statements) {
         if name.lower() in {"http_proxy", "https_proxy", "all_proxy", "no_proxy"}:
             del env[name]
     env.update(proxy_env or {})
-    return subprocess.run(
-        [POWERSHELL, "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
-         "-EncodedCommand", encoded],
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        env=env,
-        timeout=30,
-    )
+    try:
+        return subprocess.run(
+            [POWERSHELL, "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
+             "-EncodedCommand", encoded],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            env=env,
+            timeout=30,
+        )
+    except subprocess.TimeoutExpired as error:
+        # TimeoutExpired's default traceback prints the large encoded command but
+        # hides captured phase/output evidence. Keep the same timeout and fail.
+        raise AssertionError(timeout_evidence(error, proxy_env)) from None
 
 
 class LocalHTTPServer(http.server.ThreadingHTTPServer):
     # HTTPServer enables SO_REUSEADDR. On Windows that allows two live listeners
     # to claim the same address, sending a proxy request to the wrong fixture.
     allow_reuse_address = False
+
+    def __init__(self, *args, **kwargs):
+        self.accepted = 0
+        self.requests = 0
+        self.counter_lock = threading.Lock()
+        super().__init__(*args, **kwargs)
+
+    def get_request(self):
+        connection = super().get_request()
+        with self.counter_lock:
+            self.accepted += 1
+        return connection
+
+    def snapshot(self):
+        with self.counter_lock:
+            return {"port": self.server_port, "accepted": self.accepted, "requests": self.requests}
 
     def server_bind(self):
         if os.name == "nt":
@@ -80,18 +136,71 @@ class LocalServer:
         return f"http://127.0.0.1:{self.server.server_port}"
 
     def __enter__(self):
+        ACTIVE_SERVERS.append(self.server)
         self.thread.start()
         return self
 
     def __exit__(self, *_):
-        self.server.shutdown()
-        self.thread.join(timeout=5)
-        self.server.server_close()
+        try:
+            self.server.shutdown()
+            self.thread.join(timeout=5)
+            self.server.server_close()
+        finally:
+            ACTIVE_SERVERS.remove(self.server)
 
 
 class QuietHandler(http.server.BaseHTTPRequestHandler):
+    def parse_request(self):
+        valid = super().parse_request()
+        if valid:
+            with self.server.counter_lock:
+                self.server.requests += 1
+        return valid
+
     def log_message(self, *_):
         pass
+
+
+class RuntimeBootstrapDiagnostics(unittest.TestCase):
+    def test_timeout_keeps_bounded_phases_and_local_counters_without_command_or_secrets(self):
+        secret = "fake:proxy-password"
+        address = "http://test-user:fake%3Aproxy-password@127.0.0.1:5515"
+        failure = subprocess.TimeoutExpired(
+            ["powershell", "-EncodedCommand", "DO-NOT-PRINT-COMMAND"], 30,
+            output=("progress " + secret + "x" * 5000).encode(),
+            stderr=("[bootstrap-test] powershell-started\n"
+                    "[bootstrap-test] functions-loaded\n"
+                    "[bootstrap-test] call-started\n" + address).encode(),
+        )
+        with LocalServer(QuietHandler) as server:
+            with server.server.counter_lock:
+                server.server.accepted = 2
+                server.server.requests = 1
+            with patch("subprocess.run", side_effect=failure) as run:
+                with self.assertRaises(AssertionError) as raised:
+                    run_powershell("throw 'unused'", {"HTTP_PROXY": address})
+            self.assertEqual(run.call_args.kwargs["timeout"], 30)
+            command = base64.b64decode(run.call_args.args[0][-1]).decode("utf-16le")
+            for phase in ("powershell-started", "functions-loaded", "call-started", "call-finished"):
+                self.assertIn(f"[bootstrap-test] {phase}", command)
+        message = str(raised.exception)
+        self.assertIn("accepted': 2", message)
+        self.assertIn("requests': 1", message)
+        self.assertIn("[bootstrap-test] call-started", message)
+        self.assertIn("<truncated>", message)
+        self.assertIn("<redacted>", message)
+        self.assertNotIn(secret, message)
+        self.assertNotIn(address, message)
+        self.assertNotIn("test-user", message)
+        self.assertNotIn("DO-NOT-PRINT-COMMAND", message)
+        self.assertLess(len(message), 2 * DIAGNOSTIC_LIMIT + 500)
+        self.assertEqual(ACTIVE_SERVERS, [])
+
+    def test_cold_start_timeout_without_output_is_explicit(self):
+        failure = subprocess.TimeoutExpired(["powershell", "secret-command"], 30)
+        with patch("subprocess.run", side_effect=failure):
+            with self.assertRaisesRegex(AssertionError, "stdout:\\n<no output>\\nstderr:\\n<no output>"):
+                run_powershell("throw 'unused'")
 
 
 @unittest.skipUnless(os.name == "nt" and Path(POWERSHELL).is_file(),
@@ -139,6 +248,8 @@ class RuntimeBootstrapDownload(unittest.TestCase):
             result = self.download(url, destination, payload, {"HTTP_PROXY": proxy.url})
             self.assert_downloaded(result, destination, payload)
             self.assertEqual(requests, [url])
+            self.assertEqual(proxy.server.snapshot(), {
+                "port": proxy.server.server_port, "accepted": 1, "requests": 1})
 
     def test_no_proxy_bypasses_environment_proxy(self):
         payload = b"direct local response"
