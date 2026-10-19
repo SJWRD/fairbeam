@@ -2296,7 +2296,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def _cancel_sweep(self, sweep_id: str):
         self._body()
-        jobs = self.app.manager.cancel_sweep(sweep_id)
+        jobs = self.app.studies.cancel(sweep_id)
         if not jobs:
             raise ApiError(404, f"no sweep {sweep_id}")
         self._json(202, {"runs": [j.to_dict() for j in jobs]})

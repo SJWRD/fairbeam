@@ -1,4 +1,5 @@
 import { withoutVoids } from "../lib/voidParts.ts";
+import { modelToMm } from "../lib/modelUnits.ts";
 import { lumpedLabel } from "../lumped.ts";
 import { APP_VERSION } from "../lib/appVersion.ts";
 // Academic / engineering technical drawing of a project bundle: orthographic views (first or third
@@ -671,7 +672,7 @@ function buildIso(ctx: Ctx, s: number, main: number): Cell {
     const [x, y] = isoPt(p);
     return [X(x), Y(y)];
   };
-  const title = viewTitle(ctx, "iso", Math.abs(s - main) > 1e-9 && !ctx.figure ? `Isometric view (${scaleLabel(s)})` : "Isometric view");
+  const title = viewTitle(ctx, "iso", Math.abs(s - main) > 1e-9 && !ctx.figure ? `Isometric view (${scaleLabel(s / modelToMm(ctx.b))})` : "Isometric view");
   const triadW = 10;
   const titleW = triadW + textWidth(title, st.fsTitle, 600);
 
@@ -824,11 +825,12 @@ function render(items: Placed[], dx: number, dy: number): string {
 
 function collectNotes(ctx: Ctx): string[] {
   const b = ctx.b;
+  const mm = (value: number) => Number((value * modelToMm(b)).toFixed(4));
   const notes = ["All dimensions in mm."];
   notes.push(...ctx.plan.notes);
   const sheets = b.parts.some((p) => p.type !== "Material" && p.primitives.some((q) => q.kind === "polygon" || (q.kind === "box" && q.start.some((x, i) => Math.abs(x - q.stop[i]) < 1e-9))));
   if (sheets) notes.push("Metal parts are PEC; zero-thickness sheets are drawn with a minimum line width (solid black when seen edge-on).");
-  if (b.half_space) notes.push(`Infinite PEC ground plane at z = ${Number(b.half_space.position.toFixed(4))} mm (boundary condition, image theory), shown as a hatched ground line.`);
+  if (b.half_space) notes.push(`Infinite PEC ground plane at z = ${mm(b.half_space.position)} mm (boundary condition, image theory), shown as a hatched ground line.`);
   const anyHidden = (Object.keys(ctx.shapes) as ViewId[]).some((id) => dashedShapes(ctx.shapes[id]).length > 0);
   if (anyHidden) notes.push("Dashed lines: metal hidden behind a dielectric.");
   if (b.parts.some((p) => p.primitives.some((q) => !q.exact))) notes.push("Dash-dotted outlines are bounding-box approximations (primitive not exported exactly).");
@@ -842,14 +844,14 @@ function collectNotes(ctx: Ctx): string[] {
     const d = p.stop.map((x, i) => Math.abs(x - p.start[i]));
     const len = Math.max(...d);
     if (p.type === "coaxial") {
-      notes.push(`P${p.number}: coaxial TEM port, along ${p.direction}, axial length ${Number(len.toFixed(4))} mm${p.excite ? ", excited" : ""}.`);
+      notes.push(`P${p.number}: coaxial TEM port, along ${p.direction}, axial length ${mm(len)} mm${p.excite ? ", excited" : ""}.`);
       continue;
     }
     if (p.type === "waveguide") {
-      notes.push(`P${p.number}: ${p.mode ?? "TE"} waveguide port, ${Number((p.a ?? 0).toFixed(4))} × ${Number((p.b ?? 0).toFixed(4))} mm, along ${p.direction}, reference impedance Z_TE (${Number(p.R.toFixed(1))} Ω at the band centre)${p.excite ? ", excited" : ""}.`);
+      notes.push(`P${p.number}: ${p.mode ?? "TE"} waveguide port, ${mm(p.a ?? 0)} × ${mm(p.b ?? 0)} mm, along ${p.direction}, reference impedance Z_TE (${Number(p.R.toFixed(1))} Ω at the band centre)${p.excite ? ", excited" : ""}.`);
       continue;
     }
-    notes.push(`P${p.number}: ${p.type} port, ${Number(p.R.toFixed(2))} Ω, along ${p.direction}, gap ${Number(len.toFixed(4))} mm${p.excite ? ", excited" : ""}.`);
+    notes.push(`P${p.number}: ${p.type} port, ${Number(p.R.toFixed(2))} Ω, along ${p.direction}, gap ${mm(len)} mm${p.excite ? ", excited" : ""}.`);
   }
   for (const e of b.lumped_elements ?? []) notes.push(e.type === "resistor" && e.R !== undefined ? `${e.label || e.name}: ${Number(e.R.toFixed(2))} Ω ${e.type}, current along ${e.direction}.` : `${e.label || e.name}: ${lumpedLabel(e)}, current along ${e.direction}.`);
   return notes;
@@ -863,6 +865,7 @@ function today(): string {
 
 export function technicalDrawing(bundle: Bundle, options: Partial<DrawingOptions> = {}): DrawingResult {
   const b = withoutVoids(bundle);
+  const toMm = modelToMm(b);
   const o: DrawingOptions = { ...DEFAULT_DRAWING_OPTIONS, ...options };
   const figure = o.sheet === "figure";
   const st = o.sheet === "A3" ? STYLE_07 : STYLE_05;
@@ -897,8 +900,8 @@ export function technicalDrawing(bundle: Bundle, options: Partial<DrawingOptions
       const L = layoutAt(ctx, s);
       return L.w <= width - 2 * margin && L.h <= width * 1.3;
     };
-    let lo = 1e-4;
-    let hi = 1e3;
+    let lo = 1e-4 * toMm;
+    let hi = 1e3 * toMm;
     for (let i = 0; i < 40; i++) {
       const mid = Math.sqrt(lo * hi);
       if (fits(mid)) lo = mid;
@@ -913,7 +916,7 @@ export function technicalDrawing(bundle: Bundle, options: Partial<DrawingOptions
     const body = render(L.items, (width - L.w) / 2, margin) + nb.render(margin, margin + L.h + 3);
     return {
       svg: svgDoc(width, height, body, `${b.name} — technical drawing`, desc),
-      widthMm: width, heightMm: height, scale: s, scaleLabel: scaleLabel(s), notes, warnings, dimensions: dims, dimensionKeys: dimKeys,
+      widthMm: width, heightMm: height, scale: s, scaleLabel: scaleLabel(s / toMm), notes, warnings, dimensions: dims, dimensionKeys: dimKeys,
     };
   }
 
@@ -945,7 +948,8 @@ export function technicalDrawing(bundle: Bundle, options: Partial<DrawingOptions
     return best;
   };
 
-  for (const s of SCALES) {
+  for (const physicalScale of SCALES) {
+    const s = physicalScale * toMm;
     const L = layoutAt(ctx, s);
     if (L.w > fr[2] - fr[0] - 2 * inset || L.h > fr[3] - fr[1] - 2 * inset) continue;
     const target: Pt = [(fr[0] + fr[2]) / 2, (fr[1] + tbBox[1]) / 2];
@@ -975,12 +979,12 @@ export function technicalDrawing(bundle: Bundle, options: Partial<DrawingOptions
     if (chosen) break;
   }
   if (!chosen) {
-    const s = SCALES[SCALES.length - 1];
+    const s = SCALES[SCALES.length - 1] * toMm;
     const L = layoutAt(ctx, s);
     warnings.push("The views do not fit on this sheet; try a larger sheet or figure mode.");
     chosen = { s, items: L.items, dx: fr[0] + inset, dy: fr[1] + inset, nx: fr[0] + inset, ny: fr[3] - inset - nb.h };
   }
-  const sl = scaleLabel(chosen.s);
+  const sl = scaleLabel(chosen.s / toMm);
   const body =
     frame(size, st.metal, st.thin) +
     render(chosen.items, chosen.dx, chosen.dy) +

@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import copy
 import json
+import logging
 import os
 import re
 import threading
@@ -460,6 +461,11 @@ class ServerStudies:
         self.manager = manager
         self.dir = Path(projects_dir) / "studies"
         self.lock = threading.RLock()
+        # Stop must be visible even while completion holds self.lock to read a result.
+        # Admission and cancellation share this shorter lock; never wait for self.lock
+        # while holding it (on_finished acquires them in the opposite order).
+        self._admission_lock = threading.Lock()
+        self._stop_requested: set[str] = set()
 
     def path(self, study_id: str) -> Path:
         return self.dir / f"{study_id}.json"
@@ -485,6 +491,12 @@ class ServerStudies:
         return study, job
 
     def _submit(self, study: dict, job_kw: dict, index: int):
+        with self._admission_lock:
+            if study.get("stop_requested") or study["id"] in self._stop_requested:
+                return None
+            return self._submit_admitted(study, job_kw, index)
+
+    def _submit_admitted(self, study: dict, job_kw: dict, index: int):
         planned = study["convergence"]["densities"]
         d = planned[index]
         stem = re.sub(r"[^a-z0-9_-]+", "-", str(job_kw.get("name") or job_kw.get("model_id") or "design").lower())
@@ -496,13 +508,58 @@ class ServerStudies:
                    "total": len(planned), "values": {DENSITY_KEY: d},
                    "axes": [{"key": DENSITY_KEY, "values": planned}]})
 
+    @staticmethod
+    def _mark_stopped(study: dict):
+        study["stop_requested"] = True
+        study["convergence"].update(done=True, reason="cancelled", converged=False,
+                                    converged_at=None, verdict="stopped before it converged", next=None)
+        study["finished"] = time.strftime("%Y-%m-%dT%H:%M:%S%z")
+
+    def cancel(self, study_id: str):
+        """Latch Stop before the finished-job hook can admit another density.
+
+        Also handles ordinary sweeps through JobManager. Any submission already
+        admitted is visible to cancel_sweep's snapshot. Queued cancellation can
+        invoke on_finished synchronously, so do not hold the study lock there.
+        """
+        with self._admission_lock:
+            self._stop_requested.add(study_id)
+        retain_stop = False
+        try:
+            with self.lock:
+                study = self.load(study_id)
+                if (isinstance(study, dict) and study.get("id") == study_id
+                        and isinstance(study.get("convergence"), dict)):
+                    if not study["convergence"].get("done"):
+                        self._mark_stopped(study)
+                        retain_stop = True
+                        try:
+                            write_study(study, self.path(study_id))
+                            retain_stop = False
+                        except OSError as exc:
+                            logging.getLogger(__name__).warning("Could not persist Stop for study %s: %s", study_id, exc)
+                else:
+                    # A transient read failure must not re-enable a delayed hook if
+                    # the study becomes readable again after Stop has returned.
+                    with self.manager.lock:
+                        retain_stop = any((job.sweep or {}).get("id") == study_id
+                                          and (job.sweep or {}).get("kind") == "convergence"
+                                          for job in self.manager.jobs.values())
+            return self.manager.cancel_sweep(study_id)
+        finally:
+            # Keep a memory-only Stop when persistence failed. Unknown/ordinary
+            # ids do not accumulate; a successful retry can clear the latch.
+            if not retain_stop:
+                with self._admission_lock:
+                    self._stop_requested.discard(study_id)
+
     def on_finished(self, job):
         sw = job.sweep or {}
         if sw.get("kind") != "convergence":
             return
         with self.lock:
             study = self.load(sw["id"])
-            if study is None or study["convergence"]["done"]:
+            if study is None or (study["convergence"]["done"] and not study.get("stop_requested")):
                 return
             if any(m.get("job") == job.id for m in study["members"]):
                 return
@@ -520,9 +577,14 @@ class ServerStudies:
             elif job.error:
                 member["error"] = job.error
             conv = add_member(study, member)
-            if not conv["done"] and not self.manager._stopping:
+            with self._admission_lock:
+                stopped = study.get("stop_requested") or study["id"] in self._stop_requested
+            if stopped:
+                self._mark_stopped(study)
+            elif not conv["done"] and not self.manager._stopping:
                 try:
-                    self._submit(study, study["job_kw"], len(study["members"]))
+                    if self._submit(study, study["job_kw"], len(study["members"])) is None:
+                        self._mark_stopped(study)
                 except Exception as e:  # noqa: BLE001 - close the study rather than leave it hanging
                     study["convergence"].update(done=True, reason="failed", verdict=f"stopped: {e}")
             if study["convergence"]["done"]:

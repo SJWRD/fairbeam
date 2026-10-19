@@ -6,6 +6,7 @@ import type { Bundle, Vec3 } from "../types";
 import { featurePoints, roleOf, structureBox, type Shape, type ViewDef, type ViewId } from "./geometry.ts";
 import { arrowHead, dimText, group, line, text, type Pt } from "./svg.ts";
 import { textWidth } from "./metrics.ts";
+import { modelToMm } from "../lib/modelUnits.ts";
 
 export type Side = "top" | "bottom" | "left" | "right";
 
@@ -81,6 +82,7 @@ function viewShowing(views: Record<ViewId, ViewDef>, axis: number, avoidDepth?: 
 }
 
 export function planDimensions(b: Bundle, views: Record<ViewId, ViewDef>): DimPlan {
+  const toMm = modelToMm(b);
   const dims: DimSpec[] = [];
   const notes: string[] = [];
   const owners = new Map<string, string>();
@@ -104,7 +106,7 @@ export function planDimensions(b: Bundle, views: Record<ViewId, ViewDef>): DimPl
     const key = `${axis}:${r4(Math.min(from, to))}:${r4(Math.max(from, to))}`;
     if (owners.has(key) || Math.abs(to - from) < EPS) return false;
     owners.set(key, spec.owner);
-    dims.push({ ...spec, key, side: side ?? sideFor(views[spec.view], spec.orient, spec.kind), text: dimText(spec.b - spec.a) });
+    dims.push({ ...spec, key, side: side ?? sideFor(views[spec.view], spec.orient, spec.kind), text: dimText((spec.b - spec.a) * toMm) });
     return true;
   };
 
@@ -128,7 +130,7 @@ export function planDimensions(b: Bundle, views: Record<ViewId, ViewDef>): DimPl
       const orient = orientIn(v, k);
       if (!orient) continue;
       const [a, c] = mapRange(v, k, bb[0][k], bb[1][k]);
-      tried.push(dimText(ext[k]));
+      tried.push(dimText(ext[k] * toMm));
       const key = `${k}:${r4(bb[0][k])}:${r4(bb[1][k])}`;
       const prev = owners.get(key);
       if (!add({ view: v.id, orient, a, b: c, kind: "size", key, owner: label, part: i }, k, bb[0][k], bb[1][k]) && prev && prev !== label) {
@@ -521,13 +523,19 @@ function planAngles(b: Bundle, views: Record<ViewId, ViewDef>): AngleSpec[] {
 // ------------------------------------------------------------------ parametric labels
 
 /**
- * "key = value" when a dimension equals exactly one model parameter (mm for lengths, deg for
+ * "key = value" when a dimension equals exactly one model parameter (length or degrees for
  * angles). Offsets match |value| and read "|key| = value".
  */
 export function paramLabel(b: Bundle, value: number, text: string, kind: DimSpec["kind"] | "angle"): string {
-  const unit = kind === "angle" ? /^(deg|°)$/i : /^mm$/i;
-  const hits = b.model.params.filter((p) => typeof p.value === "number" && unit.test(p.unit) && Math.abs(Math.abs(p.value) - value) < 5e-4 * Math.max(1, value));
-  const exact = hits.filter((p) => Math.abs((p.value as number) - value) < 5e-4 * Math.max(1, value));
+  const lengthUnits: Record<string, number> = { mm: 1, cm: 10, m: 1000, um: 0.001, "µm": 0.001, "μm": 0.001 };
+  const physical = kind === "angle" ? value : value * modelToMm(b);
+  const tolerance = 5e-4 * Math.max(1, physical);
+  const candidates = b.model.params.flatMap((p) => {
+    const factor = kind === "angle" ? (/^(deg|°)$/i.test(p.unit) ? 1 : undefined) : lengthUnits[p.unit.toLowerCase()];
+    return typeof p.value === "number" && factor !== undefined ? [{ key: p.key, value: p.value * factor }] : [];
+  });
+  const hits = candidates.filter((p) => Math.abs(Math.abs(p.value) - physical) < tolerance);
+  const exact = hits.filter((p) => Math.abs(p.value - physical) < tolerance);
   if (exact.length === 1) return `${exact[0].key} = ${text}`;
   if (!exact.length && hits.length === 1 && kind === "offset") return `|${hits[0].key}| = ${text}`;
   return text;
