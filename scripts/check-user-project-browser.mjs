@@ -78,14 +78,27 @@ try {
     await writeFile(resultFile, JSON.stringify(result));
     await (await page.$('.app-header input[type=file]')).uploadFile(resultFile);
     await s.waitFor(async () => (await import('/src/state.ts')).bundle()?.model.id === 'user-saved-result');
-    await s.click('header.screen.results');
+    const screen = { within: '.mode-switch', exact: true };
+    await s.click('header.screen.results', screen);
     assert.equal(await page.evaluate(async () => (await import('/src/state.ts')).bundle()?.model.id), 'user-saved-result');
-    // Gallery navigation remains an explicit choice from Start.
-    await s.click('header.screen.start');
-    await s.click('header.screen.examples');
-    await s.waitFor(async () => { const m = await import('/src/state.ts'); return m.sourceOrigin() === 'project' && (await import('/src/runner/examples.ts')).isExample({ file: m.source() }); });
+    const savedResult = await page.evaluate(async () => { const m = await import('/src/state.ts'); return { source: m.source(), origin: m.sourceOrigin(), bundle: m.bundle(), count: m.openCount() }; });
+    // Start retains the local Results tab; returning to it must not select a gallery example.
+    await s.click('header.screen.start', screen);
+    await s.wait('.home');
+    await s.need('button', await s.T('header.screen.results'), screen);
+    await s.click('header.screen.results', screen);
+    await s.waitFor(async () => (await import('/src/workspace.ts')).appMode() === 'results');
+    assert.deepEqual(await page.evaluate(async () => { const m = await import('/src/state.ts'); return { source: m.source(), origin: m.sourceOrigin(), bundle: m.bundle(), count: m.openCount() }; }), savedResult,
+      `${lang}: Start -> Results retains the local saved result`);
+    // Gallery navigation is an explicit choice of an example in Start, not the retained Results tab.
+    await s.click('header.screen.start', screen);
+    const homeExample = '.home-examples .home-item[title="dipole.json"]';
+    await s.wait(homeExample);
+    assert.equal((await page.$$(homeExample)).length, 1, 'the Home example is one unambiguous action');
+    await s.clickSel(homeExample);
+    await s.waitFor(async () => { const m = await import('/src/state.ts'); return m.sourceOrigin() === 'project' && m.source() === 'dipole.json'; });
     const exampleSource = await page.evaluate(async () => (await import('/src/state.ts')).source());
-    await s.click('header.screen.examples');
+    await s.click('header.screen.examples', screen);
     assert.equal(await page.evaluate(async () => (await import('/src/state.ts')).source()), exampleSource);
     assert.equal(await page.evaluate(async () => (await import('/src/state.ts')).sourceOrigin()), 'project');
     const design = JSON.parse(await readFile('examples/designs/wideband_dipole_867.design.json', 'utf8'));
@@ -100,7 +113,7 @@ try {
     assert.deepEqual(s.consoleIssues, []);
     await context.close();
   }
-  console.log('User project browser: EN/TR geometry with 0/1 ports, repeated mouse/keyboard selection, saved result, explicit gallery, active example and editable design import passed.');
+  console.log('User project browser: EN/TR geometry with 0/1 ports, repeated mouse/keyboard selection, Start -> Results retention, explicit Home gallery choice, active example and editable design import passed.');
 } catch (error) {
   await page?.screenshot({ path: join(out, 'failure.png') });
   await writeFile(join(out, 'failure.json'), JSON.stringify({ error: String(error), console: session?.consoleIssues }, null, 2));
