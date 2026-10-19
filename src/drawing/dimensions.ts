@@ -82,15 +82,15 @@ function viewShowing(views: Record<ViewId, ViewDef>, axis: number, avoidDepth?: 
 }
 
 export function planDimensions(b: Bundle, views: Record<ViewId, ViewDef>): DimPlan {
-  const toMm = modelToMm(b);
+  const toMm = modelToMm(b), eps = EPS / toMm;
   const dims: DimSpec[] = [];
   const notes: string[] = [];
   const owners = new Map<string, string>();
   const [lo, hi] = structureBox(b);
-  const center = lo.map((x, i) => Math.round(((x + hi[i]) / 2) * 1e6) / 1e6) as Vec3;
+  const center = lo.map((x, i) => Math.round(((x + hi[i]) / 2) * toMm * 1e6) / (toMm * 1e6)) as Vec3;
   const partsOnly = b.parts.filter((p) => p.primitives.length);
   const symmetric = [0, 1, 2].map(
-    (i) => hi[i] - lo[i] > EPS && partsOnly.every((p) => Math.abs(p.bbox[0][i] + p.bbox[1][i] - 2 * center[i]) < 1e-4),
+    (i) => hi[i] - lo[i] > eps && partsOnly.every((p) => Math.abs(p.bbox[0][i] + p.bbox[1][i] - 2 * center[i]) < 1e-4 / toMm),
   ) as [boolean, boolean, boolean];
   const half = b.half_space;
 
@@ -103,8 +103,8 @@ export function planDimensions(b: Bundle, views: Record<ViewId, ViewDef>): DimPl
   };
 
   const add = (spec: Omit<DimSpec, "side" | "text">, axis: number, from: number, to: number, side?: Side): boolean => {
-    const key = `${axis}:${r4(Math.min(from, to))}:${r4(Math.max(from, to))}`;
-    if (owners.has(key) || Math.abs(to - from) < EPS) return false;
+    const key = `${axis}:${r4(Math.min(from, to) * toMm)}:${r4(Math.max(from, to) * toMm)}`;
+    if (owners.has(key) || Math.abs(to - from) < eps) return false;
     owners.set(key, spec.owner);
     dims.push({ ...spec, key, side: side ?? sideFor(views[spec.view], spec.orient, spec.kind), text: dimText((spec.b - spec.a) * toMm) });
     return true;
@@ -120,18 +120,18 @@ export function planDimensions(b: Bundle, views: Record<ViewId, ViewDef>): DimPl
     const bb = p.bbox;
     const ext = [0, 1, 2].map((k) => bb[1][k] - bb[0][k]);
     let thin: 0 | 1 | 2 = 2;
-    for (const k of [1, 0] as const) if (ext[k] < ext[thin] - EPS) thin = k;
+    for (const k of [1, 0] as const) if (ext[k] < ext[thin] - eps) thin = k;
     const main = viewFor(views, thin);
     const tried: string[] = [];
     const dup: string[] = [];
     for (const k of [0, 1, 2] as const) {
-      if (ext[k] < EPS) continue;
+      if (ext[k] < eps) continue;
       const v = k === thin ? viewShowing(views, k) : main;
       const orient = orientIn(v, k);
       if (!orient) continue;
       const [a, c] = mapRange(v, k, bb[0][k], bb[1][k]);
       tried.push(dimText(ext[k] * toMm));
-      const key = `${k}:${r4(bb[0][k])}:${r4(bb[1][k])}`;
+      const key = `${k}:${r4(bb[0][k] * toMm)}:${r4(bb[1][k] * toMm)}`;
       const prev = owners.get(key);
       if (!add({ view: v.id, orient, a, b: c, kind: "size", key, owner: label, part: i }, k, bb[0][k], bb[1][k]) && prev && prev !== label) {
         dup.push(prev);
@@ -143,14 +143,14 @@ export function planDimensions(b: Bundle, views: Record<ViewId, ViewDef>): DimPl
   }
 
   // notches / slots and feed tabs of rectilinear parts (in the view that shows them face-on)
-  for (const { p, i } of order) planFeatures(views, p, i, add);
+  for (const { p, i } of order) planFeatures(views, p, i, add, toMm);
 
   // ports: feed gap along the port direction, and the feed offset from the centre (or the edge)
   for (const port of b.ports) {
     if (port.type === "waveguide" || port.type === "coaxial") continue;   // no feed gap: the guide itself is dimensioned
     const dirAxis = ({ x: 0, y: 1, z: 2 } as Record<string, number>)[port.direction] ?? -1;
     const d = [0, 1, 2].map((k) => port.stop[k] - port.start[k]);
-    const k = dirAxis >= 0 && Math.abs(d[dirAxis]) > EPS ? dirAxis : d.findIndex((x) => Math.abs(x) > EPS);
+    const k = dirAxis >= 0 && Math.abs(d[dirAxis]) > eps ? dirAxis : d.findIndex((x) => Math.abs(x) > eps);
     const owner = `P${port.number}`;
     const mid = port.start.map((x, i) => (x + port.stop[i]) / 2);
     if (k >= 0) {
@@ -168,7 +168,7 @@ export function planDimensions(b: Bundle, views: Record<ViewId, ViewDef>): DimPl
       if (i === k) continue;
       const p = mid[i];
       const ref = symmetric[i] ? center[i] : lo[i];
-      if (Math.abs(p - ref) < EPS) continue;
+      if (Math.abs(p - ref) < eps) continue;
       const v = pointView.d.axis !== i ? pointView : viewShowing(views, i, k);
       const orient = orientIn(v, i);
       if (!orient) continue;
@@ -177,7 +177,7 @@ export function planDimensions(b: Bundle, views: Record<ViewId, ViewDef>): DimPl
       const po = mid[other.axis] * other.sign;
       const pAt = p * (orient === "h" ? v.u.sign : v.v.sign);
       // extension origin: the port point on its side; the centre line (or edge) has no single origin
-      const origin: [number | null, number | null] = Math.abs(a - pAt) < EPS ? [po, null] : [null, po];
+      const origin: [number | null, number | null] = Math.abs(a - pAt) < eps ? [po, null] : [null, po];
       add({ view: v.id, orient, a, b: c, kind: "offset", key: "", owner, part: -1, origin }, i, Math.min(p, ref), Math.max(p, ref));
     }
   }
@@ -186,7 +186,7 @@ export function planDimensions(b: Bundle, views: Record<ViewId, ViewDef>): DimPl
     const g = half.position;
     for (const { p, i } of order) {
       const z0 = p.bbox[0][2];
-      if (z0 - g < EPS) continue;
+      if (z0 - g < eps) continue;
       const v = views.front;
       const [a, c] = mapRange(v, 2, g, z0);
       add({ view: "front", orient: "v", a, b: c, kind: "gap", key: "", owner: p.label ?? p.name, part: i, origin: [null, null] }, 2, g, z0);
@@ -207,11 +207,12 @@ type AddFn = (spec: Omit<DimSpec, "side" | "text">, axis: number, from: number, 
  * axis-aligned in its face-on view. Each distinct pocket size is dimensioned once (width at the
  * opening, depth), each tab by its width and length plus the remaining body length.
  */
-function planFeatures(views: Record<ViewId, ViewDef>, part: Bundle["parts"][number], pi: number, add: AddFn) {
+function planFeatures(views: Record<ViewId, ViewDef>, part: Bundle["parts"][number], pi: number, add: AddFn, toMm: number) {
+  const eps = EPS / toMm;
   const bb = part.bbox;
   const ext = [0, 1, 2].map((k) => bb[1][k] - bb[0][k]);
   let thin: 0 | 1 | 2 = 2;
-  for (const k of [1, 0] as const) if (ext[k] < ext[thin] - EPS) thin = k;
+  for (const k of [1, 0] as const) if (ext[k] < ext[thin] - eps) thin = k;
   const v = viewFor(views, thin);
   const owner = part.label ?? part.name;
   // outlines in view coordinates
@@ -235,9 +236,9 @@ function planFeatures(views: Record<ViewId, ViewDef>, part: Bundle["parts"][numb
   for (const pl of polys) for (let j = 0; j < pl.length; j++) {
     const a = pl[j];
     const c = pl[(j + 1) % pl.length];
-    if (Math.abs(a[0] - c[0]) > 1e-6 && Math.abs(a[1] - c[1]) > 1e-6) return;
+    if (Math.abs(a[0] - c[0]) > eps && Math.abs(a[1] - c[1]) > eps) return;
   }
-  const uniq = (xs: number[]) => [...new Set(xs.map((x) => Math.round(x * 1e6) / 1e6))].sort((x, y) => x - y);
+  const uniq = (xs: number[]) => [...new Set(xs.map((x) => Math.round(x * toMm * 1e6) / (toMm * 1e6)))].sort((x, y) => x - y);
   const us = uniq(polys.flat().map((q) => q[0]));
   const vs = uniq(polys.flat().map((q) => q[1]));
   const nu = us.length - 1;
@@ -310,7 +311,7 @@ function planFeatures(views: Record<ViewId, ViewDef>, part: Bundle["parts"][numb
     const horizOpen = side === "top" || side === "bottom";
     const width = horizOpen ? pu1 - pu0 : pv1 - pv0;
     const depth = horizOpen ? pv1 - pv0 : pu1 - pu0;
-    const sig = `${width.toFixed(4)}x${depth.toFixed(4)}`;
+    const sig = `${r4(width * toMm)}x${r4(depth * toMm)}`;
     if (sizes.has(sig)) continue;
     sizes.add(sig);
     if (horizOpen) {

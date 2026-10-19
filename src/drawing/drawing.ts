@@ -773,7 +773,7 @@ function layoutAt(ctx: Ctx, s: number): { items: Placed[]; w: number; h: number 
     const ref = Math.max(front.W, front.H, top.W, top.H, side.H) * 0.9;
     let si = s;
     if (Math.max(iw, ih) * s > ref) {
-      si = ctx.figure ? ref / Math.max(iw, ih) : SCALES.find((x) => x <= s && Math.max(iw, ih) * x <= ref) ?? s;
+      si = ctx.figure ? ref / Math.max(iw, ih) : SCALES.map((x) => x * modelToMm(ctx.b)).find((x) => x <= s && Math.max(iw, ih) * x <= ref) ?? s;
     }
     iso = buildIso(ctx, si, s);
   }
