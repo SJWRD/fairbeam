@@ -24,6 +24,11 @@ assert.equal('draftDesign' in calls[0].args.request,false,'bound documents canno
 result={status:'canceled'};
 assert.deepEqual(await native.persistNativeDocument(original,'workspace-newer',false),{canceled:true});
 assert.equal(native.nativeDocumentFor(original).handle,'native-grant','cancel does not retire the existing grant');
+result=()=>Promise.reject({code:'document_busy',status:409,error:'English native diagnostic'});
+await assert.rejects(native.persistNativeDocument(original,'workspace-newer',false),/^Error: This document is already being saved\. Wait for that save to finish\.$/);
+result=()=>Promise.reject({code:'document_target_exists',status:409,error:'English native diagnostic'});
+await assert.rejects(native.persistNativeDocument(original,'workspace-newer',true),/Replacing an existing project is not supported\. Choose a new filename/);
+assert.equal(native.nativeDocumentFor(original).handle,'native-grant','rejected Save As retains the old grant');
 let finish;result=()=>new Promise(resolve=>finish=resolve);
 const delayed=native.persistNativeDocument(original,'snapshot',false);
 native.rememberNativeDocument(response(original,'D:/New selection/One.fb','new-grant'));
@@ -122,3 +127,5 @@ queue.stop();shutdownPeek.resolve({handle:'queued',displayName:'Queued.fb'});
 const beforeShutdown=opens;assert.equal(await finishing,false);assert.equal(opens,beforeShutdown,'a disposed app cannot open a late reply');
 console.log('Native documents: opaque grant payload, scope isolation, cancellation, stale binding, independent Save As, queue exclusions, JSON import and browser fallback pass');
 console.log('Native queue: modal deferral, busy retry, final cancellation/failure, later/reopened paths, transient dismissal retry, >64 completed requests, concurrent poll and disposal pass');
+
+await import('./check-native-errors.mjs');

@@ -15,6 +15,7 @@
 
 mod design_reveal;
 mod export_payload;
+use export_payload::error as export_error;
 #[cfg(target_os = "linux")]
 mod linux_reveal;
 
@@ -503,18 +504,18 @@ fn is_touchstone_extension(extension: &str) -> bool {
         && e[1] != b'0'
 }
 
-fn validate_save_name(name: &str, extension: &str, byte_count: usize) -> Result<(), String> {
+fn validate_save_name(name: &str, extension: &str, byte_count: usize) -> Result<(), Value> {
     if byte_count > SAVE_LIMIT {
-        return Err("Export exceeds the 200 MiB save limit".into());
+        return Err(export_error("export_too_large", "Export exceeds the 200 MiB save limit"));
     }
     if !SAVE_EXTENSIONS.contains(&extension) && !is_touchstone_extension(extension) {
-        return Err("Unsupported export extension".into());
+        return Err(export_error("export_extension_unsupported", "Unsupported export extension"));
     }
     if name
         .chars()
         .any(|c| matches!(c, ':' | '*' | '?' | '"' | '<' | '>' | '|'))
     {
-        return Err("Export name contains an invalid filename character".into());
+        return Err(export_error("export_invalid_name", "Export name contains an invalid filename character"));
     }
     let stem = name.split('.').next().unwrap_or("").to_ascii_uppercase();
     if matches!(stem.as_str(), "CON" | "PRN" | "AUX" | "NUL")
@@ -522,7 +523,7 @@ fn validate_save_name(name: &str, extension: &str, byte_count: usize) -> Result<
             && (stem.starts_with("COM") || stem.starts_with("LPT"))
             && matches!(stem.as_bytes()[3], b'1'..=b'9'))
     {
-        return Err("Export name is a reserved device name".into());
+        return Err(export_error("export_reserved_name", "Export name is a reserved device name"));
     }
     let path = Path::new(name);
     if name.is_empty()
@@ -533,7 +534,7 @@ fn validate_save_name(name: &str, extension: &str, byte_count: usize) -> Result<
             .chars()
             .any(|c| c.is_control() || c == '/' || c == '\\')
     {
-        return Err("Export name must be a basename".into());
+        return Err(export_error("export_basename", "Export name must be a basename"));
     }
     if path
         .extension()
@@ -541,23 +542,23 @@ fn validate_save_name(name: &str, extension: &str, byte_count: usize) -> Result<
         .map(|e| e.eq_ignore_ascii_case(extension))
         != Some(true)
     {
-        return Err("Export name must use the selected extension".into());
+        return Err(export_error("export_extension_mismatch", "Export name must use the selected extension"));
     }
     Ok(())
 }
 
-fn validate_save_path(path: &Path, extension: &str) -> Result<(), String> {
+fn validate_save_path(path: &Path, extension: &str) -> Result<(), Value> {
     if !path.is_absolute() || !path.parent().is_some_and(Path::is_dir) {
-        return Err("Save location must have an existing absolute parent directory".into());
+        return Err(export_error("export_parent_unavailable", "Save location must have an existing absolute parent directory"));
     }
     let name = path
         .file_name()
         .and_then(|n| n.to_str())
-        .ok_or("Invalid save filename")?;
+        .ok_or_else(|| export_error("export_invalid_name", "Invalid save filename"))?;
     validate_save_name(name, extension, 0)?;
     if let Ok(meta) = fs::symlink_metadata(path) {
         if !meta.is_file() || meta.file_type().is_symlink() {
-            return Err("Save location must be a regular file".into());
+            return Err(export_error("export_regular_file", "Save location must be a regular file"));
         }
     }
     Ok(())
@@ -578,12 +579,10 @@ fn write_save_file(path: &Path, bytes: &[u8]) -> Result<(), String> {
 async fn save_download(
     app: AppHandle,
     shell: tauri::State<'_, Shell>,
-    name: String,
-    bytes: Option<Vec<u8>>,
-    text: Option<String>,
-    extension: String,
-) -> Result<Value, String> {
-    let bytes = export_payload::decode(bytes, text, SAVE_LIMIT)?;
+    request: tauri::ipc::Request<'_>,
+) -> Result<Value, Value> {
+    let export = export_payload::decode(request.body(), request.headers(), SAVE_LIMIT)?;
+    let (name, extension, bytes) = (export.name, export.extension, export.bytes);
     validate_save_name(&name, &extension, bytes.len())?;
     let dialog_app = app.clone();
     let filter_name = extension.to_uppercase();
@@ -591,7 +590,7 @@ async fn save_download(
     let path = tauri::async_runtime::spawn_blocking(move || {
         let parent = dialog_app
             .get_webview_window("main")
-            .ok_or_else(|| "The export window is unavailable".to_string())?;
+            .ok_or_else(|| export_error("export_window_unavailable", "The export window is unavailable"))?;
         dialog_app
             .dialog()
             .file()
@@ -599,11 +598,11 @@ async fn save_download(
             .set_file_name(&name)
             .add_filter(filter_name, &[&dialog_extension])
             .blocking_save_file()
-            .map(|p| p.into_path().map_err(|e| e.to_string()))
+            .map(|p| p.into_path().map_err(|e| export_error("export_invalid_name", e.to_string())))
             .transpose()
     })
     .await
-    .map_err(|e| e.to_string())??;
+    .map_err(|e| export_error("export_dialog_failed", e.to_string()))??;
     let Some(path) = path else {
         return Ok(json!({"status": "cancelled"}));
     };
@@ -611,7 +610,8 @@ async fn save_download(
     let destination = path.clone();
     tauri::async_runtime::spawn_blocking(move || write_save_file(&destination, &bytes))
         .await
-        .map_err(|e| e.to_string())??;
+        .map_err(|e| export_error("export_write_failed", e.to_string()))?
+        .map_err(|e| export_error("export_write_failed", e))?;
     shell.saved_downloads.lock().unwrap().insert(path.clone());
     Ok(json!({"status": "saved", "path": path.to_string_lossy()}))
 }
@@ -619,6 +619,17 @@ async fn save_download(
 #[cfg(test)]
 mod save_download_tests {
     use super::*;
+
+    #[test]
+    fn raw_metadata_uses_the_same_name_admission_as_text_exports() {
+        for (encoded, allowed) in [("..%2Fescape.zip", false), ("name%00.zip",false), ("NUL.zip",false), ("%C4%B0zmir.zip",true)] {
+            let mut headers = tauri::http::HeaderMap::new();
+            headers.insert("x-fairbeam-name",encoded.parse().unwrap());
+            headers.insert("x-fairbeam-extension","zip".parse().unwrap());
+            let export = export_payload::decode(&tauri::ipc::InvokeBody::Raw(vec![0,255,128]),&headers,SAVE_LIMIT).unwrap();
+            assert_eq!(validate_save_name(&export.name,&export.extension,export.bytes.len()).is_ok(),allowed,"{encoded}");
+        }
+    }
 
     #[test]
     fn writes_bytes_to_chosen_path() {

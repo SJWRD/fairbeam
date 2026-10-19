@@ -2,6 +2,7 @@ import { createSignal, untrack } from "solid-js";
 import type { DesignFile } from "../runner/api";
 import type { Design } from "../designer/types";
 import { t } from "../i18n";
+import { nativeErrorMessage } from "./nativeErrors";
 
 export interface DocumentResult {
   file: string; sha256: string; design_sha256: string; provenance: "source-design";
@@ -24,7 +25,7 @@ export const nativeDocumentsAvailable = () => !!native();
 export type ProjectRemoval = { path: string; results_directory: string };
 export async function archiveNativeProject(modelId: string, project: ProjectRemoval, backupScope?: string) {
   if (!native() || !backupScope) throw new Error(t("home.designs.archiveDesktop"));
-  return native()!.invoke<{ id: string; file: string; moved_to: string; backup_scope: string; recovery_path: string }>(
+  return invoke<{ id: string; file: string; moved_to: string; backup_scope: string; recovery_path: string }>(
     "native_document_archive", { modelId, path: project.path, resultsDirectory: project.results_directory, backupScope });
 }
 const key = (f: Pick<DesignFile, "id" | "backup_scope">) => JSON.stringify([f.backup_scope ?? "", f.id]);
@@ -132,9 +133,7 @@ async function invoke<T>(command: string, args?: Record<string, unknown>): Promi
   if (!shell) throw new Error(t("document.desktopRequired"));
   try { return await shell.invoke<T>(command, args); }
   catch (error) {
-    const value = error as { error?: unknown; message?: unknown; status?: number };
-    const message = typeof value?.error === "string" ? value.error : typeof value?.message === "string" ? value.message : String(error);
-    throw new Error(value?.status === 409 ? t("document.conflict", { error: message }) : message);
+    throw new Error(nativeErrorMessage(error, true));
   }
 }
 export const pickNativeDocument = (handle?: string) => invoke<DocumentOpen>("native_document_open", { handle });

@@ -76,17 +76,14 @@ pub struct SaveRequest {
 fn validate_draft_request(request: &SaveRequest) -> Result<(), Value> {
     if let Some(design) = &request.draft_design {
         if request.handle.is_some() || !design.is_object() {
-            return Err(error(
-                "A draft snapshot requires a first unbound document save",
-                400,
-            ));
+            return Err(error("document_invalid_request", "A draft snapshot requires a first unbound document save", 400));
         }
     }
     Ok(())
 }
 
-fn error(message: impl Into<String>, status: u16) -> Value {
-    json!({"error": message.into(), "status": status})
+fn error(code: &str, message: impl Into<String>, status: u16) -> Value {
+    json!({"code": code, "error": message.into(), "status": status})
 }
 
 fn string_fields(value: &Value, fields: &[&str]) -> Value {
@@ -170,10 +167,7 @@ fn validate_name(name: &str) -> Result<(), Value> {
             .map(|extension| extension.eq_ignore_ascii_case("fb"))
             != Some(true)
     {
-        return Err(error(
-            "A Fairbeam document needs a portable .fb filename",
-            400,
-        ));
+        return Err(error("document_invalid_name", "A Fairbeam document needs a portable .fb filename", 400));
     }
     Ok(())
 }
@@ -194,33 +188,40 @@ fn linked(metadata: &fs::Metadata) -> bool {
 
 fn selected_path(path: &Path, allow_missing: bool) -> Result<PathBuf, Value> {
     if !path.is_absolute() {
-        return Err(error("The selected document path must be absolute", 400));
+        return Err(error("document_invalid_path", "The selected document path must be absolute", 400));
     }
     let name = path
         .file_name()
         .and_then(|name| name.to_str())
-        .ok_or_else(|| error("The selected document filename is invalid", 400))?;
+        .ok_or_else(|| error("document_invalid_name", "The selected document filename is invalid", 400))?;
     validate_name(name)?;
     let parent = path
         .parent()
         .and_then(|parent| parent.canonicalize().ok())
         .filter(|parent| parent.is_dir())
-        .ok_or_else(|| error("The selected document folder is unavailable", 400))?;
+        .ok_or_else(|| error("document_folder_unavailable", "The selected document folder is unavailable", 400))?;
     let selected = parent.join(name);
     if selected.to_str().is_none() {
-        return Err(error("The selected document path must use UTF-8 text", 400));
+        return Err(error("document_invalid_path", "The selected document path must use UTF-8 text", 400));
     }
     match fs::symlink_metadata(&selected) {
         Ok(metadata) if metadata.is_file() && !linked(&metadata) => {}
         Err(e) if allow_missing && e.kind() == std::io::ErrorKind::NotFound => {}
         _ => {
-            return Err(error(
-                "The selected document must be a regular file, not a link",
-                400,
-            ))
+            return Err(error("document_regular_file", "The selected document must be a regular file, not a link", 400))
         }
     }
     Ok(selected)
+}
+
+/// Save As creates an independent project. The OS Replace prompt does not grant permission
+/// to overwrite another project's identity or result folder.
+fn require_new_save_target(path: &Path) -> Result<(), Value> {
+    match fs::symlink_metadata(path) {
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Ok(_) => Err(error("document_target_exists", "Replacing an existing project is not supported; choose a new filename", 409)),
+        Err(_) => Err(error("document_folder_unavailable", "The selected document folder is unavailable", 400)),
+    }
 }
 
 fn read_json_import(path: &Path) -> Result<Value, Value> {
@@ -229,16 +230,16 @@ fn read_json_import(path: &Path) -> Result<Value, Value> {
             .extension()
             .is_some_and(|extension| extension.eq_ignore_ascii_case("json"))
     {
-        return Err(error("Select a JSON file to import", 400));
+        return Err(error("document_json_select", "Select a JSON file to import", 400));
     }
     let name = path
         .file_name()
         .and_then(|name| name.to_str())
-        .ok_or_else(|| error("The selected filename must use UTF-8 text", 400))?;
+        .ok_or_else(|| error("document_invalid_path", "The selected filename must use UTF-8 text", 400))?;
     let metadata = fs::symlink_metadata(path)
-        .map_err(|_| error("The selected JSON file is unavailable", 400))?;
+        .map_err(|_| error("document_json_unavailable", "The selected JSON file is unavailable", 400))?;
     if !metadata.is_file() || linked(&metadata) || metadata.len() > MAX_JSON_IMPORT {
-        return Err(error("Select a regular JSON file of at most 40 MiB", 400));
+        return Err(error("document_json_size", "Select a regular JSON file of at most 40 MiB", 400));
     }
     let mut options = fs::OpenOptions::new();
     options.read(true);
@@ -254,22 +255,22 @@ fn read_json_import(path: &Path) -> Result<Value, Value> {
     }
     let file = options
         .open(path)
-        .map_err(|_| error("The selected JSON file could not be read", 400))?;
+        .map_err(|_| error("document_json_unavailable", "The selected JSON file could not be read", 400))?;
     let metadata = file
         .metadata()
-        .map_err(|_| error("The selected JSON file is unavailable", 400))?;
+        .map_err(|_| error("document_json_unavailable", "The selected JSON file is unavailable", 400))?;
     if !metadata.is_file() || linked(&metadata) {
-        return Err(error("Select a regular JSON file, not a link", 400));
+        return Err(error("document_regular_file", "Select a regular JSON file, not a link", 400));
     }
     let mut bytes = Vec::new();
     file.take(MAX_JSON_IMPORT + 1)
         .read_to_end(&mut bytes)
-        .map_err(|_| error("The selected JSON file could not be read", 400))?;
+        .map_err(|_| error("document_json_unavailable", "The selected JSON file could not be read", 400))?;
     if bytes.len() as u64 > MAX_JSON_IMPORT {
-        return Err(error("JSON import exceeds 40 MiB", 413));
+        return Err(error("document_json_size", "JSON import exceeds 40 MiB", 413));
     }
     let content = String::from_utf8(bytes)
-        .map_err(|_| error("The selected JSON file must use UTF-8 text", 400))?;
+        .map_err(|_| error("document_json_encoding", "The selected JSON file must use UTF-8 text", 400))?;
     Ok(json!({"status":"import", "name":name, "content":content}))
 }
 
@@ -297,7 +298,7 @@ impl Selections {
             .iter()
             .find(|pending| pending.handle == handle)
             .map(|pending| pending.path.clone())
-            .ok_or_else(|| error("This pending document selection has expired", 400))
+            .ok_or_else(|| error("document_selection_expired", "This pending document selection has expired", 400))
     }
 
     fn next_open(&self, exclude: &[String]) -> Value {
@@ -324,7 +325,7 @@ impl Selections {
         self.grants
             .get(handle)
             .cloned()
-            .ok_or_else(|| error("This document selection has expired; open it again", 400))
+            .ok_or_else(|| error("document_selection_expired", "This document selection has expired; open it again", 400))
     }
 
     fn restore(&self, model_id: &str, client: &DocumentClient) -> Value {
@@ -346,14 +347,11 @@ impl Selections {
         let grant = handle.map(|handle| self.grant(handle)).transpose()?;
         if let Some(grant) = &grant {
             if grant.model_id != model_id || grant.client != *client {
-                return Err(error(
-                    "This document belongs to another workspace session; open it again",
-                    409,
-                ));
+                return Err(error("document_other_session", "This document belongs to another workspace session; open it again", 409));
             }
         }
         if !self.saving.insert(model_id.to_owned()) {
-            return Err(error("This document is already being saved", 409));
+            return Err(error("document_busy", "This document is already being saved", 409));
         }
         Ok(grant)
     }
@@ -369,12 +367,12 @@ impl Selections {
         let document = response
             .get("document")
             .and_then(Value::as_object)
-            .ok_or_else(|| error("The document server returned no document identity", 502))?;
+            .ok_or_else(|| error("document_invalid_response", "The document server returned no document identity", 502))?;
         let document_id = document
             .get("id")
             .and_then(Value::as_str)
             .filter(|id| !id.is_empty())
-            .ok_or_else(|| error("The document server returned no document identity", 502))?
+            .ok_or_else(|| error("document_invalid_response", "The document server returned no document identity", 502))?
             .to_owned();
         let revision = document
             .get("revision")
@@ -385,7 +383,7 @@ impl Selections {
                         .bytes()
                         .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
             })
-            .ok_or_else(|| error("The document server returned an invalid revision", 502))?
+            .ok_or_else(|| error("document_invalid_response", "The document server returned an invalid revision", 502))?
             .to_owned();
         let handle = handle.unwrap_or_else(|| format!("fb-{}", crate::server::token()));
         let model_id = response
@@ -393,12 +391,12 @@ impl Selections {
             .and_then(|file| file.get("id"))
             .and_then(Value::as_str)
             .filter(|id| !id.is_empty())
-            .ok_or_else(|| error("The document server returned no workspace identity", 502))?
+            .ok_or_else(|| error("document_invalid_response", "The document server returned no workspace identity", 502))?
             .to_owned();
         let binding = binding_metadata(&response, &handle, &path);
         let object = response
             .as_object_mut()
-            .ok_or_else(|| error("Invalid document response", 502))?;
+            .ok_or_else(|| error("document_invalid_response", "Invalid document response", 502))?;
         object.insert("handle".into(), json!(handle));
         object.insert("path".into(), json!(path.to_string_lossy()));
         object.insert("status".into(), json!(status));
@@ -493,7 +491,7 @@ fn client(app: &AppHandle) -> Result<DocumentClient, Value> {
         .unwrap()
         .as_ref()
         .map(|server| server.document_client())
-        .ok_or_else(|| error("The document server is not ready", 503))
+        .ok_or_else(|| error("document_server_unavailable", "The document server is not ready", 503))
 }
 
 async fn open_selected(
@@ -509,7 +507,7 @@ async fn open_selected(
         request_client.request(DocumentOperation::Open, &json!({"path": request_path}))
     })
     .await
-    .map_err(|_| error("The document request could not finish", 503))??;
+    .map_err(|_| error("document_request_failed", "The document request could not finish", 503))??;
     let state = app.state::<NativeDocuments>();
     let mut selections = state.0.lock().unwrap();
     let result = selections.remember(selected, response, pending.clone(), "opened", client)?;
@@ -536,7 +534,7 @@ pub async fn native_document_open(app: AppHandle, handle: Option<String>) -> Res
     let path = tauri::async_runtime::spawn_blocking(move || {
         let parent = dialog_app
             .get_webview_window("main")
-            .ok_or_else(|| error("The document window is unavailable", 503))?;
+            .ok_or_else(|| error("document_window_unavailable", "The document window is unavailable", 503))?;
         dialog_app
             .dialog()
             .file()
@@ -545,12 +543,12 @@ pub async fn native_document_open(app: AppHandle, handle: Option<String>) -> Res
             .blocking_pick_file()
             .map(|path| {
                 path.into_path()
-                    .map_err(|_| error("Invalid selected document path", 400))
+                    .map_err(|_| error("document_invalid_path", "Invalid selected document path", 400))
             })
             .transpose()
     })
     .await
-    .map_err(|_| error("The file dialog could not finish", 503))??;
+    .map_err(|_| error("document_dialog_failed", "The file dialog could not finish", 503))??;
     match path {
         Some(path)
             if path
@@ -559,7 +557,7 @@ pub async fn native_document_open(app: AppHandle, handle: Option<String>) -> Res
         {
             tauri::async_runtime::spawn_blocking(move || read_json_import(&path))
                 .await
-                .map_err(|_| error("The JSON import could not finish", 503))?
+                .map_err(|_| error("document_import_failed", "The JSON import could not finish", 503))?
         }
         Some(path) => open_selected(app, path, client, None).await,
         None => Ok(json!({"status": "canceled"})),
@@ -575,7 +573,7 @@ pub fn native_document_next_open(
     // unsaved-work confirmation. Deferred requests remain pending until opened or dismissed.
     let exclude = exclude.unwrap_or_default();
     if exclude.len() > MAX_PENDING_OPENS || exclude.iter().any(|handle| handle.len() > 80) {
-        return Err(error("Invalid pending-document exclusions", 400));
+        return Err(error("document_invalid_request", "Invalid pending-document exclusions", 400));
     }
     Ok(app
         .state::<NativeDocuments>()
@@ -628,7 +626,7 @@ pub async fn native_document_archive(
         )
     })
     .await
-    .map_err(|_| error("Project removal could not finish", 503))?
+    .map_err(|_| error("document_archive_failed", "Project removal could not finish", 503))?
 }
 
 #[tauri::command]
@@ -657,7 +655,7 @@ pub async fn native_document_save(app: AppHandle, request: SaveRequest) -> Resul
         let path = tauri::async_runtime::spawn_blocking(move || {
             let parent = dialog_app
                 .get_webview_window("main")
-                .ok_or_else(|| error("The document window is unavailable", 503))?;
+                .ok_or_else(|| error("document_window_unavailable", "The document window is unavailable", 503))?;
             dialog_app
                 .dialog()
                 .file()
@@ -667,19 +665,21 @@ pub async fn native_document_save(app: AppHandle, request: SaveRequest) -> Resul
                 .blocking_save_file()
                 .map(|path| {
                     path.into_path()
-                        .map_err(|_| error("Invalid selected document path", 400))
+                        .map_err(|_| error("document_invalid_path", "Invalid selected document path", 400))
                 })
                 .transpose()
         })
         .await
-        .map_err(|_| error("The file dialog could not finish", 503))??;
+        .map_err(|_| error("document_dialog_failed", "The file dialog could not finish", 503))??;
         let Some(mut path) = path else {
             return Ok(json!({"status": "canceled"}));
         };
         if path.extension().is_none() {
             path.set_extension("fb");
         }
-        selected_path(&path, true)?
+        let path = selected_path(&path, true)?;
+        require_new_save_target(&path)?;
+        path
     } else {
         selected_path(&grant.as_ref().unwrap().path, true)?
     };
@@ -699,7 +699,7 @@ pub async fn native_document_save(app: AppHandle, request: SaveRequest) -> Resul
         request_client.request(DocumentOperation::Save, &body)
     })
     .await
-    .map_err(|_| error("The document request could not finish", 503))??;
+    .map_err(|_| error("document_request_failed", "The document request could not finish", 503))??;
     // The named lock guard must end before `_saving`: its Drop locks this same state to
     // clear the in-flight marker. A tail-expression temporary survives that local in Rust 2021.
     let result = {
@@ -719,6 +719,25 @@ pub async fn native_document_save(app: AppHandle, request: SaveRequest) -> Resul
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn save_as_existing_target_has_a_specific_code_and_keeps_existing_data() {
+        let root = std::env::temp_dir().join(format!("fairbeam-save-as-target-{}-{}",std::process::id(),crate::stamp()));
+        fs::create_dir(&root).unwrap();
+        let path = root.join("Existing.fb");
+        fs::write(&path,b"original document bytes").unwrap();
+        let results = root.join("Existing.results");
+        fs::create_dir(&results).unwrap();
+        fs::write(results.join("run.json"),b"original result bytes").unwrap();
+        let error = require_new_save_target(&selected_path(&path,true).unwrap()).unwrap_err();
+        assert_eq!(error["code"],"document_target_exists");
+        assert_eq!(error["status"],409);
+        assert_eq!(fs::read(&path).unwrap(),b"original document bytes");
+        assert_eq!(fs::read(results.join("run.json")).unwrap(),b"original result bytes");
+        assert!(require_new_save_target(&root.join("New.fb")).is_ok());
+        assert!(!root.join("New.fb").exists());
+        fs::remove_dir_all(root).unwrap();
+    }
 
     fn document_response(model_id: &str, revision: char) -> Value {
         json!({
