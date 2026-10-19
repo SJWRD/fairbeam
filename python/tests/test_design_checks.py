@@ -211,6 +211,24 @@ class Checks(unittest.TestCase):
         self.assertEqual(lint(d, {"feed": -6.0}), [])
         self.assertEqual(keys(lint(d, {"feed": -30.0})), ["warning|port-floating|ports[0].stop"])
 
+    def test_preview_contacts_share_the_port_check_with_elements(self):
+        d = blank_design("contacts", "Contacts")
+        port = d["ports"][0]
+        d["resistors"] = [{"name": "R1", "R": 50, "direction": port["direction"],
+                           "start": copy.deepcopy(port["start"]), "stop": copy.deepcopy(port["stop"])}]
+        for gap, expected in ((0, "touching"), (0.0001, "floating")):
+            port["stop"][2] = d["resistors"][0]["stop"][2] = f"h + {gap}"
+            contacts = []
+            checks = lint(d, endpoint_contacts=contacts)
+            rows = {row["path"]: row for row in contacts}
+            for side in ("start", "stop"):
+                a, b = rows[f"ports[0].{side}"], rows[f"resistors[0].{side}"]
+                self.assertEqual({k: v for k, v in a.items() if k != "path"},
+                                 {k: v for k, v in b.items() if k != "path"})
+            self.assertEqual(rows["ports[0].stop"]["status"], expected)
+            floating = [c["path"] for c in checks if c["code"] == "port-floating"]
+            self.assertEqual("ports[0].stop" in floating, bool(gap))
+
     def test_transformed_copies_count_for_the_geometry(self):
         # an array of patches, each fed: the ports touch the mirrored copies only
         def edit(d):
@@ -1135,6 +1153,18 @@ class ChecksApi(unittest.TestCase):
         self.assertTrue(all(c["explain"] == EXPLANATIONS[c["code"]] for c in pv["checks"]))
         self.assertEqual(keys(pv["checks"]), ["info|mesh-fine-feature|mesh",
                                               "warning|port-floating|ports[0].start", "warning|port-floating|ports[0].stop"])
+        self.assertEqual([(row["path"], row["status"]) for row in pv["endpoint_contacts"]],
+                         [("ports[0].start", "floating"), ("ports[0].stop", "floating")])
+
+        # A disconnected endpoint can also invalidate a manual mesh; keep its contact verdict.
+        offgrid = copy.deepcopy(d)
+        offgrid["mesh"] = {"mode": "manual", "lines": {
+            "x": [-100, -6, 0, 100], "y": [-100, 0, 100], "z": [-100, 0, 1.524, 100]}}
+        offgrid["ports"][0]["start"][2] = 0.0001
+        st, rejected = self.request("POST", "/api/preview", {"design": offgrid})
+        self.assertEqual(st, 422, rejected)
+        self.assertEqual(rejected["endpoint_contacts"][0]["status"], "floating")
+        self.assertEqual(rejected["endpoint_contacts"][1]["status"], "touching")
 
         # a design that does not build: 422, and the checks all the same
         broken = copy.deepcopy(d)

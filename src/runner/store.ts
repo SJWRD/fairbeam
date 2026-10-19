@@ -9,7 +9,7 @@ import type { Design } from "../designer/types";
 import { appMode } from "../workspace";
 import type { Check as DesignCheck } from "../designer/checks";
 import { projectUrl, publicUrl } from "../env";
-import { api, ApiError, isTerminal, onApiFailure, type Health, type Job, type JobEvent, type ModelEntry, type ParamSpec, type ParamValue, type ProgressEvent, type RunInfo, type RunStats } from "./api";
+import { api, ApiError, isTerminal, onApiFailure, type EndpointContact, type Health, type Job, type JobEvent, type ModelEntry, type ParamSpec, type ParamValue, type ProgressEvent, type RunInfo, type RunStats } from "./api";
 import { loadHostRates } from "../lib/hostRates";
 import { PreviewIdentity } from "./previewIdentity";
 import { AUTO_THREADS, chooseRunThreads, readGeneralSettings, RUN_THREADS_AUTO, RUN_THREADS_KEY } from "../lib/generalSettings";
@@ -508,7 +508,12 @@ export async function runPreview() {
 /** The outcome of a designer preview that reached no verdict of the server on the current draft:
  * field errors and checks come from the server when it answered (a design that does not build);
  * `unavailable` says why there are none (no server, a network failure, a server error). */
-export interface DesignPreviewResult { fields: Record<string, string>; checks: DesignCheck[]; unavailable?: string }
+export interface DesignPreviewResult {
+  fields: Record<string, string>;
+  checks: DesignCheck[];
+  unavailable?: string;
+  contacts?: EndpointContact[];
+}
 
 /** Preview an unsaved design (the designer's current state) with its own defaults. Field errors
  * come back keyed by the JSON path of the field, with the server's design checks (also when the
@@ -537,7 +542,7 @@ export async function runDesignPreview(design: Design): Promise<DesignPreviewRes
     setPreviewMs(Math.round(performance.now() - t0));
     setPreviewState("ready");
     setPreviewFailure(null);
-    return { fields: {}, checks: r.checks ?? [] };
+    return { fields: {}, checks: r.checks ?? [], contacts: r.endpoint_contacts ?? [] };
   } catch (e) {
     if (!currentPreview(seq) || (e as Error).name === "AbortError" || appMode() !== "design") return null;
     const err = e as ApiError;
@@ -547,7 +552,10 @@ export async function runDesignPreview(design: Design): Promise<DesignPreviewRes
     setPreviewFailure(why);
     if (err.status === 0) markServerLost();
     const checks = err.data.checks as DesignCheck[] | undefined;
-    return Array.isArray(checks) ? { fields: err.fields ?? {}, checks } : { fields: err.fields ?? {}, checks: [], unavailable: why };
+    if (Array.isArray(checks)) {
+      return { fields: err.fields ?? {}, checks, contacts: err.data.endpoint_contacts as EndpointContact[] | undefined };
+    }
+    return { fields: err.fields ?? {}, checks: [], unavailable: why };
   } finally {
     if (previewCtl === ctl) previewCtl = null;
   }

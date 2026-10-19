@@ -1414,10 +1414,11 @@ class App:
             raise ApiError(status, resp.get("error") or "preview failed",
                            **({"fields": {loc.get("path") or "_": resp.get("detail") or resp.get("error")}} if status == 422 else {}),
                            **({"traceback": resp["traceback"]} if resp.get("traceback") else {}),
-                           checks=resp.get("checks") or [])
+                           checks=resp.get("checks") or [], endpoint_contacts=resp.get("endpoint_contacts", []))
         r = resp["result"]
         return {"model": design.get("model", {}).get("id"), "build_s": r["build_s"],
-                "elapsed_s": round(time.time() - t0, 3), "bundle": r["bundle"], "checks": r.get("checks", [])}
+                "elapsed_s": round(time.time() - t0, 3), "bundle": r["bundle"], "checks": r.get("checks", []),
+                "endpoint_contacts": r.get("endpoint_contacts", [])}
 
     def _settings(self, body: dict, errors: dict) -> dict:
         """threads / engine / end criterion / run name, shared by runs and sweeps."""
