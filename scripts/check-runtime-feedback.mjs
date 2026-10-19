@@ -35,3 +35,5 @@ for(const locale of ['en','tr']) {
  assert.doesNotMatch(text['home.designs.reveal'],/Explorer|Gezgini/,'reveal labels are platform neutral');
 }
 console.log('Runtime feedback: errors/logs/progress boundaries, async probe, splash ACL denial regression, recovery ordering and EN/TR wording passed');
+
+await import('./check-gpu-progress-ordering.mjs');

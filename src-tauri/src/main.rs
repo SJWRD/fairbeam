@@ -1429,7 +1429,6 @@ async fn get_general_settings(app: AppHandle) -> Value {
         runtime::GpuRuntimeStatus::Missing(reason) => reason.clone(),
     };
     let gpu_support = runtime::gpu_install_support();
-    let gpu_installing = *app.state::<Shell>().gpu_installing.lock().unwrap();
     let external = s.external();
     // a Python chosen in the setup screen comes first; when its openEMS lists the gpu engine it
     // is the GPU build as far as Settings is concerned (for example one installed on another
@@ -1440,6 +1439,14 @@ async fn get_general_settings(app: AppHandle) -> Value {
         None => runtime::gpu_build_present().then(runtime::gpu_build_label),
     };
     let gpu_choice = gpu_choice(&res, &gpu_root, &gpu_status, &gpu_support);
+    // Probe calls above can take seconds. Snapshot the install state afterwards, with
+    // the same lock order used by its publisher, so finished/progress never disagree.
+    let (gpu_installing, gpu_progress) = {
+        let shell = app.state::<Shell>();
+        let installing = shell.gpu_installing.lock().unwrap();
+        let progress = shell.gpu_progress.lock().unwrap();
+        (*installing, progress.clone())
+    };
     json!({
         "check_updates_on_start": s.check_updates_on_start,
         "workspace": next_workspace.display().to_string(),
@@ -1454,7 +1461,7 @@ async fn get_general_settings(app: AppHandle) -> Value {
         "gpu_runtime_ready": gpu_runtime_ready,
         "gpu_runtime_status": gpu_runtime_status,
         "gpu_runtime_installing": gpu_installing,
-        "gpu_runtime_progress": app.state::<Shell>().gpu_progress.lock().unwrap().clone(),
+        "gpu_runtime_progress": gpu_progress,
         "gpu_runtime_enabled": s.gpu_runtime_enabled,
         "gpu_choice_ready": gpu_choice.is_some(),
         "gpu_choice_source": gpu_choice.as_ref().map(|choice| choice.source),
@@ -1521,6 +1528,7 @@ async fn install_gpu_runtime(app: AppHandle) -> Result<(), Value> {
             return Err(json!({"code":"gpu_runtime_installing"}));
         }
         *installing = true;
+        *shell.gpu_progress.lock().unwrap() = json!({"step":"start"});
     }
 
     let worker_app = app.clone();
@@ -1554,14 +1562,19 @@ async fn install_gpu_runtime(app: AppHandle) -> Result<(), Value> {
         }).map_err(|detail| json!({"code":"gpu_runtime_install_failed", "detail":detail, "log":log}))
     })
     .await;
-    *app.state::<Shell>().gpu_installing.lock().unwrap() = false;
     let result = worker_result.map_err(|error| json!({"code":"gpu_runtime_install_worker_failed", "detail":error.to_string()})).and_then(|result| result);
     gpu_runtime_progress(&app, json!({"finished":true, "success":result.is_ok()}));
     result
 }
 
 fn gpu_runtime_progress(app: &AppHandle, progress: Value) {
-    *app.state::<Shell>().gpu_progress.lock().unwrap() = progress.clone();
+    {
+        let shell = app.state::<Shell>();
+        let mut installing = shell.gpu_installing.lock().unwrap();
+        let mut saved_progress = shell.gpu_progress.lock().unwrap();
+        *installing = !progress["finished"].as_bool().unwrap_or(false);
+        *saved_progress = progress.clone();
+    }
     if let Some(window) = app.get_webview_window("main") {
         // JSON serialization keeps diagnostics as data, including quoted installer paths.
         let _ = window.eval(&format!("window.dispatchEvent(new CustomEvent('fairbeam:gpu-runtime-progress', {{detail:{progress}}}))"));

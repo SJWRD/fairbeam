@@ -73,13 +73,21 @@ export default function GeneralSettingsDialog(props: { open: boolean; close: () 
   const [gpuDriver, setGpuDriver] = createSignal<string | null>(null);
   const [gpuInstalling, setGpuInstalling] = createSignal(false);
   const [gpuInstallProgress, setGpuInstallProgress] = createSignal<GpuRuntimeProgress | null>(null);
+  let desktopRequest = 0, gpuProgressEpoch = 0, disposed = false;
   const progressListener = (event: Event) => {
     const progress = gpuProgress((event as CustomEvent).detail);
+    if (!progress || disposed || (!progress.step && progress.fraction === undefined &&
+      !progress.message && !progress.log && !progress.finished)) return;
+    gpuProgressEpoch++;
     setGpuInstallProgress(progress);
-    if (progress) setGpuInstalling(!progress.finished);
+    setGpuInstalling(!progress.finished);
   };
   onMount(() => window.addEventListener("fairbeam:gpu-runtime-progress", progressListener));
-  onCleanup(() => window.removeEventListener("fairbeam:gpu-runtime-progress", progressListener));
+  onCleanup(() => {
+    disposed = true;
+    desktopRequest++;
+    window.removeEventListener("fairbeam:gpu-runtime-progress", progressListener);
+  });
   const gpuStep = () => {
     const step = gpuInstallProgress()?.step;
     return step && ["download-uv", "install-python", "create-venv", "download-openems", "unpack-openems", "install-packages", "install-openems-wheels", "install-app", "verify"].includes(step)
@@ -126,9 +134,11 @@ export default function GeneralSettingsDialog(props: { open: boolean; close: () 
     } catch (e) { showError(t("settings.error.save", { error: errorText(e) })); }
   };
   const loadDesktop = async () => {
-    if (!native()) return;
+    if (!native() || disposed) return;
+    const request = ++desktopRequest, progressEpoch = gpuProgressEpoch;
     try {
       const data = await native()!.invoke<DesktopSettings>("get_general_settings");
+      if (disposed || request !== desktopRequest) return;
       setUpdates(data.check_updates_on_start);
       setCurrentWorkspace(data.current_workspace ?? null);
       setNextWorkspace(data.next_workspace ?? data.workspace ?? "");
@@ -138,10 +148,14 @@ export default function GeneralSettingsDialog(props: { open: boolean; close: () 
       setGpuChoiceReady(!!data.gpu_choice_ready); setGpuChoiceSource(data.gpu_choice_source ?? null); setGpuChoicePath(data.gpu_choice_path ?? null);
       setGpuRuntimeEnabled(!!data.gpu_runtime_enabled); setGpuSupported(!!data.gpu_supported);
       setGpuSupportReason(data.gpu_support_reason ?? null); setGpuAdapter(data.gpu_adapter ?? null); setGpuDriver(data.gpu_driver ?? null);
-      setGpuInstalling(!!data.gpu_runtime_installing);
-      setGpuInstallProgress(gpuProgress(data.gpu_runtime_progress));
+      // Hardware probes can outlive an installation event or a local start/finish. Keep
+      // the live progress in that case while accepting unrelated desktop settings.
+      if (progressEpoch === gpuProgressEpoch) {
+        setGpuInstalling(!!data.gpu_runtime_installing);
+        setGpuInstallProgress(gpuProgress(data.gpu_runtime_progress));
+      }
     }
-    catch (e) { showError(t("settings.error.loadDesktop", { error: errorText(e) })); }
+    catch (e) { if (!disposed && request === desktopRequest) showError(t("settings.error.loadDesktop", { error: errorText(e) })); }
   };
   const checkUpdates = async (v: boolean) => {
     setBusy(true); setMessage("");
@@ -190,6 +204,7 @@ export default function GeneralSettingsDialog(props: { open: boolean; close: () 
     finally { setBusy(false); }
   };
   const installGpuRuntime = async () => {
+    gpuProgressEpoch++;
     setGpuInstalling(true); setGpuInstallProgress(null); setBusy(true); setMessage("");
     try {
       await native()!.invoke("install_gpu_runtime");
@@ -212,7 +227,7 @@ export default function GeneralSettingsDialog(props: { open: boolean; close: () 
       const summary = known[code] ? t(known[code]) : t("settings.error.gpuInstall");
       showError([summary, !known[code] && detail, log && t("settings.gpuManaged.log", { path: log })].filter(Boolean).join("\n"));
     }
-    finally { setBusy(false); setGpuInstalling(false); }
+    finally { gpuProgressEpoch++; setBusy(false); setGpuInstalling(false); }
   };
   const chooseWorkspace = async () => {
     setWorkspaceBusy(true); setMessage("");
