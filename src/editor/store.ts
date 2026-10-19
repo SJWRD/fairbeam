@@ -6,6 +6,7 @@ import { applyModelEntry, modelKey, refreshModels, runPreview, selectModel } fro
 
 import { modifierShortcut } from "../lib/shortcut";
 import { confirmDraftDiscard } from "../lib/ConfirmDialog";
+import { registerUnsavedWork } from "../lib/unsavedWork";
 import { fmt, t } from "../i18n";
 
 export type PanelTab = "run" | "code" | "design";
@@ -30,6 +31,11 @@ export const [newModelKind, setNewModelKind] = createSignal<"python" | "design">
 export const [docVersion, setDocVersion] = createSignal(0);
 
 export const dirty = createRoot(() => createMemo(() => !!file() && draft() !== file()!.source));
+registerUnsavedWork("python-code", {
+  snapshot: () => dirty() ? JSON.stringify([file(), draft()]) : null,
+  busy: saving,
+  confirm: () => confirmDiscard(),
+});
 
 /** Ask before dropping unsaved edits. */
 export async function confirmDiscard(): Promise<boolean> {

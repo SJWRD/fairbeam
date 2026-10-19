@@ -43,6 +43,14 @@ const toExpr = (text: string): Expr => {
   const s = text.trim();
   return s !== "" && /^[+-]?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?$/.test(s) ? Number(s) : s;
 };
+/** Keep incomplete decimals/expressions as typed until focus leaves the field. */
+function MeshOverrideInput(props: { label: string; disabled: boolean; value: Expr | boolean; onValue: (value: Expr) => void }) {
+  const [text, setText] = createSignal<string | null>(null);
+  return <input autocomplete="off" class="rp-input dz-input mono" aria-label={props.label}
+    disabled={props.disabled} value={text() ?? String(props.value)}
+    onInput={event => { const typed = event.currentTarget.value; setText(typed); props.onValue(toExpr(typed)); }}
+    onBlur={() => setText(null)} />;
+}
 /** -10 -> "−10" (a typographic minus, as in the rest of the dialog's text) */
 const minus = (n: number) => String(n).replace("-", "−");
 const parseList = (text: string): Expr[] => text.split(",").map((x) => x.trim()).filter(Boolean).map(toExpr);
@@ -369,12 +377,11 @@ export default function SimSettingsDialog() {
                     />{" "}
                     {t("sim.pad.override")}
                   </label>
-                  <input autocomplete="off"
-                    class="rp-input dz-input mono"
-                    aria-label={t("sim.mesh.airPadding")}
+                  <MeshOverrideInput
+                    label={t("sim.mesh.airPadding")}
                     disabled={override("pad") === undefined}
-                    value={String(override("pad") ?? autoValue("pad", t("sim.pendingPreview")))}
-                    onInput={(e) => setOverride("pad", toExpr(e.currentTarget.value))}
+                    value={override("pad") ?? autoValue("pad", t("sim.pendingPreview"))}
+                    onValue={value => setOverride("pad", value)}
                   />
                   <span class="dz-value">
                     {currentAuto()
@@ -458,12 +465,11 @@ export default function SimSettingsDialog() {
                         <Show
                           when={key === "edge_rule"}
                           fallback={
-                            <input autocomplete="off"
-                              class="rp-input dz-input mono"
-                              aria-label={label()}
+                            <MeshOverrideInput
+                              label={label()}
                               disabled={!enabled()}
-                              value={String(shown() ?? "")}
-                              onInput={(e) => setOverride(key, toExpr(e.currentTarget.value))}
+                              value={shown() ?? ""}
+                              onValue={value => setOverride(key, value)}
                             />
                           }
                         >

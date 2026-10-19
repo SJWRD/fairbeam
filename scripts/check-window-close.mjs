@@ -30,7 +30,7 @@ const built = await build({
     resolveId(id) { if (id.endsWith("window-close-entry")) return "\0window-close-entry"; },
     load(id) {
       if (id !== "\0window-close-entry") return;
-      return ["designer/store", "designer/windowClose"].map((path, i) =>
+      return ["designer/store", "designer/windowClose", "lib/unsavedWork", "editor/store"].map((path, i) =>
         `export * as m${i} from ${JSON.stringify(`${root}src/${path}.ts`)};`).join("\n");
     },
   }],
@@ -92,7 +92,7 @@ globalThis.fetch = async (url, init = {}) => {
 };
 
 const code = (Array.isArray(built) ? built[0] : built).output[0].code;
-const { m0: store, m1: wc } = await import(`data:text/javascript;base64,${Buffer.from(code).toString("base64")}`);
+const { m0: store, m1: wc, m2: work, m3: editor } = await import(`data:text/javascript;base64,${Buffer.from(code).toString("base64")}`);
 
 // ------------------------------------------------------------------ the shell's side
 
@@ -270,4 +270,35 @@ storageBlocked = false;
   assert.equal(fresh.ask(), "cancel");
 }
 
-console.log("check-window-close: ok");
+// Python source edits participate even with no designer open. Approval keeps text
+// intact until the shell actually exits, and never authorizes newer edits.
+store.closeDesign();
+editor.setFile({id:'source',file:'source.py',source:'old',hash:'h'});
+editor.setDraft('unsaved');
+assert.equal(shellRequest().ask(), 'pending', 'real editor provider blocks native exit');
+// Replace only the confirmation UI; retain the real editor state in the provider.
+let resolveChoice;
+work.registerUnsavedWork('python-code', {
+  snapshot: () => editor.dirty() ? editor.draft() : null,
+  busy: editor.saving,
+  confirm: () => new Promise(resolve => { resolveChoice = resolve; }),
+});
+work.resetUnsavedWorkApproval();
+let r = shellRequest();
+assert.equal(r.ask(), 'pending'); await sleep(0);
+resolveChoice(false); await sleep(0);
+assert.equal(r.ask(), 'cancel');
+assert.equal(editor.draft(), 'unsaved');
+r = shellRequest('quit');
+assert.equal(r.ask(), 'pending'); await sleep(0);
+resolveChoice(true); await sleep(0);
+assert.equal(r.ask(), 'close');
+assert.equal(editor.draft(), 'unsaved', 'approval must not discard before other dialogs settle');
+editor.setDraft('newer');
+assert.equal(r.ask(), 'pending', 'new edits require new approval'); await sleep(0);
+resolveChoice(true); await sleep(0);
+editor.setSaving(true);
+assert.equal(r.ask(), 'pending', 'do not stop a source save');
+editor.setSaving(false);
+assert.equal(r.ask(), 'close');
+console.log("check-window-close: designer and Python unsaved work, cancellation, stale approval and in-flight save pass");

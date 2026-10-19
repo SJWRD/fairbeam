@@ -12,7 +12,7 @@ export default {
       if (text !== undefined) view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: text } });
       return view.state.doc.toString();
     }, text);
-    let key = 'W', before;
+    let key = 'W', before, appliedScript;
     await s.step('create a patch design and open the Python panel', async () => {
       await s.page.goto(s.url, { waitUntil: 'domcontentloaded' });
       await s.wait('.home');
@@ -51,7 +51,8 @@ export default {
     await s.step('an error names its line and leaves the design as it is', async () => {
       s.consoleAllow.push(/status of 422/); // the refused script is a 422, which the browser logs
       const kept = JSON.stringify(await draft());
-      const lines = (await script()).split('\n');
+      appliedScript = await script();
+      const lines = appliedScript.split('\n');
       const at = lines.findIndex((l) => l.startsWith('def build'));
       lines.splice(at + 1, 0, "    raise ValueError('bad dimension')");
       await script(lines.join('\n'));
@@ -62,6 +63,35 @@ export default {
       assert.ok(shown.includes(await s.T('python.edit.errorLine', { line: at + 2, message: 'ValueError: bad dimension' })), `line ${at + 2} is named: ${shown}`);
       await s.wait('.python-panel .cm-lint-marker-error, .python-panel .cm-lintRange-error');
       assert.equal(JSON.stringify(await draft()), kept, 'the design is untouched');
+    });
+    await s.step('unapplied Python survives reopening and Home; native quit asks', async () => {
+      const kept = await script();
+      await s.page.evaluate(async () => (await import('/src/designer/PythonPanel.tsx')).openPythonPanel());
+      assert.equal(await script(), kept);
+      await s.click('header.screen.start');
+      await s.wait('.home');
+      assert.equal(await s.page.evaluate(() => window.fairbeamWindowClose('quit', 18001)), 'pending');
+      await s.wait('[role=dialog]');
+      await s.click('common.cancel', {within:'[role=dialog]'});
+      await s.gone('[role=dialog]');
+      await s.waitFor(() => window.fairbeamWindowClose('quit', 18001) === 'cancel');
+      await s.click('header.screen.design');
+      await s.wait('.rb');
+      await s.click('ribbon.tab.post', {sel:'.rb-tab'});
+      await s.clickSel('button[data-action="open-python"]');
+      await s.wait('.python-panel .cm-content');
+      assert.equal(await script(), kept, 'retained draft is restored for its owner');
+      const original = await s.store(async (_, m) => { await m.s.save(); return m.s.file().id; });
+      await s.store(async (id, m) => { await m.s.createDesign({id, name:id}); }, `python_other_${s.lang}_${ctx.stamp}`);
+      await s.page.evaluate(async () => (await import('/src/designer/PythonPanel.tsx')).openPythonPanel());
+      await s.wait('.python-panel .python-panel-code');
+      await s.store((id, m) => m.s.openDesign(id), original);
+      await s.page.evaluate(async () => (await import('/src/designer/PythonPanel.tsx')).openPythonPanel());
+      await s.wait('.python-panel .cm-content');
+      assert.equal(await script(), kept, 'another design cannot overwrite the retained script');
+      await script(appliedScript);
+      assert.equal(await s.page.evaluate(async () => (await import('/src/lib/unsavedWork.ts')).checkUnsavedWork(18002)), 'clear', 'reverting restored text clears its cached dirty state');
+      await script(kept);
     });
     await s.step('Done with unapplied changes asks before discarding', async () => {
       await s.clickSel('button[data-action="python-done"]');

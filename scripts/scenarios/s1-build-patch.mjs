@@ -225,6 +225,19 @@ export default {
       await s.wait('[aria-labelledby="ss-title"]');
       const mesh = (await draftOf(s)).mesh;
       if (mesh.mode === 'design') {
+        await s.store((_, m) => m.s.edit(d => { d.mesh.overrides = {...d.mesh.overrides, pad: 0.25, max_ratio: 1.4}; }));
+        for (const [key, labelKey, prefix, suffix, expected] of [
+          ['pad', 'sim.mesh.airPadding', '0.', '3', 0.3],
+          ['max_ratio', 'sim.mesh.maxRatio', '1.', '3', 1.3],
+        ]) {
+          const selector = `input[aria-label=${JSON.stringify(await s.T(labelKey))}]`;
+          await s.fill(selector, prefix, {blur:false});
+          assert.equal(await s.page.$eval(selector, el => el.value), prefix, 'decimal point stays while typing');
+          await s.page.keyboard.type(suffix);
+          assert.equal(await s.page.$eval(selector, el => el.value), String(expected));
+          assert.equal((await draftOf(s)).mesh.overrides[key], expected);
+        }
+        await s.store((previous, m) => m.s.edit(d => { d.mesh.overrides = previous; }), mesh.overrides ?? {});
         const label = await s.T('sim.mesh.cpw');
         const override = await s.T('sim.mesh.override', { label });
         const selector = `input[type="checkbox"][aria-label=${JSON.stringify(override)}]`;

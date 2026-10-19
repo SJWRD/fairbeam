@@ -9,6 +9,7 @@
 // closes the design and drops its local backup (closeDesign).
 import { createSignal } from "solid-js";
 import { dirty, file, replaceRequest, saving } from "./store";
+import { checkUnsavedWork, resetUnsavedWorkApproval } from "../lib/unsavedWork";
 
 export type WindowLeave = "window" | "quit";
 export type WindowCloseAnswer = "close" | "pending" | "cancel";
@@ -31,6 +32,11 @@ export function answerWindowClose(kind: WindowLeave, id: number): WindowCloseAns
   const choice = decided;
   decided = null;
   if (choice?.id === id && choice.answer === "cancel") return "cancel";
+  // Native destroy/exit bypasses beforeunload. Obtain separate, snapshot-bound
+  // approval for Python text before allowing the shell to close the window.
+  if (replaceRequest()) return "cancel";
+  const extra = checkUnsavedWork(id);
+  if (extra !== "clear") return extra;
   // "close" is honoured only while nothing is at stake: an edit or a save since then asks again
   if (!unsavedAtStake()) return "close";
   // the open "Save changes before creating/opening…?" question has to be answered first
@@ -43,6 +49,7 @@ export function answerWindowClose(kind: WindowLeave, id: number): WindowCloseAns
 export function decideWindowClose(answer: "close" | "cancel") {
   const open = windowClose();
   if (!open) return;
+  if (answer === "cancel") resetUnsavedWorkApproval();
   decided = { id: open.id, answer };
   setWindowClose(null);
 }

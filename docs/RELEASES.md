@@ -184,6 +184,9 @@ One entry per release, newest first. The installers are on the
   its results folder. The native archive command now has an app-manifest entry and viewer
   permission. In 0.8.2 the blocked action left files intact; list-only removal was unaffected.
 - Add command-registration/manifest and capability checks to prevent missing native permissions.
+- Ask before native window close or Quit discards unsaved Python editor text. Retain unapplied
+  designer Python text across Start, design switches and reopening the panel within the session.
+- Preserve decimal points while typing automatic mesh overrides in Simulation settings.
 - Removal remains recoverable through `Fairbeam Deleted`; this does not permanently erase files.
 
 ### 0.8.2, 2026-10-19

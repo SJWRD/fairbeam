@@ -5,6 +5,7 @@ import { applyPython, dirty, draft, exportPython, file, message, selection } fro
 import { serverState } from "../runner/store";
 import { api } from "../runner/api";
 import { confirmDraftDiscard } from "../lib/ConfirmDialog";
+import { registerUnsavedWork } from "../lib/unsavedWork";
 import { t } from "../i18n";
 import "../styles/python-panel.css";
 
@@ -28,6 +29,22 @@ const [baseText, setBaseText] = createSignal("");
 const [scriptError, setScriptError] = createSignal<{ line: number; message: string } | null>(null);
 const [applying, setApplying] = createSignal(false);
 const unapplied = () => editing() && editText() !== baseText();
+type PythonDraft = { text: string; base: string; source: string | null };
+const retained = new Map<string, PythonDraft>();
+let panelOwner = "";
+const ownerKey = () => JSON.stringify([file()?.backup_scope, file()?.id]);
+function retainEdits() {
+  if (panelOwner && unapplied()) retained.set(panelOwner, { text: editText(), base: baseText(), source: source() });
+}
+registerUnsavedWork("designer-python", {
+  snapshot: () => {
+    const drafts = new Map(retained);
+    if (panelOwner && unapplied()) drafts.set(panelOwner, { text: editText(), base: baseText(), source: source() });
+    return drafts.size ? JSON.stringify([...drafts]) : null;
+  },
+  busy: applying,
+  confirm: () => confirmDraftDiscard(t("python.edit.discardConfirm")),
+});
 
 function focusInspector(selectionFocus = false) {
   queueMicrotask(() => {
@@ -59,6 +76,23 @@ async function refreshSource(preserveSource = false) {
 }
 
 export async function openPythonPanel(): Promise<void> {
+  if (pythonPanelActive() && panelOwner === ownerKey() && editing()) return;
+  retainEdits();
+  panelOwner = ownerKey();
+  const recovered = retained.get(panelOwner);
+  if (recovered) {
+    retained.delete(panelOwner); // The restored editor now owns this draft.
+    ++request;
+    setSource(recovered.source);
+    setEditText(recovered.text);
+    setBaseText(recovered.base);
+    setScriptError(null);
+    setPanelError("");
+    setFeedback("");
+    setEditing(true);
+    setPythonPanelActive(true);
+    return;
+  }
   setEditing(false);
   setPythonPanelActive(true);
   setStale(false);
@@ -85,6 +119,7 @@ export async function openPythonPanel(): Promise<void> {
 }
 
 export function closePythonPanel(restoreFocus = true, selectionFocus = false): void {
+  retainEdits();
   ++request;
   setEditing(false);
   setScriptError(null);
@@ -120,25 +155,33 @@ export function PythonPanel() {
     setEditing(true);
   };
   const stopEdit = async () => {
+    const owner = panelOwner, text = editText();
     if (unapplied() && !(await confirmDraftDiscard(t("python.edit.discardConfirm")))) return;
+    if (owner !== panelOwner || text !== editText()) return;
+    retained.delete(panelOwner);
     setEditing(false);
     setScriptError(null);
     setPanelError("");
   };
   const closeRequest = async () => {
+    const owner = panelOwner, text = editText();
     if (unapplied() && !(await confirmDraftDiscard(t("python.edit.discardConfirm")))) return;
+    if (owner !== panelOwner || text !== editText()) return;
+    retained.delete(panelOwner);
+    setEditing(false);
     closePythonPanel();
   };
   const apply = async () => {
     if (!editing() || applying() || offline()) return;
     const sent = editText();
+    const owner = panelOwner, ticket = request;
     setApplying(true);
     setScriptError(null);
     setPanelError("");
     setFeedback("");
     try {
       const outcome = await applyPython(sent);
-      if (!pythonPanelActive() || !editing()) return;
+      if (!pythonPanelActive() || !editing() || owner !== panelOwner || ticket !== request) return;
       if (!outcome.ok) {
         if (outcome.stale) return;
         if (outcome.line) setScriptError({ line: outcome.line, message: outcome.message });
@@ -149,6 +192,7 @@ export function PythonPanel() {
       setStale(false);
       setSourceChanged(false);
       const untouched = editText() === sent;
+      if (untouched) retained.delete(panelOwner);
       if (outcome.normalized && untouched) {
         setEditText(outcome.python);
         setBaseText(outcome.python);
