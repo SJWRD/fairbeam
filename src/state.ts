@@ -1,4 +1,4 @@
-import { createEffect, createRoot, createSignal, untrack } from "solid-js";
+import { batch, createEffect, createRoot, createSignal, untrack } from "solid-js";
 import { createStore, reconcile } from "solid-js/store";
 import type { Bundle, ProjectIndexEntry } from "./types";
 import { DEMO, projectUrl, publicUrl } from "./env";
@@ -214,7 +214,7 @@ export async function loadProject(file: string, isCurrent: () => boolean = () =>
   const mine = ++loadSeq;
   const start = openSeq;
   const stale = () => mine !== loadSeq || openSeq !== start || !isCurrent();
-  setFailedProject(null);
+  batch(() => { setLoadError(null); setFailedProject(null); });
   try {
     const r = await fetch(projectUrl(file), { cache: FETCH_CACHE });
     if (!r.ok) throw new Error(`HTTP ${r.status}`);
@@ -228,7 +228,7 @@ export async function loadProject(file: string, isCurrent: () => boolean = () =>
     }
     return true;
   } catch (e) {
-    if (!stale()) { setLoadError(t("load.openFailed", { file, error: (e as Error).message })); setFailedProject(file); }
+    if (!stale()) batch(() => { setLoadError(t("load.openFailed", { file, error: (e as Error).message })); setFailedProject(file); });
     return false;
   }
 }
@@ -237,7 +237,7 @@ export async function loadFile(f: File, isCurrent: () => boolean = () => true) {
   const mine = ++loadSeq;
   const start = openSeq;
   // A local file has no server-side retry target. Do not leave Retry pointing at a prior project.
-  setFailedProject(null);
+  batch(() => { setLoadError(null); setFailedProject(null); });
   try {
     const json = JSON.parse(await f.text());
     if (mine !== loadSeq || openSeq !== start || !isCurrent()) return false;

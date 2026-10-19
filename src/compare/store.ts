@@ -105,14 +105,14 @@ export const REF_KEY = "ref:reference";
 export const [refError, setRefError] = createSignal<string | null>(null);
 export const reference = () => pinned().find((p) => p.file === REF_KEY)?.bundle as RefBundle | undefined;
 
-export async function importReferenceFile(file: File) {
+export async function importReferenceFile(file: File): Promise<{ status: "imported" } | { status: "failed"; error: string } | { status: "superseded" }> {
   // Newer import intent wins; awaited sequential imports still merge into the current reference.
   const generation = ++referenceGeneration;
   const owner = bundle();
   const current = () => generation === referenceGeneration && bundle() === owner;
   try {
     const text = await file.text();
-    if (!current()) return;
+    if (!current()) return { status: "superseded" };
     const existing = reference();
     const ref = importReference(file.name, text, owner, existing && isReference(existing) ? existing : null);
     const entry: Pinned = { file: REF_KEY, bundle: ref };
@@ -123,9 +123,12 @@ export async function importReferenceFile(file: File) {
       setPinned([...retained, entry]); // replaces the last pinned project when full
     }
     setRefError(null);
+    return { status: "imported" };
   } catch (e) {
-    if (!current()) return;
-    setRefError(`${file.name}: ${(e as Error).message}`);
+    if (!current()) return { status: "superseded" };
+    const error = `${file.name}: ${(e as Error).message}`;
+    setRefError(error);
+    return { status: "failed", error };
   }
 }
 

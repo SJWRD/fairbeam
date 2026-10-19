@@ -1,7 +1,7 @@
 import { createEffect, createSignal, createUniqueId, ErrorBoundary, type JSX, on, Show, Suspense } from "solid-js";
 import { bundle } from "../state";
 import { CircleAlert, RotateCcw, X } from "lucide-solid";
-import { localeTag, t } from "../i18n";
+import { t } from "../i18n";
 import { useModal } from "../lib/dialog";
 
 /**
@@ -14,7 +14,7 @@ import { useModal } from "../lib/dialog";
 export default function PanelBoundary(props: { name: string; children: JSX.Element; class?: string; loading?: JSX.Element; onClose?: () => void }) {
   return (
     <ErrorBoundary fallback={(err, reset) => <PanelError name={props.name} error={err} reset={reset} class={props.class} onClose={props.onClose} />}>
-      <Suspense fallback={props.loading ?? <div class={`panel-loading ${props.class ?? ""}`} role="status">{t("panel.loading", { name: props.name.toLocaleLowerCase(localeTag()) })}</div>}>
+      <Suspense fallback={props.loading ?? <div class={`panel-loading ${props.class ?? ""}`} role="status">{t("panel.loading", { name: props.name })}</div>}>
         {props.children}
       </Suspense>
     </ErrorBoundary>

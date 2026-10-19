@@ -1,0 +1,103 @@
+// Real stores and asynchronous ownership, no browser, solver or user documents.
+// FAIRBEAM_TEST_BASELINE=<git ref> loads earlier versions without replacing working files.
+import assert from 'node:assert/strict';
+import {execFileSync} from 'node:child_process';
+import {readFileSync} from 'node:fs';
+import {fileURLToPath} from 'node:url';
+import {build} from 'vite';
+import solid from 'vite-plugin-solid';
+
+const root=fileURLToPath(new URL('../',import.meta.url)).replaceAll('\\','/');
+const baseline=process.env.FAIRBEAM_TEST_BASELINE;
+const modules=['state.ts','workspace.ts','designer/navModel.ts','home/projectList.ts','runner/designRun.ts',
+  'designer/dockState.ts','designer/layoutState.ts','compare/store.ts','runner/dropFile.ts','lib/toast.ts','i18n/index.ts','runner/optimizationText.ts'];
+const original=new Map();
+if(baseline) for(const path of ['src/state.ts','src/designer/navModel.ts','src/home/projectList.ts','src/runner/designRun.ts','src/compare/store.ts'])
+  original.set(root+path,execFileSync('git',['show',`${baseline}:${path}`],{cwd:root,encoding:'utf8'}));
+const built=await build({root,configFile:false,logLevel:'silent',resolve:{conditions:['browser']},css:{postcss:{}},
+  plugins:[{name:'viewer-feedback-baseline',enforce:'pre',load(id){return original.get(id.replaceAll('\\','/'));}},solid(),{
+    name:'viewer-feedback-entry',resolveId(id){if(id.endsWith('viewer-feedback-entry'))return '\0viewer-feedback-entry';},
+    load(id){if(id==='\0viewer-feedback-entry')return modules.map((path,i)=>`export * as m${i} from ${JSON.stringify(root+'src/'+path)};`).join('\n');},
+  }],build:{write:false,minify:false,cssCodeSplit:false,lib:{entry:'viewer-feedback-entry',formats:['es']}}});
+const chunk=(Array.isArray(built)?built[0]:built).output.find(item=>item.type==='chunk');
+const storage=new Map([['fairbeam.bottomDockCollapsed','true']]);
+const stub={addEventListener(){},removeEventListener(){},dispatchEvent(){},querySelector:()=>null,documentElement:{}};
+globalThis.window={...stub,document:stub,matchMedia:()=>({matches:false,addEventListener(){},removeEventListener(){}})};
+globalThis.document=stub;
+globalThis.localStorage={getItem:key=>storage.get(key)??null,setItem:(key,value)=>storage.set(key,String(value)),removeItem:key=>storage.delete(key)};
+globalThis.requestAnimationFrame=()=>1;
+globalThis.fetch=async()=>({ok:true,json:async()=>({runs:[],models:[]})});
+const {m0:state,m1:workspace,m2:nav,m3:projects,m4:run,m5:dock,m6:layout,m7:compare,m8:drop,m9:toast,m10:i18n,m11:opt}=
+  await import(`data:text/javascript;base64,${Buffer.from(chunk.code).toString('base64')}`);
+const failures=[];let checks=0;
+const check=async(name,fn)=>{try{await fn();checks++;console.log(`ok ${name}`);}catch(error){failures.push(name+': '+error.message);console.log(`FAIL ${name}: ${error.message}`);}};
+const patch=JSON.parse(readFileSync(root+'public/projects/patch-antenna.json','utf8'));
+const open=()=>state.openBundle(structuredClone(patch),'own-result.json','local-file');
+const response=(ok,json={})=>({ok,status:ok?200:503,json:async()=>json});
+const pending=()=>{let resolve;return {promise:new Promise(r=>resolve=r),resolve:value=>resolve(value)};};
+
+await check('#209 initial store effects preserve remembered dock collapse',()=>{
+  assert.equal(layout.bottomDockCollapsed(),true);assert.equal(storage.get('fairbeam.bottomDockCollapsed'),'true');
+});
+await check('#209 reset follows Checks without revealing; explicit user action still reveals',()=>{
+  layout.setBottomDockCollapsed(true);run.clearDesignResult();assert.equal(layout.bottomDockCollapsed(),true);
+  assert.equal(dock.designDockTab(),'checks');dock.setDesignDockTab('runs');assert.equal(layout.bottomDockCollapsed(),false);
+});
+for(const lang of ['en','tr']) await check(`#210 ${lang} tree and Start find ASCII I and decomposed Turkish names`,()=>{
+  i18n.setLanguage(lang);
+  for(const [query,text] of [['pifa','PIFA'],['inset','Inset feed'],['igdir','IĞDIR'],['cok uzun','çok uzun'],['ğüşıöç','ğüşıöç'.normalize('NFD')]]) {
+    assert.equal(nav.matchesFilter(query,text),true,`${query} matches ${text}`);
+    const entries=[{key:'fixture',model:{name:text},document:{path:`/tmp/${text}.fb`,results_directory:`${text}.results`}}];
+    const before=JSON.stringify(entries);assert.equal(projects.visibleProjects(entries,query,'name',false,new Set()).length,1);
+    assert.equal(JSON.stringify(entries),before,'fold never changes stored spelling');
+  }
+  assert.equal(nav.matchesFilter('-1.25','−1.25'),true);assert.equal(nav.matchesFilter('farfield','Far field'),true);
+  assert.equal(nav.matchesFilter('elsewhere','PIFA'),false);
+});
+await check('#205 retry clears old error and retry target synchronously',async()=>{
+  open();globalThis.fetch=async()=>response(false);assert.equal(await state.loadProject('missing.json'),false);
+  assert.equal(state.failedProject(),'missing.json');assert.ok(state.loadError());
+  const held=pending();globalThis.fetch=()=>held.promise;const retry=state.loadProject('missing.json');
+  assert.equal(state.loadError(),null);assert.equal(state.failedProject(),null);
+  held.resolve(response(false));assert.equal(await retry,false);assert.equal(state.failedProject(),'missing.json');assert.ok(state.loadError());
+});
+await check('#205 superseded retry cannot restore stale error or replace newer project',async()=>{
+  const held=pending();globalThis.fetch=()=>held.promise;const retry=state.loadProject('missing.json');
+  state.openBundle(structuredClone(patch),'newer.json','local-file');held.resolve(response(false));await retry;
+  assert.equal(state.source(),'newer.json');assert.equal(state.loadError(),null);assert.equal(state.failedProject(),null);
+});
+await check('#205 local file intent clears a previous retry while its read is pending',async()=>{
+  state.setLoadError('old failure');state.setFailedProject('old.json');
+  const held=pending();const load=state.loadFile({name:'new.json',text:()=>held.promise});
+  assert.equal(state.loadError(),null);assert.equal(state.failedProject(),null);
+  held.resolve(JSON.stringify(patch));assert.equal(await load,true);
+});
+await check('#183 failed and superseded reference imports report truthful outcomes',async()=>{
+  open();const result=await compare.importReferenceFile({name:'bad.s1p',text:async()=>''});
+  assert.equal(result?.status,'failed');assert.ok(result.error.includes('bad.s1p'));
+  const held=pending();const old=compare.importReferenceFile({name:'old.s1p',text:()=>held.promise});
+  compare.clearReference();held.resolve('# GHz S RI R 50\n1 0.1 0\n2 0.2 0');
+  assert.equal((await old)?.status,'superseded');assert.equal(compare.reference(),undefined);assert.equal(compare.refError(),null);
+});
+await check('#183 drop rejects hidden reference imports and unsupported formats with feedback',async()=>{
+  workspace.setAppMode('home');compare.clearReference();
+  await drop.openDroppedFile({name:'measurement.s1p',text:async()=>{throw Error('must not read hidden reference');}});
+  assert.ok(toast.toasts().at(-1).text.includes('measurement.s1p'));assert.equal(compare.reference(),undefined);
+  await drop.openDroppedFile({name:'outline.dxf',text:async()=>''});assert.equal(toast.toasts().at(-1).tone,'error');
+  await drop.openDroppedFile({name:'image.png',text:async()=>''});assert.equal(toast.toasts().at(-1).tone,'error');
+});
+await check('#183 visible result import retains real reference data and reports success',async()=>{
+  open();workspace.setAppMode('results');
+  await drop.openDroppedFile({name:'measurement.s1p',text:async()=>'# GHz S RI R 50\n1 0.1 0\n2 0.2 0'});
+  assert.equal(compare.reference()?.reference.files[0],'measurement.s1p');assert.equal(toast.toasts().at(-1).tone,'info');
+});
+for(const lang of ['en','tr']) await check(`#202 ${lang} reason/value formatting and matched units`,()=>{
+  i18n.setLanguage(lang);i18n.setDecimalChoice('point');assert.equal(opt.reasonText('simplex converged'),i18n.t('opt.reason.simplexConverged'));
+  assert.equal(opt.reasonText('goals met'),i18n.t('opt.reason.goalsMet'));
+  assert.equal(opt.reasonText('unfamiliar solver diagnostic'),'unfamiliar solver diagnostic');
+  assert.equal(opt.optimizationValues({L:31.427583920113,n:2},[{key:'L',unit:'mm'}]),'L=31.4276 mm; n=2');
+  i18n.setDecimalChoice('comma');assert.equal(opt.optimizationValues({L:31.427583920113},[{key:'L',unit:'mm'}]),'L=31,4276 mm');
+});
+console.log(`viewer-feedback: ${checks} passed, ${failures.length} failed`);
+if(failures.length)console.error(failures.join('\n'));
+process.exit(failures.length?1:0);

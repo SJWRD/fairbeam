@@ -15,19 +15,7 @@ type Evaluation = ReturnType<typeof optEvals>[number];
 /** An evaluation's status (an i18n key); a skipped one was never simulated (the design checks refused it). */
 const statusOf = (e: Evaluation) => (e.skipped ? "opt.status.skipped" : e.error ? "opt.status.failed" : e.met ? "opt.status.met" : "opt.status.evaluated");
 
-/** The optimizer's stop reasons (python/fairbeam/optimize.py) as i18n keys; others are shown as sent. */
-const REASONS: Record<string, string> = {
-  "max evaluations": "opt.reason.maxEvals",
-  "simplex converged": "opt.reason.simplexConverged",
-  "evaluation budget exhausted": "opt.reason.budgetExhausted",
-  "trust region converged": "opt.reason.trustRegionConverged",
-  "no resonance in the frequency range": "opt.reason.noResonance",
-  "target outside the parameter bounds": "opt.reason.targetOutside",
-  "parameter resolution reached": "opt.reason.resolution",
-  "secant steps exhausted": "opt.reason.secantExhausted",
-  done: "opt.reason.done",
-};
-const reasonText = (r: string) => (REASONS[r] ? t(REASONS[r]) : r);
+import { reasonText } from "./optimizationText";
 
 /** Live card of an optimization job: cost per evaluation, the evaluations table, best point. */
 export default function OptimizeProgress() {

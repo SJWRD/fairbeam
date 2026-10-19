@@ -11,7 +11,7 @@ import Dock from "./components/Dock";
 import ViewSwitch from "./components/ViewSwitch";
 import PanelBoundary from "./components/PanelBoundary";
 import { researchOpen, setResearchOpen } from "./runner/researchState";
-import { importReferenceFile } from "./compare/store";
+import { openDroppedFile } from "./runner/dropFile";
 import Home from "./home/Home";
 import { DesignDock, DesignKeys, DesignSide, DesignTreePanel, DrawHint, Ribbon } from "./designer/DesignWorkspace";
 import { file as designFile, draft as designDraft, removeSelected, canRemove, save as saveDesign, enterDesign, reopenLastDesign, openNativeDocument, undo as undoDesign, redo as redoDesign } from "./designer/store";
@@ -39,6 +39,7 @@ const PcbImportDialog = lazy(() => import("./components/PcbImportDialog"));
 // usage statistics (docs/TELEMETRY.md): asks once, only in a desktop build with the feature
 const UsageStatsPrompt = lazy(() => import("./components/UsageStatsPrompt"));
 import { PreviewBadge, RunNotice } from "./runner/Overlays";
+import { openExamples } from "./runner/designRun";
 import { openUserProject } from "./runner/openProject";
 import { fileDropHandlers } from "./lib/fileDrop";
 import { currentModel, probeServer, recheckServer, runOpen, setRunOpen, watchServer } from "./runner/store";
@@ -66,9 +67,8 @@ export default function App() {
   const onScreenshot=()=>{void captureActiveSurface().catch(error=>exportNotice(t("contextExport.failed",{error:String(error)}),{tone:"error"}));};
   onMount(()=>{window.addEventListener("fairbeam:screenshot",onScreenshot);onCleanup(()=>window.removeEventListener("fairbeam:screenshot",onScreenshot));});
   const [dragging, setDragging] = createSignal(false);
-  // file drags only (a tree part drag is not a file drop, #87): project bundles open; anything
-  // else is imported as reference data for the comparison
-  const drop = fileDropHandlers(setDragging, (f) => (/\.(json|fb)$/i.test(f.name) ? openUserProject(f) : importReferenceFile(f)));
+  // Tree-part drags remain local; file drops report their outcome wherever they arrive.
+  const drop = fileDropHandlers(setDragging, (file) => void openDroppedFile(file));
   const [booting, setBooting] = createSignal(true);
   const [leftClosed, setLeftClosed] = createSignal(false);
   const [rightClosed, setRightClosed] = createSignal(false);
@@ -147,7 +147,7 @@ export default function App() {
     "edit-undo": () => editHistory("undo"),
     "edit-redo": () => editHistory("redo"),
     "edit-delete": () => { if (isTextTarget()) document.execCommand("delete"); else if (appMode() === "design" && canRemove()) removeSelected(); },
-    "view-start": () => setAppMode("home"), "view-design": () => { if (designFile()) setAppMode("design"); }, "view-examples": () => setAppMode("results"),
+    "view-start": () => setAppMode("home"), "view-design": () => { if (designFile()) setAppMode("design"); }, "view-examples": () => void openExamples(),
     "view-tree": () => { if (appMode() === "design") toggleLeftTree(); }, "view-dock": () => { if (appMode() === "design") toggleBottomDock(); }, "view-properties": () => { if (appMode() === "design") toggleSidePanel(); },
     "view-ribbon": () => { if (appMode() === "design") document.querySelector<HTMLButtonElement>(".rb-minimize")?.click(); },
     "view-iso": () => viewEvent("iso"), "view-top": () => viewEvent("top"), "view-front": () => viewEvent("front"), "view-right": () => viewEvent("right"), "view-bottom": () => viewEvent("bottom"),
@@ -352,7 +352,7 @@ export default function App() {
         <RunNotice />
       </Show>
       <Show when={appMode() === "home"}>
-        <PanelBoundary name="Start screen" class="home-wrap">
+        <PanelBoundary name={t("panel.name.start")} class="home-wrap">
           <Home />
         </PanelBoundary>
       </Show>
@@ -369,7 +369,7 @@ export default function App() {
               hidden, and a thin strip in the same grid cell opens it again (designer.css). */}
           <div class="workspace design-mode" classList={{ "run-open": runOpen(), "tree-collapsed": leftTreeCollapsed(), "side-collapsed": sidePanelCollapsed(), "dock-collapsed": bottomDockCollapsed() }}>
             <PanelResizeHandles />
-            <PanelBoundary name="Design tree" class="panel panel-left">
+            <PanelBoundary name={t("panel.name.tree")} class="panel panel-left">
               <DesignTreePanel />
             </PanelBoundary>
             <Show when={leftTreeCollapsed()}>
@@ -379,33 +379,33 @@ export default function App() {
               </button>
             </Show>
             <main class="center">
-              <PanelBoundary name="Ribbon" class="rb-wrap">
+              <PanelBoundary name={t("panel.name.ribbon")} class="rb-wrap">
                 <div class="rb-stack">
                   <Ribbon />
                 </div>
               </PanelBoundary>
               {/* the 3D view is the first of the main area's document tabs; result tabs open beside it */}
               <MainArea>
-                <PanelBoundary name="3D view" class="stage-fill">
+                <PanelBoundary name={t("panel.name.view3d")} class="stage-fill">
                   <Viewport />
                 </PanelBoundary>
                 <MeshViewPanel />
                 {/* tool hints float over the top of the 3D view: the canvas keeps its size */}
                 <DrawHint />
               </MainArea>
-              <PanelBoundary name="Checks" class="dock dw-dock-wrap">
+              <PanelBoundary name={t("panel.name.checks")} class="dock dw-dock-wrap">
                 <DesignDock />
               </PanelBoundary>
-              <PanelBoundary name="Status bar" class="sb-wrap">
+              <PanelBoundary name={t("panel.name.status")} class="sb-wrap">
                 <StatusBar />
               </PanelBoundary>
             </main>
             <Show when={runOpen()} fallback={
-              <PanelBoundary name="Properties" class="panel panel-right">
+              <PanelBoundary name={t("panel.name.properties")} class="panel panel-right">
                 <DesignSide />
               </PanelBoundary>
             }>
-              <PanelBoundary name="Run panel" class="panel panel-right">
+              <PanelBoundary name={t("panel.name.run")} class="panel panel-right">
                 <RunPanel />
               </PanelBoundary>
             </Show>
@@ -424,7 +424,7 @@ export default function App() {
       <Show when={appMode() === "results" && probed()}>
       <div class="workspace" classList={{ "run-open": resultsRunOpen(), "code-open": resultsRunOpen() && panelTab() === "code", "left-closed": !leftPanelOpen(), "right-closed": !rightPanelOpen() }}>
         <PanelResizeHandles />
-        <PanelBoundary name="Model panel" class="panel panel-left">
+        <PanelBoundary name={t("panel.name.model")} class="panel panel-left">
           <ModelPanel />
         </PanelBoundary>
         <main class="center" classList={{ "center-no-dock": !bundle() }}>
@@ -442,11 +442,11 @@ export default function App() {
             }
           >
             <div class="stage">
-              <PanelBoundary name="3D view" class="stage-fill">
+              <PanelBoundary name={t("panel.name.view3d")} class="stage-fill">
                 <Viewport />
               </PanelBoundary>
               <Show when={bundle() && centerView() === "drawing"}>
-                <PanelBoundary name="Drawing" class="stage-fill stage-over">
+                <PanelBoundary name={t("panel.name.drawing")} class="stage-fill stage-over">
                   <DrawingView />
                 </PanelBoundary>
               </Show>
@@ -457,7 +457,7 @@ export default function App() {
           </Show>
           {/* nothing open: no result tabs to show */}
           <Show when={bundle()}>
-            <PanelBoundary name="Results dock" class="dock">
+            <PanelBoundary name={t("panel.name.results")} class="dock">
               <Dock />
             </PanelBoundary>
           </Show>
@@ -466,29 +466,29 @@ export default function App() {
         <Show
           when={resultsRunOpen()}
           fallback={
-            <PanelBoundary name="Spec panel" class="panel panel-right">
+            <PanelBoundary name={t("panel.name.spec")} class="panel panel-right">
               <SpecPanel />
             </PanelBoundary>
           }
         >
-          <PanelBoundary name="Run panel" class="panel panel-right">
+          <PanelBoundary name={t("panel.name.run")} class="panel panel-right">
             <RunPanel />
           </PanelBoundary>
         </Show>
       </div>
       </Show>
       <Show when={exportOpen() && (appMode() === "design" ? designFile() : bundle())}>
-        <PanelBoundary name="Geometry export" loading={<div class="scrim" />} onClose={() => setExportOpen(false)}>
+        <PanelBoundary name={t("panel.name.geometryExport")} loading={<div class="scrim" />} onClose={() => setExportOpen(false)}>
           <ExportDialog />
         </PanelBoundary>
       </Show>
       <Show when={renderDialogOpen() && bundle()}>
-        <PanelBoundary name="Render image" loading={<div class="scrim" />} onClose={() => setRenderDialogOpen(false)}>
+        <PanelBoundary name={t("panel.name.render")} loading={<div class="scrim" />} onClose={() => setRenderDialogOpen(false)}>
           <RenderDialog />
         </PanelBoundary>
       </Show>
       <Show when={packageOpen() && bundle()}>
-        <PanelBoundary name="Package export" loading={<div class="scrim" />} onClose={() => setPackageOpen(false)}>
+        <PanelBoundary name={t("panel.name.packageExport")} loading={<div class="scrim" />} onClose={() => setPackageOpen(false)}>
           <PackageDialog />
         </PanelBoundary>
       </Show>

@@ -15,8 +15,10 @@ type Transaction = { id: string; previous: string; hash: string; scope?: string 
 export function createDesignActions(entries: () => Entry[]) {
   const [target, setTarget] = createSignal<Target | null>(null);
   const [record, setRecord] = createSignal<DesignFile | null>(null);
-  const [note, setNote] = createSignal("");
-  const [undo, setUndo] = createSignal<Transaction | null>(null);
+  // Undo belongs to one rename outcome, never to a later reveal, error or action.
+  const [outcome, setOutcome] = createSignal<{ text: string; undo?: Transaction }>({ text: "" });
+  const note = () => outcome().text, undo = () => outcome().undo;
+  const setNote = (text: string, transaction?: Transaction) => setOutcome({ text, undo: transaction });
   const [working, setWorking] = createSignal(false);
   // an open design with unsaved edits: the rename waits for a decision, never fails silently
   const [saveFirst, setSaveFirst] = createSignal<string | null>(null);
@@ -63,7 +65,7 @@ export function createDesignActions(entries: () => Entry[]) {
     try {
       const result = await api.renameDesign(transaction.id, transaction.previous, transaction.hash, transaction.scope);
       if (file()?.backup_scope === transaction.scope) syncSavedDesignName(result.id, result.name, result.hash, transaction.hash);
-      await refreshModels(); setUndo(null); setNote(t("home.designs.renameUndone"));
+      await refreshModels(); setNote(t("home.designs.renameUndone"));
     } catch (error) { setNote(explain(error)); }
     finally { setWorking(false); }
   };
@@ -126,8 +128,8 @@ export function createDesignActions(entries: () => Entry[]) {
       try {
         const result = await api.renameDesign(props.value.id, name().trim(), props.value.hash, props.value.backup_scope);
         if (file()?.backup_scope === props.value.backup_scope) syncSavedDesignName(result.id, result.name, result.hash, props.value.hash);
-        setUndo({ id: result.id, previous: result.previous_name, hash: result.hash, scope: props.value.backup_scope });
-        await refreshModels(); setRecord(null); setNote(t("home.designs.renamed", { name: result.name }));
+        await refreshModels(); setRecord(null); setNote(t("home.designs.renamed", { name: result.name }),
+          { id: result.id, previous: result.previous_name, hash: result.hash, scope: props.value.backup_scope });
       } catch (failure) { setError(explain(failure)); }
       finally { setWorking(false); }
     };

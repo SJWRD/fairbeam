@@ -18,7 +18,7 @@ import { requireDesignResult, ResultFollow } from "./resultFollow";
 import { exampleEntries } from "./examples";
 import { attach, invalidatePreview, jobs, live, meshSource, models, notice, refreshModels, refreshRuns, runName, runOpen, selectModel, serverActivity, setEngine, setNotice, setRunName, setThreads, startRun } from "./store";
 
-import { designDockTab, setDesignDockTab } from "../designer/dockState";
+import { designDockTab, setDesignDockTab, showDesignDockTab } from "../designer/dockState";
 import { t } from "../i18n/index.ts";
 import { documentJobMatches, documentResultFiles, hasDocumentResultScope, nativeDocumentFor } from "../lib/nativeDocuments";
 import { meshStats } from "../designer/meshStats";
@@ -210,7 +210,7 @@ export async function loadDesignResult(file: string, jobId?: string, refreshInde
     // a run that did not converge keeps the dock on its Run tab: that is where the warning is
     // first shown (the result tabs carry it as a banner too), so the dock must not move away
     const stops = runQuality(v.bundle)?.verdict === "not-converged";
-    if (designDockTab() === "run" && (!designJob() || isTerminal(designJob()!.status)) && !stops) setDesignDockTab("runs");
+    if (designDockTab() === "run" && (!designJob() || isTerminal(designJob()!.status)) && !stops) showDesignDockTab("runs");
     return true;
   } catch (e) {
     if (mine !== resultSeq) return false;
@@ -238,7 +238,7 @@ export function clearDesignResult() {
   setDesignResultError(null);
   setFailedResultLoad(null);
   setDesignJobId(null);
-  setDesignDockTab("checks");
+  showDesignDockTab("checks");
   });
 }
 
@@ -285,7 +285,7 @@ createRoot(() => {
     follower.reset();
     if (keepJob) {
       setDesignJobId(keepJob);
-      setDesignDockTab("run");
+      showDesignDockTab("run");
     }
     if (designFile()) void refreshRuns();
   }));

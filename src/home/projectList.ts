@@ -1,3 +1,5 @@
+import { searchText } from "../lib/searchText.ts";
+
 export type ProjectSort = "modified" | "name";
 
 /** The model list may contain older entries without a timestamp while the server refreshes. */
@@ -12,8 +14,6 @@ export interface ProjectListEntry {
 const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" });
 const projectName = (entry: ProjectListEntry) => entry.model?.name?.trim() || entry.key;
 const modifiedTime = (entry: ProjectListEntry) => typeof entry.modified === "number" && Number.isFinite(entry.modified) && entry.modified > 0 ? entry.modified : null;
-// macOS filenames may use decomposed accents; normalize search copies, never stored paths.
-const searchText = (value: string) => value.normalize("NFC").toLocaleLowerCase().normalize("NFC");
 
 /** Presentation only: never pass this spelling back to file APIs or document ownership checks. */
 export function displayProjectPath(path: string): string {

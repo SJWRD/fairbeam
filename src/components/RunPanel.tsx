@@ -55,6 +55,7 @@ import { openPythonModelAsDesign } from "../designer/pythonModel";
 import { setStartedPythonModel } from "../runner/startPython";
 import { t } from "../i18n";
 import NumberField from "./NumberField";
+import { isDesktopShell } from "../lib/telemetry";
 
 const slug = (s: string) => s.replace(/[^A-Za-z0-9._-]+/g, "-").replace(/^[-.]+|[-.]+$/g, "").toLowerCase().slice(0, 100);
 
@@ -283,11 +284,11 @@ export default function RunPanel() {
           <section class="section stack">
             <Show when={serverState() === "checking" || serverState() === "unknown"} fallback={
               <>
-                <p>{t("runPanel.offline.before")}<span class="mono">fairbeam serve</span>{t("runPanel.offline.after")}</p>
-                <pre class="code code-inline">npm run serve</pre>
-                <p class="note">
-                  {t("runPanel.offline.or")}<span class="mono">~/opt/openEMS/venv/bin/fairbeam serve</span>{t("runPanel.offline.viewer")}
-                </p>
+                <Show when={isDesktopShell()} fallback={<>
+                  <p>{t("runPanel.offline.before")}<span class="mono">fairbeam serve</span>{t("runPanel.offline.after")}</p>
+                  <pre class="code code-inline">npm run serve</pre>
+                  <p class="note">{t("runPanel.offline.cli")}</p>
+                </>}><p>{t("runPanel.offline.desktop")}</p></Show>
                 <div class="cluster">
                   <button class="btn btn-ghost btn-sm" onClick={() => probeServer()}>
                     <RefreshCw size={14} aria-hidden="true" /> {t("runPanel.checkAgain")}
