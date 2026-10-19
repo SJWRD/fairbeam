@@ -37,7 +37,7 @@ for (const key of ["templates.empty.name", "params.defaultLabel.designFrequency"
 ok(tr["run.threads.autoHint"].length <= 160 && en["run.threads.autoHint"].length <= 160, "the threads hint stays short");
 ok(tr["run.name.placeholder"].length <= 30, "the run name placeholder fits");
 const runDialog = read("src/designer/RunDialog.tsx");
-ok(/<span class="dz-value dz-wrap" classList=\{\{ "dz-bad": threadsBad\(\) \}\}>/.test(runDialog), "the threads hint wraps");
+ok(/<span id="rd-threads-hint" class="dz-value dz-wrap" classList=\{\{ "dz-bad": threadsBad\(\) \}\}>/.test(runDialog), "the accessible threads hint wraps");
 ok((runDialog.match(/class="dz-value dz-wrap"/g) ?? []).length >= 3, "the Run dialog's hints wrap instead of being cut");
 ok(/\.dz-value\.dz-wrap \{[^}]*white-space: normal/.test(read("src/styles/designer.css")), "dz-wrap lets a hint wrap");
 
