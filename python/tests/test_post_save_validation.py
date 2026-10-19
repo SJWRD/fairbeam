@@ -176,6 +176,9 @@ class PostSaveValidation(unittest.TestCase):
         self.assertEqual((self.models / "editable_design.design.json").read_bytes(), original)
 
     def test_failed_write_is_not_reported_as_saved_or_validated(self):
+        # CI can spell TEMP through a short-name/junction alias. Exercise a path
+        # alias on every host so failure injection cannot silently miss the write.
+        self.models = self.models / ".." / "models"
         for model_id, reader, method, endpoint, field, changed in (
             ("editable", modelfiles.read_model, "PUT", "/api/models/editable/source", "source", "x = 2\n"),
             ("editable_design", modelfiles.read_design_file, "PUT", "/api/designs/editable_design", "design",
@@ -186,7 +189,7 @@ class PostSaveValidation(unittest.TestCase):
                 write = modelfiles._write_atomic
 
                 def fail_target(path, *args, **kwargs):
-                    if path.parent == self.models:
+                    if path.parent.samefile(self.models):
                         raise PermissionError("test target is not writable")
                     return write(path, *args, **kwargs)
 
