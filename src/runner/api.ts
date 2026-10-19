@@ -187,7 +187,7 @@ export interface Validation {
   valid: boolean;
   model?: ModelEntry;
   build_s?: number;
-  error?: { message: string; stage: "load" | "build"; location?: ErrorLocation | null; traceback?: string };
+  error?: { message: string; stage: "load" | "build" | "timeout" | "worker"; location?: ErrorLocation | null; traceback?: string };
   /** design files: fairbeam.design_checks results (errors block a save) */
   checks?: DesignCheck[];
 }

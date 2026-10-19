@@ -74,6 +74,39 @@ for(const outcome of ['saved','conflict','newer-edit']) {
   else {assert.equal(savedOk,false);assert.equal(opened,false);assert.equal(e.file().id,'A');assert.equal(f.modelKey(),'A');assert.equal(e.draft(),outcome==='newer-edit'?'A=3':'A=2');}
 }
 
+// A committed save remains saved when the preview worker cannot validate it (#223).
+// The next edit must send the new disk hash, not the pre-save hash that causes a false 409.
+for (const stage of ['timeout', 'worker']) {
+  await resetA();
+  f.effects.length = 0;
+  f.api.saveSource = async (id, text, hash) => {
+    assert.equal(hash, 'A-hash');
+    return { hash: `saved-${stage}`, validation: { valid: false, error: { stage, message: 'Preview unavailable' } } };
+  };
+  assert.equal(await e.save(), true);
+  assert.equal(e.file().hash, `saved-${stage}`);
+  assert.equal(e.file().source, 'A=2');
+  assert.equal(e.dirty(), false);
+  assert.equal(e.conflict(), null);
+  assert.deepEqual(e.message(), { tone: 'warn', text: 'editor.savedUnvalidated' });
+  assert.equal(e.validation().error.stage, stage);
+  assert.deepEqual(f.effects, [], 'incomplete validation cannot replace the model or start a preview');
+  e.setDraft('A=3');
+  f.api.saveSource = async (id, text, hash) => {
+    assert.equal(hash, `saved-${stage}`);
+    assert.equal(text, 'A=3');
+    return saved;
+  };
+  assert.equal(await e.save(), true);
+  assert.equal(e.file().hash, 'saved');
+  assert.equal(e.dirty(), false);
+  f.api.createModel = async () => ({ ...source('created'), validation: { valid: false, error: { stage, message: 'Preview unavailable' } } });
+  assert.equal((await e.createModel({ id: 'created' })).id, 'created');
+  assert.equal(e.file().hash, 'created-hash');
+  assert.equal(e.dirty(), false);
+  assert.deepEqual(e.message(), { tone: 'warn', text: 'editor.savedUnvalidated' });
+}
+
 // A newer model selection owns the eventual replacement; old modal approval cannot steal it.
 await resetA(); f.setAutomatic(null); f.selectModel('B'); const old=e.syncToModel(); await tick();
 f.selectModel('C'); const current=e.syncToModel(); await tick();

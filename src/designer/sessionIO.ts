@@ -211,8 +211,9 @@ export function createDesignerIO(core: Core, deps: DesignerIODependencies) {
       const list = res.validation.checks ?? [];
       const errors = list.filter((c) => c.severity === "error").length;
       const checkWarnings = list.filter((c) => c.severity === "warning").length;
+      const validationUnavailable = res.validation.error?.stage === "timeout" || res.validation.error?.stage === "worker";
       savedNotice(errors || !res.validation.valid
-        ? { tone: "warn", text: errors ? t("store.savedErrors", { count: errors }) : t("store.savedNoBuild") }
+        ? { tone: "warn", text: errors ? t("store.savedErrors", { count: errors }) : t(validationUnavailable ? "store.savedUnvalidated" : "store.savedNoBuild") }
         : { tone: checkWarnings ? "warn" : "good", text: checkWarnings ? t("store.savedWarnings", { count: checkWarnings }) : t("store.saved") }, warnings);
       return true;
     } catch (e) {

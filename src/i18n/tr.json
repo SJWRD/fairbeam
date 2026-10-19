@@ -1084,6 +1084,7 @@
   "editor.saved": "Kaydedildi · {params} parametre · geometri önizlemesi güncellendi",
   "editor.savedNoBuild": "Kaydedildi, ancak model oluşturulamıyor",
   "editor.savedNoLoad": "Kaydedildi, ancak model yüklenemiyor",
+  "editor.savedUnvalidated": "Kaydedildi. Önizleme doğrulaması tamamlanamadı; çalıştırmadan önce modeli denetleyin.",
   "efficiency.aria": "Frekansa göre uyumsuzluk verimliliği ve uzak alan frekanslarındaki ışıma ve toplam verimlilik",
   "efficiency.details": "Ayrıntılar",
   "efficiency.ariaCompared": "Frekansa göre karşılaştırılan her çalıştırmanın uyumsuzluk verimliliği ve uzak alan frekanslarındaki toplam verimlilik",
@@ -3508,6 +3509,7 @@
   "store.savedNewer": "Kaydedildi. Daha yeni değişiklikler kaydedilmedi.",
   "store.openCancelledByEdit": "Diğer tasarım yüklenirken mevcut tasarımı düzenlediğiniz için açma işlemi iptal edildi. Değişiklikleriniz burada korundu. Hazır olduğunuzda diğer tasarımı yeniden açın.",
   "store.savedNoBuild": "Kaydedildi. Henüz oluşturulamıyor: çalıştırmadan önce düzeltin (Denetimler'e bakın).",
+  "store.savedUnvalidated": "Kaydedildi. Önizleme doğrulaması tamamlanamadı; çalıştırmadan önce tasarımı denetleyin.",
   "store.savedWarnings": {
     "other": "{count} uyarıyla kaydedildi (Denetimler'e bakın)."
   },

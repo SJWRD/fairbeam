@@ -123,6 +123,10 @@ class ApiError(Exception):
         self.status, self.message, self.extra = status, message, extra
 
 
+class PreviewWorkerError(ApiError):
+    """The preview worker failed independently of the saved file."""
+
+
 # ---------------------------------------------------------------------- helpers
 
 # the app's "Send feedback" links (src/components/FeedbackLink.tsx): the issue forms of the public
@@ -541,7 +545,11 @@ class PreviewWorker:
     def request(self, payload: dict) -> dict:
         with self._lock:
             if self.proc is None or self.proc.poll() is not None:
-                self._start()
+                try:
+                    self._start()
+                except OSError as exc:
+                    self.stop()
+                    raise PreviewWorkerError(500, f"the preview worker could not start: {exc}") from None
             self._seq += 1
             payload = {**payload, "id": self._seq}
             proc = self.proc
@@ -561,14 +569,22 @@ class PreviewWorker:
             t.join(self.timeout)
             if t.is_alive():
                 self.stop()
-                raise ApiError(504, f"geometry build did not finish within {self.timeout:.0f} s")
+                raise PreviewWorkerError(504, f"geometry build did not finish within {self.timeout:.0f} s")
             line = result.get("line")
             if not line:
                 tail = list(self.stderr_tail)[-5:]
                 self.stop()
-                raise ApiError(500, "the preview worker exited" + (": " + tail[-1] if tail else ""),
+                raise PreviewWorkerError(500, "the preview worker exited" + (": " + tail[-1] if tail else ""),
                                log_tail=tail)
-            return json.loads(line)
+            try:
+                response = json.loads(line)
+            except (UnicodeDecodeError, json.JSONDecodeError):
+                self.stop()
+                raise PreviewWorkerError(500, "the preview worker returned an invalid response") from None
+            if not isinstance(response, dict):
+                self.stop()
+                raise PreviewWorkerError(500, "the preview worker returned an invalid response")
+            return response
 
 
 # ---------------------------------------------------------------------- application
@@ -780,6 +796,20 @@ class App:
             out["build_s"] = r.get("build_s")
         return out
 
+    def _post_write_validation(self, model_id: str, *, design: bool = False) -> dict:
+        """A failed preview must not turn a committed write into a failed save.
+
+        Keep the new hash and backup in the successful response so the next save
+        uses the committed version. Disk, identity and unrelated API errors are
+        not preview warnings; only errors from the worker boundary are advisory.
+        """
+        try:
+            return self._validate_design(model_id) if design else self._validate_file(model_id)
+        except PreviewWorkerError as exc:
+            return {"valid": False, "error": {
+                "stage": "timeout" if exc.status == 504 else "worker", "message": exc.message,
+            }}
+
     def create_model(self, body: dict) -> dict:
         model_id = modelfiles.check_id(body.get("id"))
         modelfiles.check_free(self.models_dir, model_id)
@@ -797,7 +827,7 @@ class App:
         else:
             source = modelfiles.read_model(self.models_dir, origin)["source"]
         modelfiles.create_model(self.models_dir, model_id, source, name.strip() if name else None)
-        return {**modelfiles.read_model(self.models_dir, model_id), "validation": self._validate_file(model_id)}
+        return {**modelfiles.read_model(self.models_dir, model_id), "validation": self._post_write_validation(model_id)}
 
     def _example_source(self, source_id: str, project: str | None):
         source_id = modelfiles.check_id(source_id)
@@ -882,7 +912,7 @@ class App:
                 raise ApiError(422, "design model metadata is invalid", reason="design model metadata is invalid")
             design = {**design, "model": {**design["model"], "id": model_id.replace("_", "-"), "name": name.strip()}}
         modelfiles.create_design(root, model_id, design)
-        return {"id": model_id, "kind": "design", "validation": self._validate_design(model_id)}
+        return {"id": model_id, "kind": "design", "validation": self._post_write_validation(model_id, design=True)}
     # ---- design files (designer)
 
     def _validate_design(self, model_id: str) -> dict:
@@ -1010,7 +1040,7 @@ class App:
             except DesignError as e:
                 raise ApiError(422, str(e), fields={"template": e.detail}) from None
         modelfiles.create_design(self.models_dir, model_id, design)
-        out = {**self.design_file(model_id), "validation": self._validate_design(model_id)}
+        out = {**self.design_file(model_id), "validation": self._post_write_validation(model_id, design=True)}
         if report is not None:
             out["import_report"] = report
         return out
@@ -1224,7 +1254,8 @@ class App:
         block running it instead (_refuse_broken_design)."""
         self._require_backup_scope(body)
         res = modelfiles.save_design(self.models_dir, self.history_dir, model_id, body.get("design"), body.get("base_hash"))
-        return {"id": model_id, **res, "backup_scope": self.backup_scope, "validation": self._validate_design(model_id)}
+        return {"id": model_id, **res, "backup_scope": self.backup_scope,
+                "validation": self._post_write_validation(model_id, design=True)}
 
     def rename_design(self, model_id: str, body: dict) -> dict:
         """Change display metadata only, preserving file id and all result associations."""
@@ -1374,7 +1405,7 @@ class App:
 
     def save_source(self, model_id: str, body: dict) -> dict:
         res = modelfiles.save_model(self.models_dir, self.history_dir, model_id, body.get("source"), body.get("base_hash"))
-        return {"id": model_id, **res, "validation": self._validate_file(model_id)}
+        return {"id": model_id, **res, "validation": self._post_write_validation(model_id)}
 
     def _model(self, body: dict) -> dict:
         key = body.get("model")

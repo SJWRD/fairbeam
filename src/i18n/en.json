@@ -1100,6 +1100,7 @@
   "editor.saved": "Saved · {params} parameters · geometry preview updated",
   "editor.savedNoBuild": "Saved, but the model does not build",
   "editor.savedNoLoad": "Saved, but the model does not load",
+  "editor.savedUnvalidated": "Saved. Preview validation could not finish; check the model before running.",
   "efficiency.aria": "Mismatch efficiency versus frequency, with the radiation and total efficiency at the far-field frequencies",
   "efficiency.details": "Details",
   "efficiency.ariaCompared": "Mismatch efficiency of each compared run versus frequency, with the total efficiency at the far-field frequencies",
@@ -3576,6 +3577,7 @@
   "store.savedNewer": "Saved. Newer edits remain unsaved.",
   "store.openCancelledByEdit": "Opening the other design was cancelled because you edited the current design while it was loading. Your changes are kept here. Open the other design again when you are ready.",
   "store.savedNoBuild": "Saved. It does not build yet: fix before running (see Checks).",
+  "store.savedUnvalidated": "Saved. Preview validation could not finish; check the design before running.",
   "store.savedWarnings": {
     "one": "Saved with {count} warning (see Checks).",
     "other": "Saved with {count} warnings (see Checks)."
