@@ -16,6 +16,11 @@ designer.
 
 ## Start screen
 
+General settings → Appearance offers two coordinated themes: **Forest** (dark green) and
+**Academic** (light blue). They apply interface, accent, chart and viewport colors together,
+reset custom color overrides, and preserve simulation preferences. Individual appearance
+controls and Reset appearance remain available.
+
 ![Start screen: a new design, your designs, the Python models and the examples](designer/start.png)
 
 The start screen opens when the run server is reachable. It has three parts:
@@ -31,12 +36,20 @@ The start screen opens when the run server is reachable. It has three parts:
 - **Your designs**: search by name, ID, or filename, sort by name or recent modification, and star
   favorite designs. Favorites appear first and the favorites filter and sort choice are remembered
   in this browser. Older entries without a modification timestamp use their name as a fallback.
+  Initially five matching designs are shown; **Show 5 more** expands the list. Searching or
+  changing the sort/filter returns to the first five matches.
   Open one in the designer. Right-click a saved design (or press Shift+F10 while its row is focused)
   to **Rename** its display name or **Show in File Explorer** in the desktop app. Renaming keeps
   its file, ID and existing results, and offers **Undo** on Start; save an open design's edits first.
   The bin icon deletes a design after a confirmation;
   the file moves to the model history folder, so it can be restored. A design file that does not
   open (damaged, or made by a newer Fairbeam) stays in the list, grayed, with the reason.
+  For a portable `.fb` project in the desktop app, the confirmation also offers to remove the
+  `.fb` and its results folder from their current location. This option is **off by default**.
+  Both move together into a uniquely named folder under **Fairbeam Deleted** beside the project.
+  The completion message gives the recovery location. Restore the `.fb` and its results folder
+  together; workspace history and cached runs remain available. This does not free disk space.
+  Running projects, changed documents, links and shared results folders are not moved.
 - **Python models** and **Examples**: open a model in the Run panel, or an example with its
   results (in Examples mode). **Open as new design…** next to an example makes an editable
   design of your own from it. The runs of your designs are not listed here: they open under the

@@ -1964,6 +1964,7 @@ class Handler(BaseHTTPRequestHandler):
             ("POST", r"/api/shutdown", self._shutdown),
             ("POST", r"/api/native-document/open", lambda: self._native_document("open")),
             ("POST", r"/api/native-document/save", lambda: self._native_document("save")),
+            ("POST", r"/api/native-document/archive", lambda: self._native_document("archive")),
             ("GET", r"/api/blender", lambda: self._json(200, app.blender_info((parse_qs(urlsplit(self.path).query).get("path") or [""])[0]))),
             ("POST", r"/api/blender/open-download", lambda: (self._body(), self._json(200, app.open_blender_download()))[1]),
             ("POST", r"/api/render-jobs", lambda: self._json(201, app.submit_render(self._body(MAX_RENDER_JOB_BODY)))),
@@ -2069,6 +2070,22 @@ class Handler(BaseHTTPRequestHandler):
         if "Origin" in self.headers or any(name.lower().startswith("sec-fetch-") for name in self.headers):
             raise ApiError(403, "native document commands are not a browser API")
         body = self._body(16 * 1024 if action == "open" else MAX_DESIGN_BODY)
+        if action == "archive":
+            from .project_removal import archive
+            from .progress import TERMINAL
+            if (set(body) != {"model_id", "path", "results_directory", "backup_scope"}
+                    or any(not isinstance(body[key], str) for key in body)):
+                raise ApiError(400, "invalid project removal request")
+            self.app._require_backup_scope(body)
+            model_id = modelfiles.check_id(body["model_id"])
+            if any(j.get("model") == model_id and j.get("status") not in TERMINAL for j in self.app.manager.list()):
+                raise ApiError(409, "This project has a run in progress; wait for it to finish first")
+            try:
+                result = archive(self.app.documents, model_id, body["path"], body["results_directory"])
+            except (documents.DocumentError, OSError) as exc:
+                raise ApiError(409, str(exc)) from exc
+            self._json(200, {**result, "backup_scope": self.app.backup_scope})
+            return
         allowed = {"path"} if action == "open" else {"path", "model_id", "workspace_hash", "base_hash", "document_id", "save_as", "design"}
         if set(body) - allowed or not isinstance(body.get("path"), str) or not body["path"]:
             raise ApiError(400, "invalid native document request")

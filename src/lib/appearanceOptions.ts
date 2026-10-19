@@ -20,6 +20,8 @@ export function appearanceTokens(v: ColorSettings, dark: boolean): Record<string
     const palette=surfaces[v.colorPreset];
     ["--al-bg","--al-surface","--al-surface-2","--al-surface-3"].forEach((key,i)=>out[key]=palette[i]);
   }
+  // Forest's raised surfaces need a lighter muted label than the warm-neutral default.
+  if (v.colorPreset === "forest" && dark) out["--al-text-3"] = "#b1aea5";
   if (v.colorPreset === "contrast") Object.assign(out, dark ? { "--al-bg":"#080808", "--al-surface":"#101010", "--al-surface-2":"#171717", "--al-surface-3":"#222222", "--al-border":"#767676", "--al-border-strong":"#999999" } : { "--al-bg":"#ffffff", "--al-surface":"#ffffff", "--al-surface-2":"#f5f5f5", "--al-surface-3":"#eeeeee", "--al-border":"#767676", "--al-border-strong":"#666666" });
   if (v.accent !== "copper") {
     const ramp = { blue: dark ? ["#8bbcf2","#a8cdf5","#15273b","#263b53"] : ["#245a91","#184473","#edf4fb","#d7e7f7"], teal: dark ? ["#73cabb","#a0ded3","#142e29","#21423b"] : ["#246456","#184d41","#eaf5f1","#d1e9e0"], violet: dark ? ["#bba5ec","#d0bff4","#2b2239","#3b2e50"] : ["#684792","#513573","#f4effa","#e5d9f2"] }[v.accent];

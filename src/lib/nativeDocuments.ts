@@ -21,6 +21,12 @@ function native(): Native | undefined {
   return typeof window === "undefined" ? undefined : (window as unknown as { __TAURI_INTERNALS__?: Native }).__TAURI_INTERNALS__;
 }
 export const nativeDocumentsAvailable = () => !!native();
+export type ProjectRemoval = { path: string; results_directory: string };
+export async function archiveNativeProject(modelId: string, project: ProjectRemoval, backupScope?: string) {
+  if (!native() || !backupScope) throw new Error(t("home.designs.archiveDesktop"));
+  return native()!.invoke<{ id: string; file: string; moved_to: string; backup_scope: string; recovery_path: string }>(
+    "native_document_archive", { modelId, path: project.path, resultsDirectory: project.results_directory, backupScope });
+}
 const key = (f: Pick<DesignFile, "id" | "backup_scope">) => JSON.stringify([f.backup_scope ?? "", f.id]);
 const [bindings, setBindings] = createSignal<ReadonlyMap<string, NativeDocumentBinding>>(new Map());
 export const nativeDocumentFor = (f: DesignFile | null) => f ? bindings().get(key(f)) : undefined;

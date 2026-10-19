@@ -4,7 +4,7 @@ import { applyTheme } from "../state";
 import { useModal } from "../lib/dialog";
 import { errorText } from "../lib/errorText";
 import { readGeneralSettings, writeGeneralSettings, type GeneralSettings } from "../lib/generalSettings";
-import { applyAppearance, APPEARANCE_DEFAULTS } from "../lib/appearance";
+import { applyAppearance, APPEARANCE_DEFAULTS, APPEARANCE_PRESETS } from "../lib/appearance";
 import { APPEARANCE_OPTIONS, CUSTOM_COLORS } from "../lib/appearanceOptions";
 import { resetDesignerLayout } from "../designer/layoutState";
 import { resetRibbonLayout } from "../designer/DesignWorkspace";
@@ -233,6 +233,15 @@ export default function GeneralSettingsDialog(props: { open: boolean; close: () 
       <div class="gs-body">
         <Show when={tab() === "appearance"}>
           <div class="gs-panel" id="gs-panel-appearance" role="tabpanel" aria-labelledby="gs-tab-appearance" tabindex={0}>
+            <fieldset class="gs-theme-presets">
+              <legend>{t("settings.appearance.presets")}</legend>
+              <p class="muted">{t("settings.appearance.presetsNote")}</p>
+              <div class="cluster-sm">
+                <For each={(["forest", "academic"] as const)}>{key => <button type="button" class="btn"
+                  aria-pressed={Object.entries(APPEARANCE_PRESETS[key]).every(([field, setting]) => value()[field as keyof GeneralSettings] === setting)}
+                  onClick={() => save(APPEARANCE_PRESETS[key])}>{t(`settings.appearance.preset.${key}`)}</button>}</For>
+              </div>
+            </fieldset>
         <label class="dz-field"><span class="dz-label">{t("settings.theme")}</span><select class="rp-select dz-input" value={value().theme} onChange={e => save({ theme: e.currentTarget.value as GeneralSettings["theme"] })}><option value="system">{t("settings.theme.system")}</option><option value="light">{t("settings.theme.light")}</option><option value="dark">{t("settings.theme.dark")}</option></select></label>
             <label class="dz-field"><span class="dz-label">{t("settings.appearance.uiFont")}</span><select class="rp-select dz-input" value={value().uiFont} onChange={e => save({ uiFont: e.currentTarget.value as GeneralSettings["uiFont"] })}><option value="plex">{t("settings.appearance.plexSans")}</option><option value="system">{t("settings.appearance.systemFont")}</option><option value="arial">Arial / Helvetica</option></select></label>
             <label class="dz-field"><span class="dz-label">{t("settings.appearance.monoFont")}</span><select class="rp-select dz-input" value={value().monoFont} onChange={e => save({ monoFont: e.currentTarget.value as GeneralSettings["monoFont"] })}><option value="plex">{t("settings.appearance.plexMono")}</option><option value="system">{t("settings.appearance.systemMono")}</option><option value="consolas">Consolas</option></select><span class="note">{t("settings.appearance.fontNote")}</span></label>

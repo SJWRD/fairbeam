@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { APPEARANCE_OPTIONS, CUSTOM_COLORS, COLOR_DEFAULTS, appearanceTokens } from '../src/lib/appearanceOptions.ts';
 import { GENERAL_DEFAULTS, GENERAL_SETTINGS_KEY, readGeneralSettings, writeGeneralSettings } from '../src/lib/generalSettings.ts';
-import { APPEARANCE_DEFAULTS } from '../src/lib/appearance.ts';
+import { APPEARANCE_DEFAULTS, APPEARANCE_PRESETS } from '../src/lib/appearance.ts';
 const data=new Map();const storage={getItem:k=>data.get(k)??null,setItem:(k,v)=>data.set(k,v)};
 for(const dark of [false,true])assert.deepEqual(appearanceTokens(COLOR_DEFAULTS,dark),{},'exact incumbent defaults');
 for(const [key,options]of Object.entries(APPEARANCE_OPTIONS))for(const option of options){
@@ -21,3 +21,16 @@ for(const dark of [false,true])for(const accent of ['blue','teal','violet']){
 for(const key of CUSTOM_COLORS){writeGeneralSettings({...GENERAL_DEFAULTS,[key]:'#1234ab',threads:6},storage);assert.equal(readGeneralSettings(storage)[key],'#1234ab');data.set(GENERAL_SETTINGS_KEY,JSON.stringify({...GENERAL_DEFAULTS,[key]:'url(bad)',threads:6}));assert.equal(readGeneralSettings(storage)[key],'');assert.equal(readGeneralSettings(storage).threads,6);assert.throws(()=>writeGeneralSettings({...GENERAL_DEFAULTS,[key]:'#123'},storage),/Invalid/);}
 for(const customAccent of ['#ffffff','#000000','#777777','#ffff00','#00ff00','#0000ff']){const tokens=appearanceTokens({...COLOR_DEFAULTS,customAccent},false);assert.ok(ratio(customAccent,tokens['--al-action-text'])>=4.5);}
 console.log('Appearance presets: exact defaults, independent recovery, persistence/reset and accent contrast passed');
+for (const [name, preset] of Object.entries(APPEARANCE_PRESETS)) {
+ const value = {...GENERAL_DEFAULTS, threads: 6, language: 'tr', customAccent: '#ff0000', ...preset};
+ writeGeneralSettings(value, storage);
+ assert.deepEqual(readGeneralSettings(storage), value, `${name} roundtrip`);
+ assert.equal(value.threads, 6); assert.equal(value.language, 'tr'); assert.equal(value.customAccent, '');
+ const dark = preset.theme === 'dark', tokens = appearanceTokens(preset, dark);
+ for (const surface of ['--al-bg', '--al-surface', '--al-surface-2', '--al-surface-3']) {
+  assert.ok(ratio(tokens['--al-accent-text'], tokens[surface]) >= 4.5, `${name} accent on ${surface}`);
+  for (const foreground of dark ? ['#f2f0eb','#c6c2b8',tokens['--al-text-3'] ?? '#a29e94'] : ['#181715','#5d5a53','#67635b'])
+   assert.ok(ratio(foreground, tokens[surface]) >= 4.5, `${name} ${foreground} on ${surface}`);
+ }
+ for (let series=1;series<=8;series++) assert.ok(ratio(tokens[`--al-series-${series}`],tokens['--al-surface'])>=3,`${name} chart series ${series}`);
+}

@@ -591,6 +591,27 @@ pub fn native_document_restore(app: AppHandle, model_id: String) -> Value {
         .restore(&model_id, &server.document_client())
 }
 
+/// Only the private child channel can move portable files; the browser API cannot.
+#[tauri::command]
+pub async fn native_document_archive(
+    app: AppHandle,
+    model_id: String,
+    path: String,
+    results_directory: String,
+    backup_scope: String,
+) -> Result<Value, Value> {
+    let client = client(&app)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        client.request(
+            DocumentOperation::Archive,
+            &json!({"model_id": model_id, "path": path, "results_directory": results_directory,
+                "backup_scope": backup_scope}),
+        )
+    })
+    .await
+    .map_err(|_| error("Project removal could not finish", 503))?
+}
+
 #[tauri::command]
 pub async fn native_document_save(app: AppHandle, request: SaveRequest) -> Result<Value, Value> {
     validate_draft_request(&request)?;

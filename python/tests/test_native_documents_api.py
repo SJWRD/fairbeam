@@ -20,6 +20,21 @@ from fairbeam.server import App, make_server
 
 
 class NativeDocumentsAPI(unittest.TestCase):
+    def test_archive_requires_native_authority_scope_and_no_running_job(self):
+        opened = self.opened()
+        body = {"model_id": opened["file"]["id"], "path": opened["document"]["path"],
+                "results_directory": opened["document"]["results_directory"], "backup_scope": self.app.backup_scope}
+        self.assertEqual(self.request("archive", body, token=False)[0], 403)
+        self.assertEqual(self.request("archive", body, headers={"Origin": "http://localhost"})[0], 403)
+        self.assertEqual(self.request("archive", {**body, "backup_scope": "different"})[0], 409)
+        with mock.patch.object(self.manager, "list", return_value=[{"model": body["model_id"], "status": "running"}]):
+            self.assertEqual(self.request("archive", body)[0], 409)
+        self.assertTrue(self.path.exists())
+        status, result = self.request("archive", body)
+        self.assertEqual(status, 200, result)
+        self.assertFalse(self.path.exists())
+        self.assertTrue((Path(result["recovery_path"]) / self.path.name).is_file())
+
     def test_first_save_accepts_dirty_snapshot_without_modifying_json(self):
         modelfiles.create_design(self.models, 'plain_draft', self.document['design'])
         _, original = self.get_design('plain_draft')
