@@ -1,0 +1,58 @@
+import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
+import puppeteer from 'puppeteer-core';
+import {chromePath} from './scenarios/stack.mjs';
+const source = process.env.FAIRBEAM_SPLASH_SOURCE ?? new URL('../src-tauri/splash/index.html', import.meta.url);
+const html = readFileSync(source,'utf8');
+const browser = await puppeteer.launch({headless:true, executablePath:await chromePath(), args:['--no-sandbox']});
+try {
+ const page = await browser.newPage();
+ await page.setViewport({width:1024,height:688});
+ const errors=[];page.on('pageerror',e=>errors.push(e.message));
+ await page.setContent(html.replace('<script>',`<script>window.calls=[];window.pick=null;window.reject=false;window.__TAURI__={core:{invoke:async(c,a)=>{window.calls.push([c,a]);if(window.reject)throw 'ACL denied';return c==='pick_workspace_folder'?window.pick:null}}};</script><script>`));
+ const show = s => page.evaluate(state=>window.fairbeamSplash(state),s);
+ const visible = id => page.$eval('#'+id,e=>!e.hidden && e.getClientRects().length>0);
+ for(const lang of ['en','tr']) {
+  await show({phase:'starting',text:'Starting…',lang});
+  await show({phase:'setup',text:'The Fairbeam runtime is damaged.',canInstall:false,canRepair:true,canRetry:true,managedReady:false,lang});
+  assert.equal(await visible('setup-repair'),true);
+  assert.equal(await visible('use-managed'),false);
+  assert.equal(await page.evaluate(()=>document.activeElement.id),'setup-repair');
+  await page.click('#setup-repair');
+  assert.deepEqual(await page.evaluate(()=>calls.at(-1)),['install_runtime',{repair:true}]);
+  assert.equal(await page.$('#install-gpu-runtime'),null,'splash has no forbidden GPU installer');
+  await show({phase:'setup',canInstall:false,canRepair:false,installNote:'macos_runtime_requires:27',lang});
+  assert.equal(await visible('install'),false);assert.equal(await visible('setup-repair'),false);
+  assert.match(await page.$eval('#install-note',e=>e.textContent),/27/);
+  assert.doesNotMatch(await page.$eval('#install-note',e=>e.textContent),/macos_runtime_requires/);
+  await show({phase:'installing',updating:true,step:'start',text:'Updating openEMS in the runtime…',log:'/logs/test.log',lang});
+  assert.equal(await page.$$eval('.steps .done',e=>e.length),0);
+  await show({phase:'installing',updating:true,step:'download-openems',fraction:.25,message:'25 MB / 100 MB',log:'/logs/test.log',lang});
+  assert.equal(await page.$$eval('.steps .done',e=>e.length),0,'unvisited steps are never claimed complete');
+  assert.equal(await page.$eval('#bar',e=>e.getAttribute('aria-valuenow')),'25');
+  assert.match(await page.$eval('#inst-log',e=>e.textContent),/test.log/);
+  await show({phase:'installing',updating:true,step:'unpack-openems',lang});
+  assert.equal(await page.$$eval('.steps .done',e=>e.length),1);
+  assert.equal(await page.$eval('#bar',e=>e.hasAttribute('aria-valuenow')),false);
+  await show({phase:'workspace',workspace:'/Volumes/ğüşıöç/Missing',detail:'workspace_not_folder',settings:'/settings.json',lang});
+  assert.equal(await page.evaluate(()=>document.activeElement.id),'workspace-retry');
+  assert.equal(await visible('workspace-recovery'),true);
+  await page.evaluate(()=>{window.calls=[];window.pick=null});
+  await page.click('#workspace-choose');
+  assert.deepEqual(await page.evaluate(()=>calls.map(c=>c[0])),['pick_workspace_folder'],'cancel never changes settings');
+  await page.evaluate(()=>{window.calls=[];window.pick='/new-workspace'});
+  await page.click('#workspace-choose');
+  assert.deepEqual(await page.evaluate(()=>calls),[['pick_workspace_folder',null],['set_workspace_folder',{path:'/new-workspace'}],['retry',null]]);
+  await page.evaluate(()=>window.reject=true);await page.click('#workspace-default');
+  assert.equal(await visible('action-error'),true);assert.match(await page.$eval('#action-error',e=>e.textContent),/ACL denied/);
+  await page.evaluate(()=>window.reject=false);
+  await show({phase:'error',text:'The runtime could not be installed.',detail:'hash mismatch',canRepair:true,lang});
+  assert.equal(await page.evaluate(()=>document.activeElement.id),'retry2');
+  assert.match(await page.$eval('#live',e=>e.textContent),/hash mismatch/);
+  assert.equal(await page.$eval('#live',e=>e.hidden),false);
+  assert.equal(await page.$eval('#fail-title',e=>e.getAttribute('role')),'alert');
+  assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
+ }
+ assert.deepEqual(errors,[]);
+ console.log('Splash EN/TR: repair/OS gating, workspace retry/default/picker/cancel/error, truthful progress, live regions and focus passed');
+} finally {await browser.close();}

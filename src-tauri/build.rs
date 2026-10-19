@@ -11,6 +11,7 @@ fn main() {
         "retry",
         "install_runtime",
         "use_managed",
+        "use_default_workspace",
         "set_prefer_gpu",
         "set_gpu_build",
         "choose_python",

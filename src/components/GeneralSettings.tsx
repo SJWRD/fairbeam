@@ -1,8 +1,9 @@
-import { createEffect, createSignal, For, onMount, Show } from "solid-js";
+import { createEffect, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { CircleAlert, CircleCheck, LoaderCircle, Settings, X } from "lucide-solid";
 import { applyTheme } from "../state";
 import { useModal } from "../lib/dialog";
 import { errorText } from "../lib/errorText";
+import { gpuInstallError, gpuProgress, type GpuRuntimeProgress } from "../lib/gpuRuntimeFeedback";
 import { readGeneralSettings, writeGeneralSettings, type GeneralSettings } from "../lib/generalSettings";
 import { applyAppearance, APPEARANCE_DEFAULTS, APPEARANCE_PRESETS } from "../lib/appearance";
 import { APPEARANCE_OPTIONS, CUSTOM_COLORS } from "../lib/appearanceOptions";
@@ -34,6 +35,7 @@ type DesktopSettings = {
   gpu_choice_source?: string | null;
   gpu_choice_path?: string | null;
   gpu_runtime_installing?: boolean;
+  gpu_runtime_progress?: unknown;
   gpu_supported?: boolean;
   gpu_support_reason?: string | null;
   gpu_adapter?: string | null;
@@ -70,6 +72,19 @@ export default function GeneralSettingsDialog(props: { open: boolean; close: () 
   const [gpuAdapter, setGpuAdapter] = createSignal<string | null>(null);
   const [gpuDriver, setGpuDriver] = createSignal<string | null>(null);
   const [gpuInstalling, setGpuInstalling] = createSignal(false);
+  const [gpuInstallProgress, setGpuInstallProgress] = createSignal<GpuRuntimeProgress | null>(null);
+  const progressListener = (event: Event) => {
+    const progress = gpuProgress((event as CustomEvent).detail);
+    setGpuInstallProgress(progress);
+    if (progress) setGpuInstalling(!progress.finished);
+  };
+  onMount(() => window.addEventListener("fairbeam:gpu-runtime-progress", progressListener));
+  onCleanup(() => window.removeEventListener("fairbeam:gpu-runtime-progress", progressListener));
+  const gpuStep = () => {
+    const step = gpuInstallProgress()?.step;
+    return step && ["download-uv", "install-python", "create-venv", "download-openems", "unpack-openems", "install-packages", "install-openems-wheels", "install-app", "verify"].includes(step)
+      ? t(`settings.gpuManaged.step.${step}`) : t("settings.gpuManaged.preparing");
+  };
   const [workspaceBusy, setWorkspaceBusy] = createSignal(false);
   const [checkingUpdates, setCheckingUpdates] = createSignal(false);
   const [updateStatus, setUpdateStatus] = createSignal<UpdateFeedback | null>(null);
@@ -124,6 +139,7 @@ export default function GeneralSettingsDialog(props: { open: boolean; close: () 
       setGpuRuntimeEnabled(!!data.gpu_runtime_enabled); setGpuSupported(!!data.gpu_supported);
       setGpuSupportReason(data.gpu_support_reason ?? null); setGpuAdapter(data.gpu_adapter ?? null); setGpuDriver(data.gpu_driver ?? null);
       setGpuInstalling(!!data.gpu_runtime_installing);
+      setGpuInstallProgress(gpuProgress(data.gpu_runtime_progress));
     }
     catch (e) { showError(t("settings.error.loadDesktop", { error: errorText(e) })); }
   };
@@ -174,13 +190,13 @@ export default function GeneralSettingsDialog(props: { open: boolean; close: () 
     finally { setBusy(false); }
   };
   const installGpuRuntime = async () => {
-    setGpuInstalling(true); setBusy(true); setMessage("");
+    setGpuInstalling(true); setGpuInstallProgress(null); setBusy(true); setMessage("");
     try {
       await native()!.invoke("install_gpu_runtime");
       await loadDesktop();
-      showSuccess(t("settings.gpuManaged.ready"));
+      showSuccess(t("settings.gpuManaged.installed"));
     } catch (e) {
-      const code = errorText(e);
+      const { code, detail, log } = gpuInstallError(e);
       const known: Record<string, string> = {
         runtime_installing: "settings.gpuManaged.cpuInstallBusy",
         gpu_runtime_installing: "settings.gpuManaged.installBusy",
@@ -188,9 +204,13 @@ export default function GeneralSettingsDialog(props: { open: boolean; close: () 
         nvidia_smi_missing: "settings.gpuManaged.reason.nvidia_smi_missing",
         nvidia_gpu_missing: "settings.gpuManaged.reason.nvidia_gpu_missing",
         nvidia_driver_too_old: "settings.gpuManaged.reason.nvidia_driver_too_old",
+        nvidia_compute_unsupported: "settings.gpuManaged.reason.nvidia_compute_unsupported",
+        nvidia_compute_capability_unknown: "settings.gpuManaged.reason.nvidia_compute_capability_unknown",
+        gpu_runtime_unsupported: "settings.gpuManaged.reason.gpu_runtime_unsupported",
         nvidia_probe_failed: "settings.gpuManaged.reason.nvidia_probe_failed",
       };
-      showError(known[code] ? t(known[code]) : t("settings.error.gpuInstall"));
+      const summary = known[code] ? t(known[code]) : t("settings.error.gpuInstall");
+      showError([summary, !known[code] && detail, log && t("settings.gpuManaged.log", { path: log })].filter(Boolean).join("\n"));
     }
     finally { setBusy(false); setGpuInstalling(false); }
   };
@@ -328,6 +348,16 @@ export default function GeneralSettingsDialog(props: { open: boolean; close: () 
           </Show>
           <Show when={!externalIsGpu() && !gpuChoiceReady() && !gpuSupported() && gpuSupportReason()}>
             <p class="note">{gpuReason()}</p>
+          </Show>
+          <Show when={gpuInstalling()}>
+            <div class="stack-sm" role="status" aria-live="polite">
+              <span id="gpu-install-progress-label">{gpuStep()}</span>
+              <Show when={gpuInstallProgress()?.fraction !== undefined} fallback={<progress max="1" aria-labelledby="gpu-install-progress-label" />}>
+                <progress max="1" value={gpuInstallProgress()?.fraction ?? 0} aria-labelledby="gpu-install-progress-label" />
+              </Show>
+              <Show when={gpuInstallProgress()?.message}><p class="note">{gpuInstallProgress()?.message}</p></Show>
+              <Show when={gpuInstallProgress()?.log}><p class="note mono">{t("settings.gpuManaged.log", { path: gpuInstallProgress()!.log! })}</p></Show>
+            </div>
           </Show>
           <Show when={!externalIsGpu() && gpuRuntimeEnabled() && !gpuChoiceReady()}>
             <p class="note">{t("settings.gpuManaged.selectedUnavailable")}</p>
