@@ -68,6 +68,8 @@ try {
     await page.keyboard.press('Escape');
     await page.waitForSelector('.sd',{hidden:true});
     assert.equal(await page.evaluate(()=>document.activeElement?.textContent.trim()),translations['viewport.view.top']);
+    // Re-announcements clear first and publish on the next animation frame.
+    await page.waitForFunction(label=>document.querySelector('.viewport [role=status], .viewport [aria-live]')?.textContent?.includes(label),{},translations['viewport.view.top']);
     const announcements=await page.$eval('.viewport [role=status], .viewport [aria-live]',e=>e.textContent);
     assert.ok(announcements.includes(translations['viewport.view.top']),`${language}: camera view name is translated`);
     assert.ok(!announcements.includes('viewport.'),'no raw translation key in the camera announcement');
