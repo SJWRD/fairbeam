@@ -31,7 +31,7 @@ function fixture(unit) {
   return b;
 }
 
-let expectedReadme;
+let expectedReadme, expectedFigure;
 for (const unit of [1e-3, 1e-2, 1, undefined]) {
   const b = fixture(unit);
   const before = JSON.stringify(b);
@@ -46,6 +46,13 @@ for (const unit of [1e-3, 1e-2, 1, undefined]) {
   assert.ok(readme.includes("| -2, -1, 0.5 | 2, 1, 1.5 |"), "Markdown port coordinates");
 
   const pages = reportPages(b, pdfOptions);
+  const figure = pages.find((page) => page.includes(">Technical drawing<"));
+  assert.ok(figure, `${unit}: the PDF includes Figure 1`);
+  const figureText = texts(figure);
+  expectedFigure ??= figureText;
+  assert.equal(figureText, expectedFigure, `${unit}: actual PDF Figure 1 dimensions and notes agree in physical mm`);
+  for (const expected of ["30", "20", "1.5", "z = -1.25 mm", "All dimensions in mm."])
+    assert.ok(figureText.includes(expected), `${unit}: PDF Figure 1 includes ${expected}`);
   const summary = texts(pages[0]);
   const tables = pages.filter((page) => page.includes(">Geometry and materials<")).map(texts).join(" ");
   assert.ok(summary.includes("smallest cell (0.050 mm)"), `${unit}: PDF convergence hint uses mm`);
@@ -76,4 +83,4 @@ for (const unit of [1e-3, 1e-2, 1, undefined]) {
   assert.deepEqual({ readme, tables }, expectedOffGrid, `${unit}: off-grid report values agree across model units`);
   assert.equal(JSON.stringify(b), before, "formatting off-grid report values does not alter the bundle");
 }
-console.log("check-report-units: passed (Markdown/PDF tables, mm/cm/m/legacy, off-grid/tiny coordinates, no input mutation)");
+console.log("check-report-units: passed (actual PDF Figure 1, Markdown/PDF tables, mm/cm/m/legacy, off-grid/tiny coordinates, no input mutation)");
