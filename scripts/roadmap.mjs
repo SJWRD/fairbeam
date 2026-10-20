@@ -36,6 +36,11 @@ const text = readFileSync(file, "utf8");
 const data = JSON.parse(text);
 const repo = data.repo;
 if (!repo) throw new Error("roadmap.json: no repo");
+for (const area of data.areas) {
+  if (area.legacySnapshot && area.items.some(item => item.links?.length)) {
+    throw new Error(`${area.name}: do not refresh releases from unverified legacy issue references`);
+  }
+}
 
 // ---------------------------------------------------------------- GitHub state, in two calls
 const prs = new Map();
@@ -46,6 +51,20 @@ for (const pr of gh(["pr", "list", "-R", repo, "--state", "all", "--limit", "100
   for (const ref of pr.closingIssuesReferences ?? []) closers.set(ref.number, [...(closers.get(ref.number) ?? []), pr]);
 }
 for (const issue of gh(["issue", "list", "-R", repo, "--state", "all", "--limit", "1000", "--json", "number,state,stateReason"])) issues.set(issue.number, issue);
+
+// GitHub's search-backed lists can omit older records despite a large limit.
+// Resolve every missing linked number directly rather than silently keeping stale status.
+for (const number of new Set(data.areas.flatMap(area => area.items.flatMap(item => item.links ?? [])))) {
+  if (prs.has(number) || issues.has(number)) continue;
+  const issue = gh(["api", `repos/${repo}/issues/${number}`]);
+  if (issue.pull_request) {
+    const pr = gh(["pr", "view", String(number), "-R", repo, "--json", "number,state,mergeCommit,closingIssuesReferences"]);
+    prs.set(number, pr);
+    for (const ref of pr.closingIssuesReferences ?? []) closers.set(ref.number, [...(closers.get(ref.number) ?? []), pr]);
+  } else {
+    issues.set(number, { number, state: issue.state.toUpperCase(), stateReason: issue.state_reason?.toUpperCase() });
+  }
+}
 
 // ---------------------------------------------------------------- releases: the first tag with the commit
 try {

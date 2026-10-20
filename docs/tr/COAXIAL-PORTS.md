@@ -1,5 +1,3 @@
-> 0.7.3 sürüm kararı: proje sahibi, yerleşik CPU entegrasyonunu port düzenleyicisinde ve tasarım kontrollerinde görünür mesh yakınsama uyarısıyla deneysel olarak yayımlamayı onayladı. Aşağıdaki başarısız analitik kontroller geçmiş sayılmıyor. Eşdeğerlik yalnızca kayıtlı sentetik hava hattında gösterildi. Basamaklı geometri veya sonuçlara uydurulmuş faz düzeltmesi gönderilmiyor; GPU reddedilmeye devam ediyor. Diğer platformlar kendi çalışma zamanı kontrollerini gerektirir.
-
 # Deneysel koaksiyel TEM portları
 
 Bu uygulama taslak bir yetenektir; genel kullanımı doğrulanmış bir port modeli değildir.
@@ -10,6 +8,10 @@ ve genel RF yapıları yayımdan önce ayrıca doğrulanmalıdır.
 Çalıştırma API'si koaksiyel port içeren GPU çalıştırmalarını reddeder. CUDA veya Metal'in mevcut
 olması radyal uyarım ve iletim hattı problarının eşdeğerliğini doğrulamaz. CPU yolu da deneyseldir;
 yerel API'nin bulunması yalnızca bir yetenek kontrolüdür, doğruluk onayı değildir.
+
+## Yayın kapsamı
+
+0.7.3 sürüm kararı: proje sahibi, yerleşik CPU entegrasyonunu port düzenleyicisinde ve tasarım kontrollerinde görünür mesh yakınsama uyarısıyla deneysel olarak yayımlamayı onayladı. Aşağıdaki başarısız analitik kontroller geçmiş sayılmıyor. Eşdeğerlik yalnızca kayıtlı sentetik hava hattında gösterildi. Basamaklı geometri veya sonuçlara uydurulmuş faz düzeltmesi gönderilmiyor; GPU reddedilmeye devam ediyor. Diğer platformlar kendi çalışma zamanı kontrollerini gerektirir.
 
 ## Sözleşme
 
@@ -57,7 +59,7 @@ koaksiyeli 1–2 GHz bandında, iki CPU iş parçacığı ve -50 dB enerji ölç
 ham çözüm klasörü ve kompleks CSV değerlerini saklar. Her çalıştırmada yeni klasör kullanın:
 
 ```sh
-python scripts/validate-coaxial-native.py --case through --step .25 --out /yol/yeni/calisma
+python scripts/validate-coaxial-native.py --case through --step .25 --out /path/to/new/run
 ```
 
 Kontroller geçiş, açık (PMC uç düzlemi) ve kısa devredir (PEC uç düzlemi). Yorumlamadan önce
@@ -71,45 +73,45 @@ bitmesi ayrı ayrı değerlendirilmelidir.
 
 ## Doğrulama kontrol noktası: Windows CPU, 11 Ekim 2026
 
-**Bu taslağı doğrulanmış bir yerel port olarak birleştirmeyin.** Aynı hava dolgulu hat kontrolünde
+**Tarihsel sayısal kontrol noktası; genel doğruluk onayı değildir.** Aynı hava dolgulu hat kontrolünde
 Fairbeam port oluşturması ile kurulu yerel API arasında fark bulunmadı; ancak aşağıdaki analitik
 uyum ve mesh yakınsaması ölçütlerinin tamamı sağlanmadı. Çözücü enerjisinin sönmesi S-parametresi
 doğruluğunu belgelemez.
 
-Önceden belirlenen sınırlar: mutlak kompleks yanıt hatası 0.05, genlik hatası %1, güç aşımı %1,
-son iki enine mesh arasında kompleks değişim 0.025, yan etken kontrollerinde değişim 0.005.
+Önceden belirlenen sınırlar: mutlak kompleks yanıt hatası 0,05, genlik hatası %1, güç aşımı %1,
+son iki enine mesh arasında kompleks değişim 0,025, yan etken kontrollerinde değişim 0,005.
 Kompleks hatalar mutlak farktır; **yüzde doğruluk değildir**.
 
 | Sentetik kontrol | Enine adım (mm) | En büyük kompleks hata | En büyük faz hatası |
 | --- | ---: | ---: | ---: |
-| Hava dolgulu geçiş | 0.25 | 0.11469 | 6.574 derece |
-| Hava dolgulu geçiş | 0.125 | 0.06211 | 3.559 derece |
-| Hava dolgulu geçiş | 0.0625 | 0.03389 | 1.942 derece |
-| Hava dolgulu açık, PMC uç düzlemi | 0.125 | 0.14181 | 8.134 derece |
-| Hava dolgulu kısa devre, PEC uç düzlemi | 0.125 | 0.18929 | 10.859 derece |
-| Homojen dielektrik geçiş, epsilon = 2.1 | 0.125 | 0.08285 | 4.748 derece |
+| Hava dolgulu geçiş | 0,25 | 0,11469 | 6,574 derece |
+| Hava dolgulu geçiş | 0,125 | 0,06211 | 3,559 derece |
+| Hava dolgulu geçiş | 0,0625 | 0,03389 | 1,942 derece |
+| Hava dolgulu açık, PMC uç düzlemi | 0,125 | 0,14181 | 8,134 derece |
+| Hava dolgulu kısa devre, PEC uç düzlemi | 0,125 | 0,18929 | 10,859 derece |
+| Homojen dielektrik geçiş, epsilon = 2,1 | 0,125 | 0,08285 | 4,748 derece |
 
-En ince geçiş koşusu tek koşuluk yanıt sınırını sağlıyor, fakat önceki mesh'e göre 0.02823 değişim
-0.025 yakınsama sınırının üzerinde. Eksenel aralığı 1 mm'den 0.5 mm'ye indirmek yanıtı yalnızca
-0.000189 değiştiriyor. Fairbeam'i atlayıp doğrudan `AddCoaxialPort` kullanmak kaba meshli kontrolle
+En ince geçiş çalıştırması tek çalıştırmalık yanıt sınırını sağlıyor, fakat önceki mesh'e göre 0,02823 değişim
+0,025 yakınsama sınırının üzerinde. Eksenel aralığı 1 mm'den 0,5 mm'ye indirmek yanıtı yalnızca
+0,000189 değiştiriyor. Fairbeam'i atlayıp doğrudan `AddCoaxialPort` kullanmak kaba meshli kontrolle
 karşılaştırıldığında sıfır kompleks fark üretiyor.
 
-Eksenel PML'yi 8 hücreden 10 hücreye çıkarmak yanıtı 0.00002714 değiştiriyor; hattı z ekseninden
-x eksenine alıp ters çevirmek 0.00000136 değişim veriyor. Ölçüm düzlemini analitik beta ile
-taşımak 0.01230 fark bırakıyor; ölçülen sayısal beta ile fark 0.000130 oluyor. İkincisi yalnızca
+Eksenel PML'yi 8 hücreden 10 hücreye çıkarmak yanıtı 0,00002714 değiştiriyor; hattı z ekseninden
+x eksenine alıp ters çevirmek 0,00000136 değişim veriyor. Ölçüm düzlemini analitik beta ile
+taşımak 0,01230 fark bırakıyor; ölçülen sayısal beta ile fark 0,000130 oluyor. İkincisi yalnızca
 sayısal iç tutarlılık kontrolüdür, doğruluk düzeltmesi değildir. Tam iki uyarımlı `B A^-1`
-matrisinin en büyük güç özdeğeri 1.000110 (%0.0110 aşım, %1 toleransın altında), karşılıklılık
-hatası 0.00000133. İletim kompleks hatası 0.06195 kaldığı için tam matris çıkarımı yayılım
+matrisinin en büyük güç özdeğeri 1,000110 (%0,0110 aşım, %1 toleransın altında), karşılıklılık
+hatası 0,00000133. İletim kompleks hatası 0,06195 kaldığı için tam matris çıkarımı yayılım
 hatasını kaldırmıyor.
 
-[Kompakt sonuçlar ve özetler](../benchmarks/coaxial-tem-windows-20261011/summary.json),
-[önceden belirlenen çalışma sözleşmesi](../benchmarks/coaxial-tem-windows-20261011/study-contract.json)
-ve [kompleks tam S matrisi](../benchmarks/coaxial-tem-windows-20261011/full-s.csv), ayrı kompleks
+[Kompakt sonuçlar ve özetler](benchmarks/coaxial-tem-windows-20261011/summary.json),
+[önceden belirlenen çalışma sözleşmesi](benchmarks/coaxial-tem-windows-20261011/study-contract.json)
+ve [kompleks tam S matrisi](benchmarks/coaxial-tem-windows-20261011/full-s.csv), ayrı kompleks
 CSV dosyaları ve iki ham gelen/yansıyan dalga dizisiyle korunuyor. Aynı klasörde yakınsama grafiği
 de bulunuyor. Süreler bir performans kıyaslaması değildir.
 
-Tanı amaçlı mesh'e hizalı basamaklı PEC kesiti kaba geçiş faz hatasını 0.249 dereceye indiriyor;
-ancak tahmini empedansı dairesel hattın 65.87 ohm referansı yerine 59.88–59.90 ohm yapıyor.
+Tanı amaçlı mesh'e hizalı basamaklı PEC kesiti kaba geçiş faz hatasını 0,249 dereceye indiriyor;
+ancak tahmini empedansı dairesel hattın 65,87 ohm referansı yerine 59,88–59,90 ohm yapıyor.
 Geometriyi değiştirir ve **üretim düzeltmesi değildir**. Enine inceltme eğilimiyle birlikte eğri
 PEC sınırlarının sayısal temsilini işaret eder; genel bir çözücü düzeltmesini kanıtlamaz.
 Sonuçlara uydurulmuş faz veya empedans düzeltmesi uygulanmadı. İdeal PMC açık düzlem kontrolü,
@@ -119,7 +121,7 @@ Sonuçlara uydurulmuş faz veya empedans düzeltmesi uygulanmadı. İdeal PMC a�
 ve tanı amaçlı `--native` / `--staircase-control` seçeneklerini de kabul eder. İki geçiş uyarımı,
 tam `S = B A^-1` pasiflik kontrolü için gelen ve yansıyan dalgaları saklar. `--cell-constant`
 malzeme ortalamasını ayrı sınar; kaba hava hattındaki faz hatasını kaldırmadı. Özgün problar,
-üretilen model, çalıştırıcının tam kopyası ve kompleks örnekler her koşuda korunur.
+üretilen model, çalıştırıcının tam kopyası ve kompleks örnekler her çalıştırmada korunur.
 
 Bu Windows CPU kontrollerini macOS, GPU, kayıplı dolgu, keyfi cihazlar veya bütün koaksiyel
 boyutlara genellemeyin. Sonraki mühendislik kararı, hem yayılımı hem empedansı koruyan tutarlı
@@ -133,16 +135,16 @@ Sürüm metni tek başına başka pakette API bulunduğunu kanıtlamaz.
 
 ### Ek kontrol: mesh yerleşimi ve tutarlı PEC kesiti
 
-Dört yeni yerel kontrol [ek sonuç kaydında](../benchmarks/coaxial-tem-windows-20261011/followup/summary.json)
-saklanıyor. Gerçek daire ve portlar sabitken 0.25 mm enine mesh'i yarım veya çeyrek hücre
-kaydırmak, geçiş fazında 6.148 ve 8.276 derece hata veriyor. Uygun görünen tek bir mesh
+Dört yeni yerel kontrol [ek sonuç kaydında](benchmarks/coaxial-tem-windows-20261011/followup/summary.json)
+saklanıyor. Gerçek daire ve portlar sabitken 0,25 mm enine mesh'i yarım veya çeyrek hücre
+kaydırmak, geçiş fazında 6,148 ve 8,276 derece hata veriyor. Uygun görünen tek bir mesh
 yerleşimi genel bir düzeltme oluşturmuyor.
 
-Tanı amaçlı basamaklı kesitin 0.125 ve 0.0625 mm inceltmelerinde faz hatası 0.259 ve 0.263
-derece. Kompleks empedansın 65.871 ohm referansına göre en büyük bağıl hatası %5.36'dan
-%2.42'ye düşüyor, fakat önceden ayrıca belirlenen %2 empedans sınırını hâlâ sağlamıyor.
+Tanı amaçlı basamaklı kesitin 0,125 ve 0,0625 mm inceltmelerinde faz hatası 0,259 ve 0,263
+derece. Kompleks empedansın 65,871 ohm referansına göre en büyük bağıl hatası %5,36'dan
+%2,42'ye düşüyor, fakat önceden ayrıca belirlenen %2 empedans sınırını hâlâ sağlamıyor.
 Bu, dairesel referansa doğru inceltme bulgusudur; üretim geometrisini değiştirme gerekçesi
-değildir. İnce koşu iki yerine altı CPU iş parçacığı kullandı; performans veya iş parçacığı
+değildir. İnce çalıştırma iki yerine altı CPU iş parçacığı kullandı; performans veya iş parçacığı
 eşdeğerliği iddiası yok. Özgün açık/kısa devre, dielektrik ve referans düzlemi doğrulaması
 henüz tamamlanmadı.
 

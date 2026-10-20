@@ -180,9 +180,7 @@ The most recently installed path owns the shared Fairbeam registration. Uninstal
 only if its full quoted command still points to that installation, leaving extension defaults
 and other applications' entries unchanged, as described in
 [Microsoft's file-type guidance](https://learn.microsoft.com/en-us/windows/win32/shell/fa-file-types).
-Public 0.7.8 did not register `.fb`. The new policy has source/model checks and installer build
-validation; installed Open with visibility, launch and lifecycle behavior still require a
-disposable Windows test before release.
+**Opening .fb files.** On some installations Fairbeam is missing from the first **Open with** list. Right-click the file, choose **Open with › Choose another app › Choose an app on your PC**, select `%LOCALAPPDATA%\Fairbeam\fairbeam.exe`, then choose **Always** to keep the association. The last picker label can vary by Windows version. You can also use **Open project…** inside Fairbeam.
 
 - The official openEMS build is CPU only. Fairbeam's setup and General settings can install the
   optional NVIDIA build into a separate managed `gpu-runtime` folder, keeping the CPU runtime

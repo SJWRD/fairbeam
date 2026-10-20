@@ -735,7 +735,7 @@ Kayıt model parametrelerimizi, denklemleri ve sayısal sonuçları içerir; gal
 
 [Bölüm 3 kaydı](benchmarks/pozar-chapter-03.md), Örnek 3.1–3.7 için hedefi ve mesh
 ölçütlerini sağlayan büyüklükleri, çoğaltma komutları ve açık model sınırlarıyla toplar.
-Örnek 3.1, kaynak darbesi tamamlanmış ve tam -80 dB duruşlu yeni 20/30/40 koşu
+Örnek 3.1, kaynak darbesi tamamlanmış ve tam -80 dB duruşlu yeni 20/30/40 çalıştırma
 grubunu kullanır; tarihsel erken durdurulmuş kolonlar kapsam dışında kalır. Diğer
 eski gruplar ve taşıma kontrolleri özgün kaynak bilgilerini korur. Kayıt sonlu mesh
 farkı sınırlarını ve monoton olmayan değişimi açıkça belirtir; kabul yalnızca
@@ -784,7 +784,7 @@ kuplaj boşlukları ve ölçülmemiş harici/radyasyon Q payları kapsam dışı
 Örnek 6.7/6.8 yalnız hesap içerir. Kayıt fikstür PR'larını ve çoğaltma
 komutlarını bağlar; galeri modeli, üretilmiş paket veya kitap içeriği eklemez.
 
-6.2 için onaylanan üç uzun, kapalı mikroşerit inceltme koşusu tamamlandı.
+6.2 için onaylanan üç uzun, kapalı mikroşerit inceltme çalıştırması tamamlandı.
 Durdurma, ardışık mesh ve hava açıklığı kontrolleri sağlanır; ancak ince mesh
 frekans hatası %1,017947 ile değişmeyen %1 hedefini aşar. Bu kapsam kabul
 edilmez; bölüm kaydı PR #81'deki tam ölçümlere bağlantı verir.

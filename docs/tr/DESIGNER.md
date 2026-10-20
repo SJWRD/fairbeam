@@ -8,6 +8,8 @@ Tasarımcı çalıştırma sunucusunu gerektirir (`fairbeam serve`, bkz. [RUN-SE
 
 ## Ana ekran
 
+Uyumlu temalar ve görüntü ayarları için [Görünüm](APPEARANCE.md) kılavuzuna bakın.
+
 ![Ana ekran: yeni tasarım, tasarımlarınız, Python modelleri ve örnekler](designer/start.png)
 
 Çalıştırma sunucusuna erişilebildiğinde ana ekran açılır. Üç bölümü vardır:
@@ -18,7 +20,7 @@ Tasarımcı çalıştırma sunucusunu gerektirir (`fairbeam serve`, bkz. [RUN-SE
 
 Alt bilgideki **Geri bildirim gönder** bağlantıları tarayıcınızda herkese açık sorun takip sayfasını açar; bkz. [Geri bildirim](#feedback).
 
-Ana ekran önce kendi Python modellerinizi, sonra *örnek, salt okunur* işaretli yerleşik örnek modellerini listeler. Tıklamak Çalıştırma panelinde açar (yerleşik model kopyalamayı veya olduğu gibi çalıştırmayı sorar); kopyalama düğmesi düzenlenebilir tasarım oluşturur. Ana ekranda üst çubuğun **Python modeli çalıştır…** düğmesi bu listeye kaydırır. Örnekler kartı, örnekleri bantları ve mesh boyutlarıyla üst çubuktaki seçici gibi gruplar. Yeni tasarımın dosya adı, adının ASCII biçimidir. Ad yerleşik örnek kimliğiyle aynıysa sayı eklenir (Patch antenna, `patch_antenna_2.design.json` olarak kaydedilir); Ad alanının altındaki satır bunu gösterir. **Farklı kaydet…** (Giriş şeridi › Tasarım, üst çubuğun Diğer menüsü, tarayıcının sayfaya bıraktığı yerde Shift+Ctrl+S veya ⇧⌘S, masaüstünde Dosya › Farklı Kaydet), açık tasarımın kopyasını yeni adla kaydeder.
+Ana ekran önce kendi Python modellerinizi, sonra *örnek, salt okunur* işaretli yerleşik örnek modellerini listeler. Tıklamak Çalıştırma panelinde açar (yerleşik model kopyalamayı veya olduğu gibi çalıştırmayı sorar); kopyalama düğmesi düzenlenebilir tasarım oluşturur. Ana ekranda üst çubuğun **Python modeli çalıştır…** düğmesi bu listeye kaydırır. Örnekler kartı, örnekleri bantları ve mesh boyutlarıyla üst çubuktaki seçici gibi gruplar. Yeni tasarımın dosya adı, adının ASCII biçimidir. Ad yerleşik örnek kimliğiyle aynıysa sayı eklenir (Patch antenna, `patch_antenna_2.design.json` olarak kaydedilir); Ad alanının altındaki satır bunu gösterir. **Farklı Kaydet…** (Giriş şeridi › Tasarım, üst çubuğun Diğer menüsü, tarayıcının sayfaya bıraktığı yerde Shift+Ctrl+S veya ⇧⌘S, masaüstünde Dosya › Farklı Kaydet), açık tasarımın kopyasını yeni adla kaydeder.
 
 Üst çubuğun **Ana ekran · Tasarım · Örnekler** seçicisi ana ekran, tasarımcı ve örnekler arasında geçiş yapar:
 
@@ -51,13 +53,13 @@ Piramit huni anten şablonlar arasında değildir: genişleyen duvarları, eksen
 
 - **Şerit**: **Giriş**, **Modelleme**, **Dönüştür**, **Görünüm**, **Simülasyon**, **Optimizasyon** ve **Son işlem** adlı yedi sekmeden oluşan tek satır. Sekmelerin grupları:
   - Giriş:
-    - Tasarım: Ana ekran, Makro içe aktar, PCB içe aktar, Kaydet, Kapat, Kısayollar.
+    - Tasarım: Ana ekran, VBA makrosunu içe aktar, PCB içe aktar, Kaydet, Farklı Kaydet…, Kapat, Kısayollar.
     - Düzenle: Geçmiş (modelleme geçmişi), Geri Al, Yinele, Çoğalt, Sil.
   - Modelleme:
     - Araçlar: Boolean (Birleştir, Çıkar, Kesiştir, Ekle), Nokta seç, Ölç, Hizala, Yüz hizala, Yüzü uzat, Nokta düzenle.
     - Şekiller: Kutu, Silindir, Küre, Çokgen, Uzat, Koni, Torus, Tel.
     - Çalışma düzleminde çiz: Kutu, Daire, Çokgen.
-    - WCS: Yüze hizala, WCS dönüştür…, Global ile hizala, WCS göster.
+    - WCS: Yüze hizala, WCS'yi dönüştür…, Global ile hizala, WCS'yi göster.
     - Malzemeler: Kütüphane, Dielektrik ekle, Metal ekle.
     - Parametreler: Parametre.
   - Dönüştür: Dönüştür…, seçili katı veya şeklin dönüşüm penceresini açar. Döndür, Ölçekle, Aynala ve Ötele kopyaları, ilgili işlem seçili olarak açar. Bkz. [Dönüşümler](#transforms).
@@ -68,7 +70,7 @@ Piramit huni anten şablonlar arasında değildir: genişleyen duvarları, eksen
     - Mesh: yer varsa Hücre / λ alanı, Mesh ayarları, Mesh yakınsaması…, Mesh görünümü.
     - Portlar: Ayrık, Dalga kılavuzu, Toplu eleman ekle….
     - Monitörler: Uzak alan, Yüzey akımı, Verimlilik, Alan düzlemi.
-    - Çözücü: Çözücü sınırları.
+    - Çözücü: Deneysel çözücüler, Çözücü sınırları.
     - Çalıştır.
   - Optimizasyon: Parametre taraması, Optimizasyon aracı.
   - Son işlem: açılacak sonuç sekmeleri (Özet, S-parametreleri, Smith, Verimlilik, Örüntü, 3B örüntü, Akımlar, Alan düzlemi, Alan haritası), Uzak alan (örüntü niceliği, yalnızca örüntü gösterilirken) ve Rapor ve dışa aktarma (PDF raporu, Paket, Python).
@@ -96,6 +98,8 @@ Masaüstünde Ctrl/Cmd+W tasarımı (açık tasarım yoksa pencereyi) kapatır. 
 Kısayollar: Ctrl/Cmd+S kaydeder, Ctrl/Cmd+Z geri alır, Shift+Ctrl/Cmd+Z veya Ctrl+Y yineler, Ctrl/Cmd+Enter çalıştırır, Delete seçimi siler, Escape seçimi temizler (veya çizimi durdurur). Giriş › Kısayollar (veya tasarımcıda ?) tümünü listeler.
 
 ### Gezinti ağacı
+
+**Katılar** üzerine sağ tıklayıp **Yeni bileşen** ile boş klasör oluşturun ve adlandırın. Klasörler boşken de kaydedilir. Katıları klasöre sürükleyin veya bağlam menüsünden **Bileşene taşı** kullanın. Klasör işlemleri düzeni etkiler; her katı kendi malzemesini ve sıralı dönüşümlerini korur. Dönüştür paneli, özgün şekille aynı düzlemde olsa bile gerçek yarı saydam sonuç yüzeylerini döndürme ekseni/merkezi veya ayna düzlemi referansıyla gösterir.
 
 ![Sonuçlar altında açılmış çalıştırmayla gezinti ağacı ve 3B görünümdeki örüntüsü](../landing/media/designer-pattern.jpg)
 
@@ -127,7 +131,7 @@ Her uzunluk (mm) ve frekans (GHz) alanı sayı veya parametrelere bağlı ifade 
 - İfadeler yalnızca ASCII kullanır: rakamlar, harfler, `_`, işleçler, parantezler, virgül ve boşluk. Tam sayı `0` ile başlayamaz (`07`); yorum (`#`) kabul edilmez.
 - Parametre anahtarı ASCII harf, rakam ve `_` içerir; rakamla başlayamaz ve işlev, sabit veya Python anahtar sözcüğü (`in`, `lambda`, `True`, ...) olamaz. `__proto__`, `constructor` veya `match` gibi diğer adlar sıradan anahtarlardır. Parametreler alt paneli reddedilen anahtarı yazarken işaretler. Böyle anahtar içeren tasarım dosyası, anahtar dosyada yeniden adlandırılana kadar yüklenmez (sunucu hatası, geçersiz tasarım dosyalarında olduğu gibi anahtarı belirtir).
 
-Şeritte Modelleme › Parametreler › Parametre veya Parametreler alt panelinde **Parametre ekle** ile parametre ekleyin: ilk boş p1, p2, … anahtarını alır ve birimsizdir (uzunluk veya frekansta birim hücresini doldurun; oran veya εr yalın sayı kalır). Tabloda her tuş anında uygulanır (3B görünüm izler); Anahtar hücresi hariç: yeni anahtar **Enter** veya hücreden ayrılınca uygulanır. Parametre kullanıldığı her yerde tek geri alma adımıyla yeniden adlandırılır: şekiller, dönüşümler, kesmeler, portlar, toplu elemanlar, malzemeler, mesh ve simülasyon alanları, diğer parametreler, Boolean sonucunun sakladığı işlenenler ve parametre taraması. Böylece `fw`, `feed_w` yapıldığında `fw` başvurusu kalmaz. Geçersiz veya kullanılan anahtar hücre altında hata gösterir ve uygulanmaz; Escape önceki anahtara döner. Bir alanın kullandığı parametre silinmez (çöp düğmesi, Giriş › Düzenle › Sil, Delete tuşu); kullanılan malzemede olduğu gibi kullanan yerler bildirilir. **Çoğalt**, `key_2` olarak kopyalar.
+Şeritte Modelleme › Parametreler › Parametre veya Parametreler alt panelinde **Parametre ekle** ile parametre ekleyin: ilk boş p1, p2, … anahtarını alır ve birimsizdir (uzunluk veya frekansta birim hücresini doldurun; oran veya εr yalın sayı kalır). Tabloda her tuş anında uygulanır (3B görünüm izler); Anahtar hücresi hariç: yeni anahtar **Enter** veya hücreden ayrılınca uygulanır. Parametre kullanıldığı her yerde tek geri alma adımıyla yeniden adlandırılır: şekiller, dönüşümler, kesmeler, portlar, toplu elemanlar, malzemeler, mesh ve simülasyon alanları, diğer parametreler, Boolean sonucunun sakladığı işlenenler ve parametre taraması. Böylece `fw`, `feed_w` yapıldığında `fw` başvurusu kalmaz. Geçersiz veya kullanılan anahtar hücre altında hata gösterir ve uygulanmaz; Escape önceki anahtara döner. Bir alanın kullandığı parametre silinmez (çöp düğmesi, Giriş › Düzen › Sil, Delete tuşu); kullanılan malzemede olduğu gibi kullanan yerler bildirilir. **Çoğalt**, `key_2` olarak kopyalar.
 **Enter** hücreyi onaylayıp sonraki satırın aynı hücresine geçer; **Escape** yalnızca son onaydan beri yazılanı geri alır, önceden onaylanmış değeri almaz; hücreden ayrılmak (Tab, tıklama) onaylar.
 Kompakt tablo Anahtar, İfade / değer, Hesaplanan değer, Birim ve Açıklama gösterir. Min ve Maks isteğe bağlıdır: **Aralıklar** bunları gösterir; Çalıştırma panelinde tarama veya optimizasyon açmak da gösterir. Mevcut sınırlar dosyada kalır; çalıştırma formları kendi aralıklarını kabul eder. Varsayılan için yalın sayı, türetilmiş parametre için ifade (`=` ile işaretli) girin. Açıklamalar yerinde düzenlenir; **Etiket** isteğe bağlı görüntüleme etiketini açar. Doğrulama alanlarda ve Denetimler'de sürer; ayrıntı için hücreye odaklanın veya üzerine gelin. Ok tuşları odaklı satırlar arasında geçer, Enter anahtarı düzenler, Escape hücreyi düzenleme öncesine döndürür. İfade alanındaki bilinmeyen adlar, Enter veya alandan ayrılınca satır içinde **Parametre oluştur** sunar. Yeni değer, `lam/4` gibi önceki parametrelere bağlı ifade olabilir.
 
@@ -172,7 +176,14 @@ Katı özelliklerinden aynı katıya başka şekiller ekleyebilirsiniz. Türler:
 - **Koni**: eksen, merkez, alt ve üst yarıçap (0: sivri uç), eksen boyunca aralık.
 - **Torus**: eksen, merkez, büyük yarıçap (eksenden boru merkezine), küçük yarıçap (boru). openEMS boruyu eksen etrafında döndürülmüş 64 kenarlı çokgen olarak alır.
 - **Tel**: noktalardan oluşan kırık çizgi boyunca, yarıçapı olan ince tel. Otomatik mesh çevresine ince hücreler yerleştirir. **0** yarıçap, helis örneğindeki gibi ideal mesh kenarı iletkenini (CSXCAD `Curve`) korur. Etkin kalınlığı mesh'e bağlıdır; örneği kopyalamak kendi mesh'ini korur ve sonlu yarıçaplı bir iletkene dönüştürmez.
-- **Çokyüzlü** (`{"kind": "polyhedron", "vertices": [[x, y, z], ...], "faces": [[i, j, k, ...], ...]}`): köşelerinden (ifadeler kabul edilir, en az 4) ve çokgen yüzlerinden (her biri en az 3 farklı, mevcut köşe indeksli en az 4 yüz) oluşan kapalı katı. Çizim aracı yoktur; örnekten (piramit huni) veya JSON'dan gelir. Özellikler köşe ve yüz sayılarını, köşeleri salt okunur gösterir. Oluşturma (CSXCAD `AddPolyhedron`) ve 3B görünüm her yüzü, kapalı hacme göre dışa yönlendirilmiş üçgenlere böler; aynalanmış kopya da oluşturulur. Katı dönüşümleri (taşıma, döndürme, ölçekleme, aynalama, kopyalar) köşelere uygulanır. VBA makro biçiminde çokyüzlü yoktur; makro bunu atlayıp uyarı listeler. Python aktarımı küçük yardımcıyla `add_polyhedron(...)` yazar. Denetimler sınırlayıcı kutuyu kullanır; geçersiz indeksleri (`polyhedron`) veya tüm köşelerin tek düzlemde olmasını (`polyhedron-flat`) reddeder.
+- **Çokyüzlü** (`{"kind": "polyhedron", "vertices": [[x, y, z], ...], "faces": [[i, j, k, ...], ...]}`): köşelerinden (ifadeler kabul edilir, en az 4) ve çokgen yüzlerinden (her biri en az 3 farklı, mevcut köşe indeksli en az 4 yüz) oluşan kapalı katı. Çizim aracı yoktur; örnekten (piramit huni) veya JSON'dan gelir. Özellikler köşe ve yüz sayılarını, köşeleri salt okunur gösterir. Oluşturma (CSXCAD `AddPolyhedron`) ve 3B görünüm her yüzü, kapalı hacme göre dışa yönlendirilmiş üçgenlere böler; aynalanmış kopya da oluşturulur. Katı dönüşümleri (taşıma, döndürme, ölçekleme, aynalama, kopyalar) köşelere uygulanır. VBA makro aktarımı `.bas` yanına ASCII STL dosyaları (`<makro adı>_<katı>.stl`) yazar; makro biriminde dönüşümler uygulanır ve malzemeleriyle içe aktarılır. Dosyaları birlikte tutun: makro, belirtilmişse `STL_FOLDER` sabitini, aksi halde açık modelin kök klasörünü kullanır; dosyaları bulamazsa klasörü sorar. Fairbeam aynı eşlikçi dosyaları geri okuyabilir. Sonlu olmayan geometri veya tekil dönüşüm yine uyarıyla atlanır. Python aktarımı küçük yardımcıyla `add_polyhedron(...)` yazar. Denetimler sınırlayıcı kutuyu kullanır; geçersiz indeksleri (`polyhedron`) veya tüm köşelerin tek düzlemde olmasını (`polyhedron-flat`) reddeder.
+
+### Dış çizgi köşelerini yuvarlatma ve pah kırma
+
+Dikdörtgen levha/kutuya (veya seçili şekline) sağ tıklayıp **Dış çizgi köşelerini yuvarlat / pah kır…** seçin. Eksen ve yarıçap/geri çekme mesafesi seçin. Levhada eksen normal olmalıdır. Kutuda bu eksene paralel dört kenar işlenir; üst/alt çeperler keskin kalır. Boyut pozitif ve kısa kenarın yarısından küçük olmalıdır.
+
+Bu geometrik işlemdir: pahlar sekiz noktalı çokgen, yuvarlatmalar çeyrek daire başına 16 kiriş olur. Levhalar yerel çokgene, kutular yerel çokgen uzatmasına dönüşür. Önizleme, mesh, Python ve geometri çıktıları aynı noktaları kullanır. Uygula, boyutları geçerli parametre değerleriyle kaydeder; katının malzemesini/dönüşümlerini korur, tek geri alma adımıdır. Kesimler ve canlı Boolean geçmişi önce somutlaştırılmalıdır. Keyfî 3B kenar radyüsleri, üst/alt çeper geçişleri ve serbest biçimli CAD yüzeyleri bu araçla desteklenmez.
+
 
 ### Çalışma düzleminde çizim
 
@@ -198,9 +209,9 @@ Modelleme sekmesinin Çalışma düzleminde çiz grubu, 3B görünümde fareyle 
 Çizim WCS üzerinde yapılır: başlangıçta global WCS vardır (u, v, w = x, y, z). Modelleme › WCS altındaki dört düğme bunu değiştirir:
 
 - **Yüze hizala**: 3B görünümde katının yüzüne tıklayın. WCS orijini yüz merkezine, w dış normale yerleşir (u +x yönünde; x'e bakan yüzde +y). Yalnızca x, y veya z yönündeki yüzler seçilebilir. Orijin yüzün ifadesini korur: “Alttaş: üst” üzerindeki WCS z = h'de durur ve h değişince alttaşı izler.
-- **WCS dönüştür…**: tek pencere. **Şu eksenler boyunca taşı** u, v, w, orijini mevcut WCS eksenlerinde kaydırır; **Şu eksenler çevresinde döndür** u, v, w, WCS'yi bu sırayla, her biri önceki dönüşün bıraktığı eksenler etrafında döndürür. Geometri eksen hizalı kaldığından dönüşler 90°'nin katıdır. Değerler ifade kabul eder (dönüş sayıya hesaplanır). Pencere sonuç orijini ve eksenleri gösterir. Nokta seç ile nokta seçiliyse “Orijini seçilen noktaya taşı” da sunulur.
+- **WCS'yi dönüştür…**: tek pencere. **Şu eksenler boyunca taşı** u, v, w, orijini mevcut WCS eksenlerinde kaydırır; **Şu eksenler çevresinde döndür** u, v, w, WCS'yi bu sırayla, her biri önceki dönüşün bıraktığı eksenler etrafında döndürür. Geometri eksen hizalı kaldığından dönüşler 90°'nin katıdır. Değerler ifade kabul eder (dönüş sayıya hesaplanır). Pencere sonuç orijini ve eksenleri gösterir. Nokta seç ile nokta seçiliyse “Orijini seçilen noktaya taşı” da sunulur.
 - **Global ile hizala** her şeyi geri döndürür. Çizilmiş şekiller yerinde kalır; bitmemiş şeklin yerleştirilmiş noktaları kaldırılır.
-- **WCS göster**, yerel WCS'nin u, v, w oklarını 3B görünümde gösterir/gizler.
+- **WCS'yi göster**, yerel WCS'nin u, v, w oklarını 3B görünümde gösterir/gizler.
 
 Yerel WCS etkinken köşe eksen göstergesi, 3B imleç değerleri, durum çubuğu, çizim değerleri, koordinat giriş istemi ve şekil pencereleri x, y, z yerine u, v, w kullanır; çalışma düzlemi ızgarası u/v etiketlidir; durum çubuğunda **Yerel WCS** rozeti görünür. Buna veya **Global ile hizala** düğmesine tıklamak globale döner. Global WCS'de her şey x, y, z'dir.
 
@@ -209,6 +220,9 @@ Izgara yakalama, varsayılan yükseklik (çizilen kutu veya dairenin uzatılmas�
 Yerel WCS'de çizilen veya Şekiller paletinden oluşturulan şekiller onun koordinatlarıyla tanımlanır: pencereler bunları gösterir, yeni katı global koordinatlara yerleştiren normal sıralı döndürme/taşıma dönüşümleri taşır (parametre ifadeleri ifade kalır). Mevcut katılar değişmez; globale dönmek yalnızca sonraki çizimleri etkiler. -x, -y veya -z'ye bakan yüz, w'su ters yönlü WCS verir; katı ayrıca düzlem içindeki eksen etrafında yarım dönüş taşır.
 
 **Tasarımla kaydedilir.** Global dışındaki WCS, tasarım dosyasında isteğe bağlı üst düzey `wcs` alanında saklanır (`normal`, üç ifade olarak `origin`, 90° adımlarla `angle`, w negatif eksendeyse `flip`); kaydedip yeniden açınca korunur. Alanı olmayan tasarım global WCS ile açılır; sunucu alanı yok sayar ve geometri buna bağımlı değildir. Her WCS değişikliği tek geri alma adımıdır. Çözülemeyen veya sonlu olmayan orijinler bildirilir; şekil penceresi veya fareyle çizim bunları onaylayamaz. Önce kendilerini veya parametrelerini düzeltin.
+
+
+
 
 ### Dönüşümler
 
@@ -219,7 +233,7 @@ Katıyı (veya şekillerinden birini) seçip Dönüştür sekmesinde **Dönüşt
 - **Döndür**, seçili merkezden geçen x, y veya z ekseni etrafında derece cinsinden döndürür. Pozitif açılar sağ el kuralını izler. Açılar ve merkez koordinatları ifade kabul eder. Kopyala kapalıyken (veya kopya sayısı sıfırken) özgün döner; pozitif sayıda özgün kalır ve açı, 2 × açı vb. konumlarında kopyalar görünür. Her açı desteklenir. Çeyrek dönüşler mevcut eksen eşleme yolunu kullanır; diğer açılar CSXCAD'de yerel şekle dönüşüm matrisi ekler. Çözücü sınırlayıcı kutuyu değil döndürülmüş şekli kullanır. Otomatik mesh dünya koordinatlarındaki sınırlarını kullanır. Keyfi yönelimli işlenenlerde Boolean işlemleri desteklenmez ve doğrulama hatası verir.
 - **Aynala**, **Düzlem üzerindeki nokta** üzerinden geçen, **Düzlem normal ekseni** x, y veya z olan düzleme göre aynalar; **Orijinali koru (aynalanmış kopya ekle)** özgünün kalıp kalmayacağını belirler.
 
-**Çoğalt** (Giriş › Düzenle veya Ctrl/Cmd+D), seçili katı, şekil, port, toplu eleman, parametre veya malzemeyi kopyalar. **Sil** seçimi kaldırır (malzeme/parametre yalnızca kullanılmıyorsa). Çoğaltılan katı bilerek özgünün üzerinde durur; çakışma istemi çıkarmaz. Başka katının içine taşımak veya düzenlemek çıkarır.
+**Çoğalt** (Giriş › Düzen veya Ctrl/Cmd+D), seçili katı, şekil, port, toplu eleman, parametre veya malzemeyi kopyalar. **Sil** seçimi kaldırır (malzeme/parametre yalnızca kullanılmıyorsa). Çoğaltılan katı bilerek özgünün üzerinde durur; çakışma istemi çıkarmaz. Başka katının içine taşımak veya düzenlemek çıkarır.
 
 **3B görünümde seçim.** Seçili katı kırmızı ton, dış çizgi ve her şeyin üzerine çizilen saydam dolgu alır. Ağaçta katının bir şekli seçiliyse yalnızca o şekil tam vurgulanır, diğer şekiller hafif dış çizgi alır. Seçimi çevreleyen katılar (merkezi içlerinde kalıyorsa, örneğin via çevresindeki alttaş) seçim boyunca soluk çizilir; yalnızca dokunan katılar görünümlerini korur.
 
@@ -270,7 +284,7 @@ Nedeni denetimle açıklanarak reddedilen durum: kesme hacim kaldırmaz. Kesme d
 - **Ayrık port**: numara, empedans, başlangıç/bitiş noktası ve akım yönü (x, y veya z). Sonda beslemesi toprak düzleminden yamaya uzanır; başlangıç ve bitiş yalnızca bu yönde farklıdır.
 - **Dalga kılavuzu portu**: TE modlu (varsayılan TE10), yayılma yönüne dik a genişliği ve b yüksekliği olan dikdörtgen dalga kılavuzu portu (openEMS RectWGPort). Başlangıç/bitiş kılavuz kesitini kapsar: uyarım başlangıç, ölçüm sondaları bitiş düzlemindedir. Özellikler modun kesim frekansını gösterir; “Port kutusunu a × b'ye sığdır” başlangıçtan bitişi ayarlar. openEMS yalnızca TE modlarını uyarır. Geri dalganın emilmesi için kılavuzu portun arkasındaki PML sınırına uzatın.
 - “Uyarılan port”, portun sürülüp sürülmeyeceğini seçer; birden fazla port seçilirse Fairbeam her biri için çalışır ve S-matrisini saklar ([MULTIPORT.md](MULTIPORT.md)).
-- **Direnç** (Simülasyon › Portlar › Direnç): sonlandırma ve yükler için iki nokta arasında toplu direnç.
+- **Toplu eleman** (Simülasyon › Portlar › Toplu eleman ekle…): sonlandırma ve yükler için iki nokta arasında toplu direnç.
 
 **Gruplanmış ayrık portlar (isteğe bağlı).** Ayrık port özelliklerinde **Grup beslemesi ekle**, tek mantıksal port numarası, uyarım seçimi ve referans empedansını koruyarak fiziksel besleme ekler. Çalıştırmadan önce eklenen beslemeyi taşıyın; başlangıçta ilkini kopyalar ve çakışma denetimi bu yinelenen aralığı engeller. Paralel veya Seri bağlantıyı ve ek beslemenin polaritesini (+1 veya −1) seçin; ilk besleme her zaman pozitiftir. Tüm koordinatlar ifade destekler. Son ek beslemeyi kaldırmak normal porta döndürür. Dalga kılavuzu portuna geçmeden önce ek beslemeleri kaldırın.
 
@@ -281,6 +295,21 @@ Kaydetme/yeniden açma, Python Uygula/dışa aktarma, önizlemeler, mesh denetim
 Raporlanan empedans, S-parametreleri ve kabul edilen güç seçili moda aittir. Dik üye modları dışarıda bırakılır; bu nedenle dengesiz alanda modal güç fiziksel üye güçlerinin toplamına eşit olmak zorunda değildir. Bu biçim ve normalizasyon testleri, Örnek 7.7 veya 7.8 için mesh yakınsaması gösterilmiş sonuç sağlamaz.
 
 Tasarımlar otomatik mesh kullanır; elle hazırlanmış mesh için Python modeli gerekir ([MODELS.md](MODELS.md)).
+
+Portlar ve Toplu elemanlar **+** işlemleri oluşturma formu açar. İki ucu, akım/yayılma yönünü ve elektriksel ayarları girin; **Oluştur** tek geri alma adımı uygular. İptal tasarımı değiştirmez. Ayrık portlarda görünüm içinde küçük yön oku vardır. Mevcut port/elemanlar, seçilerek belirlenen uçlar dahil Özellikler'de düzenlenebilir.
+
+Ayrık portun fiziksel openEMS kaynağı/sonlandırması pozitif gerçek direnç kullanır. İsteğe bağlı **Karmaşık güç dalgası referansı**, son işlem üst verisidir: Kurokawa katsayısı `(Zin - conj(Zref)) / (Zin + Zref)` olur; `Re Zref > 0` gerektirir. Empedans sonucu orta frekans örneğinde uyumu ve `1 - |Γ|²` değerini gösterir. Ham paketler, frekans ızgarasında ayrı karmaşık güç dalgası katsayıları tutar. Yerel S-parametreleri, Smith abağı, fiziksel kaynak ve çok portlu matrisler özgün gerçek referansını korur. Bu referans fiziksel yük eklemez. Pasif eşdeğer devre için R/L/C yükü kullanın; sabit sanal empedans geniş bantlı nedensel zaman alanı elemanı değildir.
+
+Toplu elemanlar, eksik kolları boş bırakarak pozitif R (Ω), L (H), C (F) birleşimlerini ve **Seri** / **Paralel** topolojiyi destekler. Yerel RLC, CSXCAD/openEMS 0.37 veya yenisini gerektirir; eski ortamlar yaklaşım uygulamak yerine sınırlamayı bildirir. Kayıtlı `resistors` dizileri isteğe bağlı `L`, `C`, `topology` ile çalışmaya devam eder. Python dışa aktarımı ve geri okuma bunları korur. VBA makrosu her elemanı R/L/C değerleriyle `LumpedElement` olarak seri/paralel RLC biçiminde yazar (sıfır, bulunmayan bileşendir); makro içe aktarımı geri okur. [RF doğrulama kaydı](benchmarks/rf-rlc-workflows/README.md), yerel API desteğiyle devre yanıtı uyumunu ayırır: sınanan paralel devre %10 ölçütünü geçmiş, seri devre geçmemiştir. Seri sayısal doğruluk açık doğrulama konusudur.
+
+Dalga kılavuzu kurulumu, openEMS'in sunduğu dikdörtgen TE modlarını açık açıklık boyutları, uyarım/prob uçları ve yayılma yönüyle destekler. Genel Bloch/Floquet portları, eğik periyodik uyarım ve yüksek kırınım mertebesi çıkarımı uygulanmamıştır. Normal gelişli PEC/PMC birim hücre düzeneği sınırlı simetri modelidir; genel Floquet desteği değildir.
+
+Dielektrikler pozitif, izotropik, kayıpsız, frekanstan bağımsız bağıl manyetik geçirgenlik μr de sunar. Manyetik kayıp, anizotropik tensörler ve dispersif ferritler temsil edilmez.
+
+Yerel API: [CSXCAD RLC özellikleri](https://docs.openems.de/en/latest/concepts/properties.html); referans düzeni: [scikit-rf güç dalgası tanımları](https://scikit-rf.readthedocs.io/en/latest/examples/networktheory/Working%20with%20Complex%20Characteristic%20Impedances.html).
+
+RLC oluşturmanın isteğe bağlı hedef empedans yük yardımcısı, pozitif referans frekansında hedef `Z = R + jX` değerini fiziksel pasif paralel eşdeğere çevirir. `ω = 2πf` ile `Rp = (R² + X²)/R`; negatif reaktansta `C = -X/[ω(R² + X²)]`, pozitif reaktansta `L = (R² + X²)/(ωX)` doldurur. Sıfır reaktans yalnızca direnç verir. Hedef pozitif R gerektirir; bileşen değerleri SI Ω/H/F olarak kalır. Yalnızca seçilen frekansta eşleşir; sabit geniş bantlı sanal empedans oluşturmaz, portun güç dalgası referansını değiştirmez. Doldurma formda yereldir; Oluştur tek geri alınabilir düzenlemedir.
+
 
 ## Denetimler
 
@@ -341,6 +370,10 @@ Simülasyon sekmesinin düğmeleri (Frekans bandı, Sınırlar, Mesh ayarları, 
   - **Alan düzlemleri**: en fazla 4 kesit düzlemi; her biri bant içindeki 1–4 frekansta E/H alanı genliğini kaydeder (|E| veya tek bileşen |Ex|, |Ey|, |Ez|; H için de aynı). Satırda nicelik, düzlem normali (x/y/z), o eksende mm konumu (`h + 1` gibi ifade) ve frekanslar ayarlanır. **Alan düzlemi ekle** ve **Kaldır** listeyi düzenler. `monitors.field_planes: [{"quantity": "E", "normal": "z", "position": "h + 1", "frequencies": ["f0"]}]` olarak saklanır (tek bileşende `"component": "x"`). openEMS, konuma en yakın mesh çizgisinde tüm bölge boyunca frekans alanı E/H kaydı yapar. Değerler, uyarılan portta 1 W gelen güç için V/m veya A/m cinsinden tepe fazör genlikleridir (yüzey akımı gibi tek uyarım). `field-plane` (tarayıcı ve sunucu), 4'ten fazla düzlemi, frekanssız veya 4'ten fazla frekanslı düzlemi ve bant dışı frekansı işaretler; `field-plane-position` (sunucu; önizleme bölgesi gerekir) bölge dışı konumu işaretler. Hepsi çalıştırmayı engelleyen hatadır. Simülasyon › Monitörler › **Alan düzlemi**, yoksa düzlem ekler (E, z normal, model üstünden 1 mm yukarıda, uzak alan frekansları veya bant merkezi; İptal geri alır) ve konumunu açar.
 - **Çözücü**: durdurma ölçütü (çalıştırmayı durduran alan enerjisi sönümü: −40 dB hızlı, −60 dB doğru) ve zaman adımı sınırı. Ölçüt −10 ile −300 dB arasında sayıdır; alan, `end-criterion` denetimi (tarayıcı/sunucu) ve çalıştırma bu sınırları kullanır. Dışındaki değer (örneğin −5 dB) engelleyici hatadır. −10 dB, Fairbeam'in kullanılabilir sonuç sınırıdır (üstünde alanlar çok az sönmüştür), fiziksel sınır değildir; −300 dB kabul edilen en düşük değerdir. En fazla zaman adımı boşsa (“otomatik”) mesh'ten seçilir: en az 60,000, uyarım darbesi ve sönümü veya yaklaşık 1e11 hücre-adımın izin verdiği değer (en fazla 600,000), hangisi büyükse. Yakınsayan çalıştırma zaten önce durur. İnce düşük kayıplı alttaş (0,254 mm RT5880 yaklaşık 50 ns, 280,000 zaman adımı çınlar) bu paya ihtiyaç duyar; açıkça verilen sınır tahmini sönümden düşükse `slow-ringdown` uyarır.
 
+**Deneysel Elmer FEM.** Simülasyon › Deneysel çözücüler, kurulum ve sınırlamaları gösterir. Çalıştır penceresindeki Elmer seçenekleri openEMS'in yerini otomatik olarak almaz. Önce [deneysel çözücü kılavuzunu](EXPERIMENTAL-SOLVERS.md) okuyun.
+
+**Deneysel koaksiyel TEM portu.** Port türü seçimindeki bu seçenek, uyumlu çalışma ortamı ve açık kabul gerektirir. [Koaksiyel portlar](COAXIAL-PORTS.md) desteklenen geometriyi ve henüz sağlanmayan sayısal doğrulama ölçütlerini açıklar.
+
 ## Mesh görünümü
 
 Şeritte Simülasyon › **Mesh görünümü** (veya durum çubuğunda hücre sayısına tıklama), geçerli önizlemenin FDTD mesh çizgilerini tek düzlemde gösterir; çizgiler görünsün diye katıları soluklaştırır. Mesh, çalıştırmayla aynı oluşturucudan gelir. 3B görünüm üzerindeki panelde:
@@ -384,7 +417,8 @@ Herhangi bir çalıştırmadan önce pencere her yoğunlukta geometri önizlemes
 **Çalıştır** (Simülasyon sekmesi, üst çubuk veya Ctrl/Cmd+Enter), **Simülasyonu çalıştır** penceresini açar:
 
 - **Motor**: **CPU (çok iş parçacıklı)** veya sunucuda ilgili sürüm varsa **GPU (Metal veya CUDA sürümü)** ([GPU.md](GPU.md)).
-- CPU için **İş parçacığı** (4 iyi bir varsayılandır).
+- **Çözücü**: varsayılan openEMS'tir; Elmer seçenekleri [deneyseldir](EXPERIMENTAL-SOLVERS.md).
+- CPU için **İş parçacığı**: varsayılan olarak **Otomatik**, mesh boyutuna ve fiziksel çekirdeklere göre seçilir (ipucu sayıyı gösterir); isterseniz 1 ile kullanılabilir çekirdek sayısı arasında bir sayı seçin.
 - **S-parametresi örnek noktaları**: banttaki örnekler (varsayılan 801; 11–20001).
 - **Sonuç adı**: her çalıştırmada benzersiz paket için boş bırakın (model kimliği ve çalıştırma son eki). Çalıştırma öncekini değiştirmez; kullanılan ada kısa kimlik eklenir.
 
@@ -479,9 +513,27 @@ klasöre kopyalayın; sonra kopyalanan `.fb` dosyasını açın. Var olan bir pr
 kayıtlı sonuçları istiyorsanız yalnız `.fb` dosyasını kopyalamayın. Bu kurtarma, yukarıdaki çalışma
 alanı tasarım yedeklerinden ayrıdır.
 
+## Görünümler, ekran görüntüleri ve render
+
+### Geçerli görünümü dışa aktarma
+
+Üst bölümdeki **Dışa aktar…** görünür çalışma alanını izler. Tasarım'ın 3B sekmesinde geometri biçimleri, kaydedilmemiş geçerli tasarım JSON'u ve Python sunar. Boş tasarımda geometri çıktısı yoktur. Sonuç sekmesinde CSV/Touchstone, araç çubuğunun geçerli sonucunu, S-parametresi seçimini ve karşılaştırmalarını kullanır. Şekil SVG/PNG, görünür büyüklük ve eğrilerle çizilmiş grafikleri yakalar. Çizim'de menü, çizimin SVG/PDF/PNG işlemlerini kullanır. Verisi olmayan biçim neden belirten araç ipucuyla devre dışıdır.
+
+Kamera düğmesi ve Görünüm şeridi Ekran görüntüsü, görünür 3B görünümü, grafiği veya teknik çizimi yakalar. Ana ekran'da, boş geometride veya desteklenen şekli olmayan sonuç görünümünde devre dışıdır. Sonuç/çizim arkasında gizli 3B tuvali yakalamaz. İndirme istekleri, kayıt yolları, iptaller ve hatalar genel bildirimde de görünür.
+
+### Render görünümü ve Render görüntüsü
+
+3B görünümün **Render** düğmesi (kamera hazır görünümleri yanında, Görünüm şeridinin Render grubunda), tasarımı fiziksel tabanlı malzemeler, ana/dolgu/kenar ışıklı stüdyo ortamı, yumuşak zemin gölgesi ve portlarla gösterir. Bakır, altın, gümüş, kalay, nikel, alüminyum, pirinç, çelik kendi renk/pürüzlülükleriyle metaliktir; PEC veya bilinmeyen metal bakır olur. FR-4 yarı saydam sarı-yeşil laminat; Rogers, Taconic, PTFE krem; alümina beyaz; diğer dielektrikler nötr bejdir. Hava, vakum ve kesikler çizilmez. Katının kendi **Renk** seçimi varsayılanı geçersiz kılar, metalik görünümü korur; %100'ün altındaki bir **Opaklık** onu saydam çizer (laminat tonu yerine düz saydamlık). Malzeme tasarımcıda adından/kütüphane kaydından, sonuç/örnekte iletkenlik, dielektrik sabiti ve kaybından tanınır (paket adları taşımaz). Tablo `src/render/materials.ts` içindedir; Blender render aracının da kullandığı düz veridir.
+
+Döndürme, kaydırma, yakınlaştırma ve kamera hazır görünümleri normal çalışır; düzenleme render'ı günceller; geri geçiş modelleme görünümünü tam geri getirir (seçim, saydam dielektrikler, kenarlar). Aynı düğme Sonuçlar/Örnekler 3B görünümünde de vardır. Hazır görünümler altındaki araç çubuğu portları (**Konnektör**: uygunsa SMA, değilse işaretçi; **İşaretçi**: küçük kırmızı boncuk/çubuk; **Gizli**), zemin gölgesini, PCB laminatlarında yeşil lehim maskesini ve koyu arka planı ayarlar.
+
+Konnektör, karttan beslenen ayrık porta uyar: kart kenarında (yaklaşık 2 mm veya kartın %3'ü içinde), kenar tipi SMA o kenardan dışarı bakar, pimi hattın üzerindedir. Diğer durumda toprak düzleminin ötesinde boşluk varsa alttan montajlı SMA toprağın altında, pimi port boyunca yukarıdadır. Serbest havadaki dipol boşluğu, iki hat arasındaki port ve 6,35 mm altıgenden küçük toprak düzlemi işaretçi kullanır. Dalga kılavuzu portu ince flanş konturu, toplu eleman küçük SMD gövdesi gösterir.
+
+**Render görüntüsü…** (Görünüm şeridi, render araç çubuğu, üst bölüm **Dışa aktar…**) ekran dışında görüntüler çizer, çalışma klasöründe `renders/<design-id>/` içine `<design>_<angle>_<timestamp>.png` olarak kaydeder (dolu adlara `-2`, `-3` eklenir; hiçbir render üzerine yazılmaz. Sunucu yoksa tarayıcı indirir). Açılar: İzometrik, Üst, Ön, Sağ, Arka, Sol, Alt ve geçerli görünüm; tek seferde istenen sayıda. Çözünürlük: 1920×1080, 3840×2160 veya özel (64–8192 px). Arka plan: saydam, stüdyo, koyu. Ayrıca portlar, lehim maskesi, zemin gölgesi, perspektif/ortografik ve kalite (Taslak: yok, Standart: 2×, Yüksek: 3× süper örnekleme; daima çoklu örnekleme ve GPU sınırları içinde). Görüntüler **Görüntüyü kopyala** ile küçük önizleme olarak görünür; **Klasörü aç**, sistem dosya yöneticisini açar. Render aracı ve kodu ilk kullanımda yüklenir.
+
 ## Dosyalar
 
-- **Konum**: tasarımlar çalıştırma sunucusunun modeller klasöründe, Python modellerinin yanında kaydedilir. Kaynak kopyasında `python/models/`; masaüstü uygulamasında çalışma klasörünün `models/` alt klasörü (macOS'te `~/Documents/Fairbeam`, Windows'ta `%USERPROFILE%\Documents\Fairbeam`).
+- **Konum**: masaüstünde Kaydet, seçtiğiniz konuma taşınabilir `.fb` projesi yazar; kaydedilmiş sonuçlar yanındaki `.results` klasöründedir. İkisini birlikte taşıyın. JSON tasarımları, taşınabilir çalışma kopyaları ve Python modelleri ayrıca çalışma klasöründeki `models/` içinde bulunur; bkz. [Proje dosyaları (.fb)](FB-DOCUMENT.md).
 - **Kaydetme**: değişen bir çalışma alanı tasarımı kaydedildiğinde önceki sürüm `model-history/<çalışma-alanı-model-kimliği>/` altında tutulur (son 50 kayıtlı sürüm; silinen kopyalar budanmaz). Diskteki bu sürümler, oturumun modelleme Geri Al/Yinele geçmişinden ve tarayıcıdaki **Taslağı geri yükle** kurtarmasından ayrıdır. Dosya diskte değişmişse çakışmayı inceleyip çalışmanızı nasıl koruyacağınızı açıkça seçin. [Elle kurtarma](#recovering-saved-or-deleted-workspace-designs) bölümüne bakın.
 - **Biçim**: `fairbeam.design/1`, tek JSON nesnesi; `python/fairbeam/design.py` başında belgelenmiştir (tüm şekil türleri, dalga kılavuzu portları, dönüşümler, kesimler, bileşenler). Tam ve geçerli sonda beslemeli yama örneği:
 
@@ -522,9 +574,12 @@ alanı tasarım yedeklerinden ayrıdır.
 - **Python dışa aktarımı**: Son işlem › Rapor ve dışa aktarma › **Python** (masaüstünde ayrıca Dosya › Dışa aktar › Python…), Özellikler yerine **Python kaynağı** panelini açar. Tasarımı eşdeğer Python modeli (`MODEL`, `PARAMS`, `build`) olarak verir; elle düzenleme veya tasarımlarda henüz olmayan özellikler için kullanılabilir ([MODELS.md](MODELS.md)). **Kopyala** panoya, **Kaydet…** `.py` dosyasına yazar; tasarım değişiklikleri kaynağı eskittiğinde **Kaynağı yenile** görünür. Aynı geometriyi ve mesh'i kurar.
 - **Düzenle ve Uygula**: Python panelindeki **Düzenle**, betiği düzenleyiciye dönüştürür (satır numarası, Python renklendirme, Tab girinti). **Uygula** (veya Ctrl/Cmd+Enter) sunucuya gönderir; sunucu çözücü olmadan geometriyi kurar, tasarımın katılarını, malzemelerini, portlarını, parametrelerini, mesh'ini, simülasyonunu ve uzak alanını sonuçla **tek geri alma adımında** değiştirir. Tasarımın adı/kimliği korunur. Betik, dahil edilen Python örnekleriyle aynı dönüştürücüyle okunur; kuralları geçerlidir: yalnızca tam şekiller (eğik eksenli bir silindir veya boru iki uç noktasını korur), parametrelere doğrusal bağlı koordinatlar ifade olur, diğer sayılar sayı kalır, hiçbir şeyi etkilemeyen parametre çıkarılır. Uygula sonrasında panel yeni tasarımdan betiği yeniden yazar; bu betik aynı tasarımı kuruyorsa metniniz kalır, değilse değiştirilir ve normalleştirildiği bildirilir. Hata (Python istisnası, sözdizimi, desteklenmeyen özellik, zaman aşımı) satırıyla döner: düzenleyici satırı işaretler, mesaj başlık altında görünür, tasarım değişmez. **Bitti**, uygulanmamış değişiklikleri atmadan önce sorar. Düzenleme bağlı sunucu gerektirir; Python bilgisayarınızda çalışır. Web demosunda düğme nedeni belirtilerek devre dışıdır. Betik, alt süreçte 20 s süre ve 512 KB boyut sınırıyla, tek seferde bir tane çalışır; `FDTD.Run` / `Simulation.run` çözücü başlatmak yerine hata verir. Bu bir korumalı alan değildir: betik Python'un yapabildiği her şeyi yapabilir; yalnızca kendi kodunuzu uygulayın.
 
+Python dışa aktarımı, yalnızca isteğe bağlı `components` klasör yolları ve katı adı–bileşen eşlemeleri içeren `FAIRBEAM_ORGANIZATION` yazar. İçe aktarma/Uygula, geri okunan her grubun gerçek kaynak CSXCAD özelliğini kullanarak, yalnızca özellik adı benzersizse eşlemeleri geri yükler. Gruplara ayrılmış döndürülmüş kopyalar kaynak klasörlerini korur; gerçekten `[2]` ile biten ad kopya sayılmaz. Kaldırılan/yeniden adlandırılan katılar üst veriden yeniden oluşturulmaz. Sabiti içermeyen Python modülleri mevcut içe aktarma davranışını korur. Klasör listesi yolları, eğik çizgiyle ayrılmış boş olmayan adlar olmalıdır; eski katı yollarında boş bölüm uyarısı korunur.
+
+
 ## VBA makrosunu içe aktarma
 
-**VBA makrosunu içe aktar…** (Ana ekran, Giriş › Proje › Makroyu içe aktar, Dosya › VBA makrosunu içe aktar…), CST uyumlu VBA makrosu (`.bas`, `.mcs`) veya metin olarak kaydedilmiş geçmiş listesini okur. Kaydetmeden önce içe aktarma raporunu gösterir: oluşturulanlar, içe aktarılmayan/değiştirilen her komut ve satırı. Tasarıma ad verin; **Oluştur ve aç** kaydedip burada açar. Komut satırında aynı işlem: `fairbeam import-cst model.bas --out my.design.json`.
+**VBA makrosunu içe aktar…** (Ana ekran, Giriş › Tasarım › VBA makrosunu içe aktar, Dosya › VBA makrosunu içe aktar…), CST uyumlu VBA makrosu (`.bas`, `.mcs`) veya metin olarak kaydedilmiş geçmiş listesini okur. Kaydetmeden önce içe aktarma raporunu gösterir: oluşturulanlar, içe aktarılmayan/değiştirilen her komut ve satırı. Tasarıma ad verin; **Oluştur ve aç** kaydedip burada açar. Komut satırında aynı işlem: `fairbeam import-cst model.bas --out my.design.json`.
 
 Okunanlar (`python/fairbeam/cst_import.py`, `SUPPORTED`): birimler; tasarım parametreleri olarak `StoreParameter`, `MakeSureParameterExists`, ... (değer bağımsız, ifade türetilmiş parametre; VBA `^`, `Sqr`, `Atn`, `Mod`, `\`, `Pi`, `clight`, ... çevrilir; ayrıca açıları ve sonuçları derece olan `Sind`, `Cosd`, `Tand`, `Asind`, `Acosd` ve `Atnd` derece işlevleri); malzemeler (Normal: εr ve tan δ, iletkenlik eşdeğer tan δ olarak; PEC; kayıplı metaller notla PEC olarak); kutular, silindir/borular, koniler, küreler, toruslar, çokgenler, kapatılmış/uzatılmış dikdörtgen veya daireler, nokta listesi uzatmaları; düzlemsel bir levhada `Solid.ThickenSheetAdvanced` (İç, Dış veya Ortalı; levhanın yüzey normaline göre alınır); aynı dış hatlı iki dışbükey, paralel levha arasında çok yüzlü olarak düz bir `Loft` (sıfır teğetlik); bileşenler; tasarımcının Boolean işlemlerinin desteklediği yerlerde (kutu, levha, çokgen) canlı Boolean olarak `Solid.Add` (birleşim), `Solid.Subtract`, `Intersect`, `Insert`; dönüşümler (öteleme, her açıda döndürme, aynalama, tekdüze ölçekleme, kopyalarla); eksenlere paralel yerel çalışma koordinat sistemleri; frekans aralığı, sınırlar, mesh yoğunluğu (dalga boyu başına çizgi), ayrık portlar, dirençler, aralığı verilmiş dalga kılavuzu portları, uzak alan ve H alanı monitörleri. Koordinatlar mm'ye çevrilir, portların mesh çizgilerine oturması için mesh çizgisi hassasiyeti olan 1e-6 mm'ye yuvarlanır. VBA kodunun kendisi (değişkenler, `If`, `For`) çalıştırılmaz.
 
@@ -555,7 +610,7 @@ Komutun yazdırdığı **içe aktarma raporu**, katman/rolleri, oluşturulanlar�
 
 ### PCB çizimini içe aktar penceresi
 
-**PCB çizimini içe aktar…** (Ana ekran, Giriş › Proje › PCB içe aktar, masaüstünde Dosya › PCB çizimini içe aktar…), aynı işi formla yapar. Dosyaları seçin veya pencereye bırakın (en fazla 12 dosya, her biri 8 MB, toplam 16 MB; sayfada okunup sunucuya gönderilir, tasarımı oluşturana kadar kaydedilmez).
+**PCB çizimini içe aktar…** (Ana ekran, Giriş › Tasarım › PCB içe aktar, masaüstünde Dosya › PCB çizimini içe aktar…), aynı işi formla yapar. Dosyaları seçin veya pencereye bırakın (en fazla 12 dosya, her biri 8 MB, toplam 16 MB; sayfada okunup sunucuya gönderilir, tasarımı oluşturana kadar kaydedilmez).
 
 - **Katmanlar.** Tablo her katmanı (DXF katmanı, Gerber/delik dosyası), içeriğini, **rol** menüsünü (üst/alt bakır, kart dış çizgisi, yok say, üst/alt bakır açıklığı; delik dosyasında delikler/yok say) ve seçimin nedenini gösterir: katman adı, Gerber işlevi, Excellon dosyası veya seçiminiz. Adı ipucu vermeyen katman "Belirsiz: kullanılmıyor" diye vurgulanır; rolünü seçin. Her değişiklik yeniden içe aktarır; rapor tabloyla daima eşleşir. Seçtiğiniz rolün yanındaki ok, içe aktarıcının seçimine döner. Eşleme, tüm DXF dosyalarında aynı katman adını kapsar; iki dosyada aynı adlı katman aynı rolü paylaşır.
 - **Alttaş.** Kütüphane malzemesi (FR4, RO4003C ... veya Özel), kalınlık (mm), εr, tan δ, tasarım frekansı f0 (GHz). Malzeme seçimi εr/tan δ doldurur; gösterilen değerler tasarıma geçer. **Gelişmiş**: DXF birimleri, yay kiriş toleransı, dış çizgi yoksa pay, orijini ortalama veya koruma.
@@ -564,28 +619,14 @@ Komutun yazdırdığı **içe aktarma raporu**, katman/rolleri, oluşturulanlar�
 
 Sunucu API'si `POST /api/import/pcb` (`{files: [{name, content_base64}], options: {layer_map, substrate, thickness, eps_r, tan_d, f0, units, chord_tol, margin, origin}}`; yanıt `{design, report, layers, checks}`). `pcb: {files, options}` ile `POST /api/designs` dosyayı oluşturur. Diğer dosyalar, hatalı sayılar veya fazla dosya 422 (boyut sınırının üstünde 413) döndürür.
 
-## Senaryo denetimleri
-
-Odaklı denetimler `npm run check:eta-presentation`, `npm run check:run-profiles` (saf mantık), ayrıca `npm run check:modal-focus`, `npm run check:run-profile-dialog` komutlarıdır (geçici Vite/çalıştırma sunucusu, Chrome ve openEMS içeren Python ortamı gerekir; çözücü çalıştırılmaz). İsteğe bağlı `scripts/check-home-accessibility.mjs`, çalışan Vite sunucusunda yakalanan API test verileri kullanır; ortam değişkenleri başlığındadır. Dar düzenler, üst menü, proje arama/sıralama/favoriler, hata durumları ve masaüstü panel tercihlerini geri yüklemeyi kapsar.
-
-`npm run check:scenarios`, gerçek arayüzde headless Chrome ile gerçekçi ilk kullanım görevlerini İngilizce/Türkçe yürütür, kullanıcının takılacağı ilk noktada durur. `check:designer` denetiminden ağırdır (yaklaşık 3 dakika, tek kaba çözücü çalıştırması); onun parçası değildir.
-
-- **S1**, yalnızca arayüzle boş tasarımdan yama kurar: FR4 kutu, toprak levhası, yama; sağ tık › Boolean › Çıkar ile yarık; Dönüştür penceresinin canlı önizlemesiyle aynalanmış katı; yüz ekstrüzyonu önizlemesi; ayrık port/bant; katı ve bileşende Renk…; Kaydet/yeniden yükleme, ardından **tek kaba çalıştırma** (aşağıda), S-parametreleri/Özet.
-- **S2**, VBA makrosu (`examples/cst/patch-antenna.bas`) ve PCB çizimi (`python/tests/fixtures/pcb/*.gtl, *.gko`) içe aktarır; katıların/raporun göründüğünü denetler.
-- **S3**, Tarama penceresi (varsayılan ±%10; gönderim yakalanır, asla gönderilmez), Optimize et (doğrulama mesajları) ve Simülasyon ayarlarını (Değişiklikleri at) açar.
-- **S4**, dahil edilen iki örnek paketini tasarım çalıştırması olarak kopyalar (birinde sentetik alan haritası); Δ (A ile), Veriyi kopyala/CSV içeren Özet'i, çalıştırma Özellikler'ini, Faz/Canlandır içeren Alan haritası'nı ve yükleme hatasından sonra Yeniden dene'yi denetler.
-- **S5**, Python panelini açar, betikte parametre değiştirip Uygula seçer (tek geri alma adımı); hata veren betik uygular (satır belirtilir, tasarım kalır); uygulanmamış değişikliklerle Düzenle'den çıkar (onay).
-- **S6**, Ana ekran'dan Python modeli oluşturur, kaynağı Python panelinde olan bağlı Tasarım'ı açar; Ana ekran'a dönüp **Tasarım olarak aç** seçiminin kopya oluşturmadan aynı Tasarım'ı kullandığını doğrular.
-- **S7**, yinelenen dönüşüm önizlemelerini, tek Uygula/geri al işlemini, bileşen genelinde dönüşümleri, katıların bileşen klasörleri arasında taşınmasını, bağımsız ızgara görünürlüğünü ve yerel çizim çerçevelerini denetler.
-
-Her adım beklenen durumu doğrular ve sayfayı inceler: kapsayıcı dışına taşan öğe, araç ipucusuz kırpılmış metin, ham i18n anahtarı, pencere dışı iletişim kutusu, konsol hata/uyarısı (`[i18n]` eksik anahtar dahil) olmamalıdır. Başarısız adım `$TMPDIR/fairbeam-scenario-failures/` altına ekran görüntüsü kaydeder. İnceleme önce bilinen hatalı sayfada kendisini sınar.
-
-Çalıştırıcı, geçici klasör üzerinden boş portlarda Vite ve çalıştırma sunucusu başlatır (`public/` kopyası; `projects/` aynı zamanda sunucunun `--projects` klasörüdür. Vite sonuçları public klasöründen sunar, sunucu `--projects` içine yazar; başka klasör yüklenmez, bkz. [RUN-SERVER.md](RUN-SERVER.md)). Sonunda ikisini de PID ile durdurur. Çözücü `/tmp/fairbeam-sim.lock` dizin kilidini alır (`mkdir` alır, `rmdir` bırakır), `nice -n 10` ile çalışır; kilit doluysa veya `--skip-run` varsa atlanır. Seçenekler: `S1 S3` (yalnızca bunlar), `--lang en|tr`, `--skip-run`. `FAIRBEAM_CHROME`, `FAIRBEAM_PYTHON` başka Chrome/Python gösterir. Tarayıcının yapamadığı denetimler [DESKTOP-CHECKLIST.md](DESKTOP-CHECKLIST.md) içindedir.
-
 ## Bilinen sınırlamalar
+
+- **Windows .fb dosya ilişkisi.** Fairbeam ilk Birlikte aç listesinde görünmüyorsa [açma adımlarını](WINDOWS.md#known-limitations) izleyin.
 
 - **Kayıpsız horn güç dengesi.** Birlikte sunulan piramidal horn kayıpsız olarak işaretlidir. Ölçülen güç dengesi çözücünün toleransını sağladığında ışıma verimliliği model varsayımı gereği %100 bildirilir; bu, bağımsız bir doğruluk denetimi değildir. Kazancı kullanmadan önce `rad_efficiency_raw` değerini (ışıyan güç / portun kabul ettiği güç), kalite notlarını ve mesh yakınsamasını inceleyin. Daha ince mesh, port problarını ve NF2FF güç dengesini değiştirebilir. Tolerans dışındaki sonuçlarda ölçülen verimlilik korunur ve kalite uyarısı gösterilir.
 - **İmzasız Windows yükleyicisi.** macOS uygulaması imzalı ve Apple tarafından doğrulanmıştır, çift tıklamayla açılır. Windows yükleyicisinde kod imzası yoktur: SmartScreen ilk çalıştırmada uyarır (Daha fazla bilgi › Yine de çalıştır; [DESKTOP.md](DESKTOP.md)).
+
+Katkıda bulunanların senaryo denetimleri [denetim kılavuzundadır](CHECKS.md#scenario-checks).
 
 ## Geri bildirim
 
@@ -595,55 +636,3 @@ Bildirimler ve fikirler, tarayıcıda açılan herkese açık [fairbeam-releases
 - Üst bölümdeki konuşma balonu (**Geri bildirim gönder**), iki formun listesini açar.
 
 Uygulama kendiliğinden hiçbir şey göndermez, bağlantıya başka bilgi koymaz. Yardımcı olacaksa tasarım dosyasını/günlüğü ekleyin; önce özel bilgileri çıkarın. Masaüstünde uygulama penceresi web sayfası açmadığından sistem tarayıcısını yerel çalıştırma sunucusu açar.
-
-### Dış çizgi köşelerini yuvarlatma ve pah kırma
-
-Dikdörtgen levha/kutuya (veya seçili şekline) sağ tıklayıp **Dış çizgi köşelerini yuvarlat / pah kır…** seçin. Eksen ve yarıçap/geri çekme mesafesi seçin. Levhada eksen normal olmalıdır. Kutuda bu eksene paralel dört kenar işlenir; üst/alt çeperler keskin kalır. Boyut pozitif ve kısa kenarın yarısından küçük olmalıdır.
-
-Bu geometrik işlemdir: pahlar sekiz noktalı çokgen, yuvarlatmalar çeyrek daire başına 16 kiriş olur. Levhalar yerel çokgene, kutular yerel çokgen uzatmasına dönüşür. Önizleme, mesh, Python ve geometri çıktıları aynı noktaları kullanır. Uygula, boyutları geçerli parametre değerleriyle kaydeder; katının malzemesini/dönüşümlerini korur, tek geri alma adımıdır. Kesimler ve canlı Boolean geçmişi önce somutlaştırılmalıdır. Keyfî 3B kenar radyüsleri, üst/alt çeper geçişleri ve serbest biçimli CAD yüzeyleri bu araçla desteklenmez.
-
-**Bileşenler** üzerine sağ tıklayıp **Yeni bileşen** ile boş klasör oluşturun ve adlandırın. Klasörler boşken de kaydedilir. Katıları klasöre sürükleyin veya bağlam menüsünden **Bileşene taşı** kullanın. Klasör işlemleri düzeni etkiler; her katı kendi malzemesini ve sıralı dönüşümlerini korur. Dönüştür paneli, özgün şekille aynı düzlemde olsa bile gerçek yarı saydam sonuç yüzeylerini döndürme ekseni/merkezi veya ayna düzlemi referansıyla gösterir.
-
-### RF kurulumunu açıkça belirleme
-
-Portlar ve Toplu elemanlar **+** işlemleri oluşturma formu açar. İki ucu, akım/yayılma yönünü ve elektriksel ayarları girin; **Oluştur** tek geri alma adımı uygular. İptal tasarımı değiştirmez. Ayrık portlarda görünüm içinde küçük yön oku vardır. Mevcut port/elemanlar, seçilerek belirlenen uçlar dahil Özellikler'de düzenlenebilir.
-
-Ayrık portun fiziksel openEMS kaynağı/sonlandırması pozitif gerçek direnç kullanır. İsteğe bağlı **Karmaşık güç dalgası referansı**, son işlem üst verisidir: Kurokawa katsayısı `(Zin - conj(Zref)) / (Zin + Zref)` olur; `Re Zref > 0` gerektirir. Empedans sonucu orta frekans örneğinde uyumu ve `1 - |Γ|²` değerini gösterir. Ham paketler, frekans ızgarasında ayrı karmaşık güç dalgası katsayıları tutar. Yerel S-parametreleri, Smith abağı, fiziksel kaynak ve çok portlu matrisler özgün gerçek referansını korur. Bu referans fiziksel yük eklemez. Pasif eşdeğer devre için R/L/C yükü kullanın; sabit sanal empedans geniş bantlı nedensel zaman alanı elemanı değildir.
-
-Toplu elemanlar, eksik kolları boş bırakarak pozitif R (Ω), L (H), C (F) birleşimlerini ve **Seri** / **Paralel** topolojiyi destekler. Yerel RLC, CSXCAD/openEMS 0.37 veya yenisini gerektirir; eski ortamlar yaklaşım uygulamak yerine sınırlamayı bildirir. Kayıtlı `resistors` dizileri isteğe bağlı `L`, `C`, `topology` ile çalışmaya devam eder. Python dışa aktarımı ve geri okuma bunları korur. VBA makrosu her elemanı R/L/C değerleriyle `LumpedElement` olarak seri/paralel RLC biçiminde yazar (sıfır, bulunmayan bileşendir); makro içe aktarımı geri okur. [RF doğrulama kaydı](benchmarks/rf-rlc-workflows/README.md), yerel API desteğiyle devre yanıtı uyumunu ayırır: sınanan paralel devre %10 ölçütünü geçmiş, seri devre geçmemiştir. Seri sayısal doğruluk açık doğrulama konusudur.
-
-Dalga kılavuzu kurulumu, openEMS'in sunduğu dikdörtgen TE modlarını açık açıklık boyutları, uyarım/prob uçları ve yayılma yönüyle destekler. Genel Bloch/Floquet portları, eğik periyodik uyarım ve yüksek kırınım mertebesi çıkarımı uygulanmamıştır. Normal gelişli PEC/PMC birim hücre düzeneği sınırlı simetri modelidir; genel Floquet desteği değildir.
-
-Dielektrikler pozitif, izotropik, kayıpsız, frekanstan bağımsız bağıl manyetik geçirgenlik μr de sunar. Manyetik kayıp, anizotropik tensörler ve dispersif ferritler temsil edilmez.
-
-Yerel API: [CSXCAD RLC özellikleri](https://docs.openems.de/en/latest/concepts/properties.html); referans düzeni: [scikit-rf güç dalgası tanımları](https://scikit-rf.readthedocs.io/en/latest/examples/networktheory/Working%20with%20Complex%20Characteristic%20Impedances.html).
-
-### Geçerli görünümü dışa aktarma
-
-Üst bölümdeki **Dışa aktar…** görünür çalışma alanını izler. Tasarım'ın 3B sekmesinde geometri biçimleri, kaydedilmemiş geçerli tasarım JSON'u ve Python sunar. Boş tasarımda geometri çıktısı yoktur. Sonuç sekmesinde CSV/Touchstone, araç çubuğunun geçerli sonucunu, S-parametresi seçimini ve karşılaştırmalarını kullanır. Şekil SVG/PNG, görünür büyüklük ve eğrilerle çizilmiş grafikleri yakalar. Çizim'de menü, çizimin SVG/PDF/PNG işlemlerini kullanır. Verisi olmayan biçim neden belirten araç ipucuyla devre dışıdır.
-
-Kamera düğmesi ve Görünüm şeridi Ekran görüntüsü, görünür 3B görünümü, grafiği veya teknik çizimi yakalar. Ana ekran'da, boş geometride veya desteklenen şekli olmayan sonuç görünümünde devre dışıdır. Sonuç/çizim arkasında gizli 3B tuvali yakalamaz. İndirme istekleri, kayıt yolları, iptaller ve hatalar genel bildirimde de görünür.
-
-### Render görünümü ve Render görüntüsü
-
-3B görünümün **Render** düğmesi (kamera hazır görünümleri yanında, Görünüm şeridinin Render grubunda), tasarımı fiziksel tabanlı malzemeler, ana/dolgu/kenar ışıklı stüdyo ortamı, yumuşak zemin gölgesi ve portlarla gösterir. Bakır, altın, gümüş, kalay, nikel, alüminyum, pirinç, çelik kendi renk/pürüzlülükleriyle metaliktir; PEC veya bilinmeyen metal bakır olur. FR-4 yarı saydam sarı-yeşil laminat; Rogers, Taconic, PTFE krem; alümina beyaz; diğer dielektrikler nötr bejdir. Hava, vakum ve kesikler çizilmez. Katının kendi **Renk** seçimi varsayılanı geçersiz kılar, metalik görünümü korur; %100'ün altındaki bir **Opaklık** onu saydam çizer (laminat tonu yerine düz saydamlık). Malzeme tasarımcıda adından/kütüphane kaydından, sonuç/örnekte iletkenlik, dielektrik sabiti ve kaybından tanınır (paket adları taşımaz). Tablo `src/render/materials.ts` içindedir; Blender render aracının da kullandığı düz veridir.
-
-Döndürme, kaydırma, yakınlaştırma ve kamera hazır görünümleri normal çalışır; düzenleme render'ı günceller; geri geçiş modelleme görünümünü tam geri getirir (seçim, saydam dielektrikler, kenarlar). Aynı düğme Sonuçlar/Örnekler 3B görünümünde de vardır. Hazır görünümler altındaki araç çubuğu portları (**Konnektör**: uygunsa SMA, değilse işaretçi; **İşaretçi**: küçük kırmızı boncuk/çubuk; **Gizli**), zemin gölgesini, PCB laminatlarında yeşil lehim maskesini ve koyu arka planı ayarlar.
-
-Konnektör, karttan beslenen ayrık porta uyar: kart kenarında (yaklaşık 2 mm veya kartın %3'ü içinde), kenar tipi SMA o kenardan dışarı bakar, pimi hattın üzerindedir. Diğer durumda toprak düzleminin ötesinde boşluk varsa alttan montajlı SMA toprağın altında, pimi port boyunca yukarıdadır. Serbest havadaki dipol boşluğu, iki hat arasındaki port ve 6,35 mm altıgenden küçük toprak düzlemi işaretçi kullanır. Dalga kılavuzu portu ince flanş konturu, toplu eleman küçük SMD gövdesi gösterir.
-
-**Render görüntüsü…** (Görünüm şeridi, render araç çubuğu, üst bölüm **Dışa aktar…**) ekran dışında görüntüler çizer, çalışma klasöründe `renders/<design-id>/` içine `<design>_<angle>_<timestamp>.png` olarak kaydeder (dolu adlara `-2`, `-3` eklenir; hiçbir render üzerine yazılmaz. Sunucu yoksa tarayıcı indirir). Açılar: İzometrik, Üst, Ön, Sağ, Arka, Sol, Alt ve geçerli görünüm; tek seferde istenen sayıda. Çözünürlük: 1920×1080, 3840×2160 veya özel (64–8192 px). Arka plan: saydam, stüdyo, koyu. Ayrıca portlar, lehim maskesi, zemin gölgesi, perspektif/ortografik ve kalite (Taslak: yok, Standart: 2×, Yüksek: 3× süper örnekleme; daima çoklu örnekleme ve GPU sınırları içinde). Görüntüler **Görüntüyü kopyala** ile küçük önizleme olarak görünür; **Klasörü aç**, sistem dosya yöneticisini açar. Render aracı ve kodu ilk kullanımda yüklenir.
-
-### RF oluşturma ve Python klasör üst verisi
-
-Portlar ve pasif R/L/C elemanları, tasarımı değiştirmeden önce oluşturma formu açar. Form uçları açık tutar, gerçek kaynak direncini karmaşık güç dalgası referansından ayırır; dalga kılavuzu kesim frekansını ve desteklenmeyen Floquet/Bloch iş akışlarını bildirir. Yerel seri RLC, oluşturma ve Özellikler'de sayısal doğrulama sınırlaması notuyla kullanılabilir (bkz. `docs/benchmarks/rf-rlc-workflows`).
-
-Python dışa aktarımı, yalnızca isteğe bağlı `components` klasör yolları ve katı adı–bileşen eşlemeleri içeren `FAIRBEAM_ORGANIZATION` yazar. İçe aktarma/Uygula, geri okunan her grubun gerçek kaynak CSXCAD özelliğini kullanarak, yalnızca özellik adı benzersizse eşlemeleri geri yükler. Gruplara ayrılmış döndürülmüş kopyalar kaynak klasörlerini korur; gerçekten `[2]` ile biten ad kopya sayılmaz. Kaldırılan/yeniden adlandırılan katılar üst veriden yeniden oluşturulmaz. Sabiti içermeyen Python modülleri mevcut içe aktarma davranışını korur. Klasör listesi yolları, eğik çizgiyle ayrılmış boş olmayan adlar olmalıdır; eski katı yollarında boş bölüm uyarısı korunur.
-
-RLC oluşturmanın isteğe bağlı hedef empedans yük yardımcısı, pozitif referans frekansında hedef `Z = R + jX` değerini fiziksel pasif paralel eşdeğere çevirir. `ω = 2πf` ile `Rp = (R² + X²)/R`; negatif reaktansta `C = -X/[ω(R² + X²)]`, pozitif reaktansta `L = (R² + X²)/(ωX)` doldurur. Sıfır reaktans yalnızca direnç verir. Hedef pozitif R gerektirir; bileşen değerleri SI Ω/H/F olarak kalır. Yalnızca seçilen frekansta eşleşir; sabit geniş bantlı sanal empedans oluşturmaz, portun güç dalgası referansını değiştirmez. Doldurma formda yereldir; Oluştur tek geri alınabilir düzenlemedir.
-
-### Minimum pencere senaryo denetimi
-
-`node scripts/check-scenarios.mjs S8 S9 S10 --compact --skip-run`, yerel masaüstü minimum boyutunda EN/TR Görünüm, görünür yüzey çıktıları ve RF formlarını çalıştırır. Rust pencere boyutlandırması 1024 × 700 mantıksal nokta kullanır; 728 noktalık çalışma alanında başlık çubuğu payıyla 1024 × 688'e iner. RF formları iki yükseklikte çalışır; İptal/Oluştur işlemleri iletişim kutusu içinde ve Tab ile ekranda erişilebilir kalmalıdır. Bu genişliklerde gezinti/özellikler panelleri üst katmandır; senaryolar gerektiğinde gerçek kenar şeritlerini açar. Varsayılan senaryo boyutları ve adım sayısı değişmez. Komut FDTD çözümü istemez.
-
-`node scripts/check-scenarios.mjs S9 --compact --skip-run --ribbon-file-audit`, EN/TR dillerinde 1024, 1280, 1440 pikselde Görünüm/Simülasyon simge hizasını da denetler; Diğer menüsünün dosya seçicisinden gerçek sonuç paketi açar. Ek denetim isteğe bağlıdır.

@@ -21,7 +21,8 @@
       "titleTr": "Tasarımcı",
       "pages": [
         {"source": "docs/DESIGNER.md", "slug": "designer", "title": "The designer", "description": "The visual workspace: modeling, checks, simulation settings, the mesh, running and reading results, design files, and importing VBA macros and PCB artwork.", "titleTr": "Tasarımcı"},
-        {"source": "docs/APPEARANCE.md", "slug": "appearance", "title": "Appearance", "description": "Interface presets, accent colors, chart palettes and custom colors under General settings › Appearance.", "titleTr": "Görünüm"},
+        {"source": "docs/FB-DOCUMENT.md", "slug": "project-files", "title": "Project files (.fb)", "description": "Save, open, share and recover portable .fb projects and their adjacent results folder.", "titleTr": "Proje dosyaları (.fb)"},
+        {"source": "docs/APPEARANCE.md", "slug": "appearance", "title": "Appearance", "description": "Coordinated themes, interface and chart fonts, palettes and custom colors under General settings › Appearance.", "titleTr": "Görünüm"},
         {"source": "examples/designs/README.md", "slug": "example-designs", "title": "Example designs", "description": "Five 867 MHz antennas as designer files, with their parameters, results and how to scale them.", "titleTr": "Örnek tasarımlar"}
       ]
     },
@@ -34,6 +35,8 @@
         {"source": "docs/STUDIES.md", "slug": "studies", "title": "Sweeps and studies", "description": "Parameter sweeps, mesh convergence studies, the study file format and Touchstone export from the command line.", "titleTr": "Taramalar ve çalışmalar"},
         {"source": "docs/OPTIMIZE.md", "slug": "optimize", "title": "Optimizer", "description": "Tuning a model or a design towards goals: parameters, goals, algorithms, the output and simulated examples.", "titleTr": "Optimizasyon aracı"},
         {"source": "docs/MULTIPORT.md", "slug": "multiport", "title": "Multi-port structures", "description": "One run per driven port, the S-matrix, and the S-parameter and array views in the viewer.", "titleTr": "Çok portlu yapılar"},
+        {"source": "docs/EXPERIMENTAL-SOLVERS.md", "slug": "experimental-solvers", "title": "Experimental solvers", "description": "Set up Elmer in the desktop app, run bounded eigenmode or antenna experiments, and understand their limits.", "titleTr": "Deneysel çözücüler"},
+        {"source": "docs/COAXIAL-PORTS.md", "slug": "coaxial-ports", "title": "Coaxial ports", "description": "The experimental openEMS coaxial TEM port: geometry, mesh requirements, CPU scope and numerical evidence.", "titleTr": "Koaksiyel portlar"},
         {"source": "docs/GPU.md", "slug": "gpu", "title": "GPU engine", "description": "The optional GPU build of openEMS, Metal on Apple silicon and CUDA on Windows, with measured timings.", "titleTr": "GPU motoru"}
       ]
     },

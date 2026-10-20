@@ -125,29 +125,11 @@ jobs.JobManager: queue, concurrency 1
 
 ## Roadmap
 
-### Phase 1: CLI and static viewer (done)
+The [public roadmap](https://fairbeam.org/roadmap.html#roadmap) is the current status source. It distinguishes shipped functionality, merged changes awaiting a release and planned work, with links to issues and pull requests.
 
-- Parametric Python models, CLI runner, project bundles and index.
-- Viewer with exact geometry, far-field surface, charts, tables and spec sheet.
-- CST-compatible VBA macro export.
-- macOS install script. openEMS itself also ships Windows builds and Linux packages.
+The desktop workbench is implemented on the local run server: a Tauri shell, SolidJS interface and managed Python/openEMS environment. See [Desktop](DESKTOP.md) for process ownership, startup, shutdown and packaging. The CLI, viewer and desktop share the same simulation pipeline.
 
-### Phase 2: desktop workbench (in progress)
-
-Phase 2 is the desktop workbench. It uses a Tauri 2 desktop shell, a SolidJS UI, and a Python environment. The items below run on top of the local run server (`fairbeam serve`), in the browser or in the desktop shell.
-
-- **Desktop shell** (released, `src-tauri/`, see [DESKTOP.md](DESKTOP.md)). A Tauri 2 app that installs a managed runtime (Python, packages, openEMS) on first start or uses an existing openEMS install (the GPU build first when it has one), seeds a workspace in `Documents/Fairbeam`, starts `fairbeam serve --ui <bundled dist> --exit-with-parent` on a free port in its own process group (Windows: a job object), shows a splash/setup page while `/api/health` comes up, then loads the viewer from `http://127.0.0.1:<port>/` (same origin as the API, so the Host/Origin checks apply unchanged; the served page can call only the fixed list of shell commands in `capabilities/viewer.json`). Quit sends `POST /api/shutdown` with a per-start token, and forces the stop after 8 s. Updates come from the release feed. macOS builds are signed with a Developer ID and notarized by Apple; the Windows installer is not code-signed (see [WINDOWS.md](WINDOWS.md#known-limitations)).
-- **Same-origin serving** (implemented). `fairbeam serve --ui <dir>` serves the built viewer (`static.py`: MIME types, SPA fallback, immutable caching of hashed assets, traversal-safe, no listings) and `/projects/*.json` from the live projects folder; `fairbeam app` does this on a free port and opens the browser.
-
-- **Local job runner** (implemented, `fairbeam serve`). Launch model builds and runs from the UI; the server spawns `fairbeam run` with the configured python (`--python`).
-- **Generated parameter forms** (implemented). Input forms from `PARAMS`: label, unit, default, min/max and description, with per-field reset and server-side validation. Parameter edits update a live geometry preview.
-- **Live progress** (implemented). openEMS output is parsed while it runs, using the same patterns as `_parse_log`: phase, timestep, speed, the energy trace against the end criterion, and an estimated time remaining.
-- **Run queue and history** (implemented: queue with concurrency 1, cancel, persistent history with logs, run names, deletion, filters by model and status). Queue runs, and browse and re-open earlier bundles.
-- **Optimization loop** (implemented: `fairbeam optimize` and the Run panel's Optimize mode, secant and bounded Nelder–Mead without scipy, goals f0 / |S11| at f / bandwidth / Dmax and the multi-port |S_ij| at most / at least and all |S_ii| at most, driving only the ports the goals need).
-- **Parameter sweeps and comparison** (implemented for one or two parameters, up to 25 runs; overlays of up to eight projects or design runs in S-parameters, Impedance, Smith and Pattern, `src/compare/`). Run parameters over a range and overlay S11, Zin and patterns side by side.
-- **Geometry export.** Export STEP and STL from the exact primitives (not built).
-
-The bundle stays the contract in Phase 2. The desktop shell adds orchestration on top of the Phase 1 CLI and viewer, not a second data model.
+Parameter sweeps support up to six parameters; see [Studies](STUDIES.md) for bounds and configuration. [Geometry export](EXPORTS.md) includes binary STL, GLB and Blender render packages. STEP export is not implemented. Portable [project files](FB-DOCUMENT.md) connect editable designs with verified result attachments; viewer result bundles remain a separate, versioned format.
 
 ## Project layout
 

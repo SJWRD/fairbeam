@@ -172,5 +172,5 @@ Dosyaları önceden dönüştürmeniz gerekmez.
   çalışmaz; takma ad yoktur. İçe aktarma çalışma alanınızdaki modelleri düzeltir. Başka konumdaki
   modellerde aynı adı kendiniz değiştirin. `antenlab` komutunu çağıran veya `ANTENLAB_*` değişkenlerini
   ayarlayan betiklerde `fairbeam` ve `FAIRBEAM_*` kullanın.
-- **Programa ayrılmış adlar.** Tasarım parçası adları `antenlab_` veya `fairbeam_` ile başlayamaz;
+- **Programa ayrılmış adlar.** Katı adları `antenlab_` veya `fairbeam_` ile başlayamaz;
   her iki önek programın yardımcı nesneleri için ayrılmıştır.

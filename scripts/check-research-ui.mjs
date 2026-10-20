@@ -57,13 +57,13 @@ try {
     await open();
     assert.equal(await page.$$eval('.research-guide li', rows => rows.length), 3);
     assert.match(await page.$eval('.research-guide', e => e.textContent), /revision-4|revizyon-4/);
-    assert.equal(await page.$eval('.research-guide a', e => e.href), 'https://github.com/ismailakdag/fairbeam/blob/main/docs/RESEARCH-SOLVERS.md');
+    assert.equal(await page.$eval('.research-guide a', e => e.href), `https://fairbeam.org/docs/${language === "tr" ? "tr/" : ""}experimental-solvers.html`);
     assert.deepEqual(await page.evaluate(async () => {
       const calls = [];
       window.__TAURI_INTERNALS__ = { invoke: async (...args) => { calls.push(args); } };
       try { document.querySelector('.research-guide a').click(); await Promise.resolve(); return calls; }
       finally { delete window.__TAURI_INTERNALS__; }
-    }), [['open_external_link', { link: 'research' }]], 'desktop guide uses the fixed native link key');
+    }), [['open_external_link', { link: language === 'tr' ? 'research-tr' : 'research' }]], 'desktop guide uses the fixed native link key for its language');
     const start = '.research-dialog button[type="submit"]';
     assert.equal(await page.$eval(start, e => e.disabled), true, "unprobed solver cannot submit");
     await page.click(".research-options > button");
