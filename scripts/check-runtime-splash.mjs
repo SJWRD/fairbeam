@@ -4,6 +4,9 @@ import puppeteer from 'puppeteer-core';
 import {chromePath} from './scenarios/stack.mjs';
 const source = process.env.FAIRBEAM_SPLASH_SOURCE ?? new URL('../src-tauri/splash/index.html', import.meta.url);
 const html = readFileSync(source,'utf8');
+const shellSource = readFileSync(new URL('../src-tauri/src/main.rs', import.meta.url), 'utf8');
+const damagedDetail = shellSource.match(/"The Fairbeam runtime is damaged\.",\s*format!\("([^"]+)"/)?.[1];
+assert.ok(damagedDetail, 'exercise the real shell detail template');
 const browser = await puppeteer.launch({headless:true, executablePath:await chromePath(), args:['--no-sandbox']});
 try {
  const page = await browser.newPage();
@@ -14,7 +17,12 @@ try {
  const visible = id => page.$eval('#'+id,e=>!e.hidden && e.getClientRects().length>0);
  for(const lang of ['en','tr']) {
   await show({phase:'starting',text:'Starting…',lang});
-  await show({phase:'setup',text:'The Fairbeam runtime is damaged.',canInstall:false,canRepair:true,canRetry:true,managedReady:false,lang});
+  const importError = "ImportError: /Volumes/ölçüm/python: No module named 'openEMS'";
+  await show({phase:'setup',text:'The Fairbeam runtime is damaged.',detail:damagedDetail.replace('{e}', importError),canInstall:false,canRepair:true,canRetry:true,managedReady:false,lang});
+  const detail = await page.$eval('#setup-detail',e=>e.textContent);
+  assert.equal(detail, lang === 'tr'
+    ? `Python ortamı openEMS, CSXCAD ve fairbeam modüllerini yükleyemiyor: ${importError}. Onarma işlemi ortamı yeniden kurar.`
+    : `Its Python does not import openEMS, CSXCAD and fairbeam: ${importError}. Repair reinstalls it.`);
   assert.equal(await visible('setup-repair'),true);
   assert.equal(await visible('use-managed'),false);
   assert.equal(await page.evaluate(()=>document.activeElement.id),'setup-repair');

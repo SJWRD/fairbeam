@@ -1022,7 +1022,7 @@ fn choose(app: &AppHandle, res: &Res, s: &Settings, current: &dyn Fn() -> bool) 
                 }
                 Err(e) => {
                     setup_screen(app, res, s, "The Fairbeam runtime is damaged.",
-                        format!("Its Python does not import openEMS, CSXCAD and fairbeam: {e}. Repair reinstalls it."),
+                        format!("runtime_import_failed:{e}"),
                         vec![json!({"python": python, "why": "managed runtime", "result": e})], true);
                     return None;
                 }

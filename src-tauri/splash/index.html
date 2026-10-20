@@ -202,6 +202,7 @@
       "st.updating": "Updating Fairbeam in the runtime…",
       "st.updateFailed": "The runtime could not be updated.",
       "st.damaged": "The Fairbeam runtime is damaged.",
+      "st.damagedDetail": "Its Python does not import openEMS, CSXCAD and fairbeam: {error}. Repair reinstalls it.",
       "st.needsRuntime": "Fairbeam needs to install its runtime.",
       "st.needsRuntimeDetail": "Python, the Python packages and openEMS are installed once for your user account, in the folder below. Nothing is installed system-wide.",
       "st.workspace": "Preparing your workspace…",
@@ -275,6 +276,7 @@
       "st.updating": "Çalışma ortamındaki Fairbeam güncelleniyor…",
       "st.updateFailed": "Çalışma ortamı güncellenemedi.",
       "st.damaged": "Fairbeam çalışma ortamı bozuk.",
+      "st.damagedDetail": "Python ortamı openEMS, CSXCAD ve fairbeam modüllerini yükleyemiyor: {error}. Onarma işlemi ortamı yeniden kurar.",
       "st.needsRuntime": "Fairbeam'in çalışma ortamını kurması gerekiyor.",
       "st.needsRuntimeDetail": "Python, Python paketleri ve openEMS kullanıcı hesabınız için bir kez, aşağıdaki klasöre kurulur. Sistem geneline hiçbir şey kurulmaz.",
       "st.workspace": "Çalışma alanınız hazırlanıyor…",
@@ -315,6 +317,7 @@
   let lastPhase = "";
   const completedSteps = new Set();
   const installNote = text => text?.startsWith("macos_runtime_requires:") ? L("macos.required", {version:text.split(":")[1]})
+    : text?.startsWith("runtime_import_failed:") ? L("st.damagedDetail", {error:text.slice("runtime_import_failed:".length)})
     : text === "macos_version_unknown" ? L("macos.unknown") : known(text);
 
   function show(s) {
