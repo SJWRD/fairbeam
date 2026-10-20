@@ -130,6 +130,18 @@ receipt outside the checkout or remove the generated receipt before building the
    links (`landing/index.html`, section `#download`: file names, sizes and minimum OS versions)
    through the repository workflow. Git-triggered website deployments are disabled. Publish one
    locally built, reviewed batch using the prebuilt workflow in [CI.md](CI.md).
+6. Publish the matching source release in this repository, so that Zenodo archives the tagged
+   source and gives the version a DOI. All versions also share one concept DOI.
+
+   ```bash
+   gh release create v<version> -R ismailakdag/fairbeam --verify-tag --title "Fairbeam <version>" \
+     --notes "Installers and update files: https://github.com/ismailakdag/fairbeam-releases/releases/tag/v<version>"
+   ```
+
+   The archive is permanent, so create the source release only for the final tag. Zenodo takes
+   the authors and the description from [CITATION.cff](../CITATION.cff) in the tagged commit, so
+   update that file before tagging when the author list changes. The updater reads only
+   `fairbeam-releases`, so source releases never reach installed apps.
 
 ## Issues and feedback
 
