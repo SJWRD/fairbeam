@@ -13,7 +13,7 @@ const read = (path) => readFile(new URL(`../${path}`, import.meta.url), "utf8");
 assert.equal(suggestDesignId("  Déjà Vu Copy!"), "deja_vu_copy");
 assert.equal(designIdError("x", []), "use at least two letters or digits, starting with a letter");
 assert.equal(designIdError("con", []), "a name Windows reserves for devices; add a word");
-assert.equal(designIdError("antenna_copy", ["antenna_copy"]), "a model with this name exists");
+assert.equal(designIdError("antenna_copy", ["antenna_copy"]), "a design with this name exists");
 assert.equal(designIdError("antenna_copy", []), "");
 assert.equal(designIdError("patch_antenna", []), "the name of a bundled example; add a word");
 
@@ -70,4 +70,5 @@ assert.equal(shortcutTable(true).saveAs.key, "⇧⌘S");
 // the other dialogs that name a new file refuse the bundled ids as well
 assert.ok(newModel.includes('if (bundledIds.has(v)) return t("designId.bundled");') && newModel.includes("freeDesignId(e.currentTarget.value"), "New model");
 assert.ok(copy.includes("keys.has(candidate) || isReservedDesignId(candidate)") && copy.includes("isReservedDesignId(base)"), "Open as new design");
+
 console.log("Save As and design id checks passed: reserved ids picked free up front, the TS mirror of BUNDLED, the ribbon, menu and keyboard entry points.");

@@ -13,6 +13,7 @@ import {
 } from "../src/designer/resultTabs.ts";
 import { matchesShortcut, shortcutTable } from "../src/designer/shortcuts.ts";
 import { createResultFocusState } from "../src/designer/resultSessionState.ts";
+import { compareSParamQuantities } from "../src/compare/series.ts";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const read = (p) => readFileSync(join(root, p), "utf8").replaceAll("\r\n", "\n");
@@ -190,7 +191,22 @@ check(/t\("farfield\.total"\)/.test(card) && /t\("farfield\.mainLobe"\)/.test(ca
 
 // ---- the result views' readouts: a compared trace reads "|S11| · E", values keep their units
 {
-  check(/label: pairLabel\(p\), suffix: t\.label/.test(read("src/compare/series.ts")) && /label: "S11", suffix: t\.label/.test(views), "compared traces: the bars around S11 only");
+  check(/label: mappedPairLabel\(m, p\), suffix: t\.label/.test(read("src/compare/series.ts")) && /label: "S11", suffix: t\.label/.test(views), "compared traces: mapped port labels keep the run suffix separate");
+  const makeTrace = (portNumbers) => ({
+    label: "E",
+    bundle: {
+      ports: [{ number: 1, excite: true }],
+      results: {
+        frequency: [1e9, 2e9], ports: {},
+        sparams: { ports: [1, 2], ...(portNumbers ? { port_numbers: portNumbers } : {}), z_ref: 50, excited: [1],
+          s: { "1,1": { re: [0.1, 0.2], im: [0, 0] }, "1,2": { re: [0.3, 0.4], im: [0, 0] } } },
+      },
+    },
+  });
+  const labels = (trace, pair, format, mode = "db") => compareSParamQuantities([trace], [pair], format, mode).flatMap(quantity => quantity.series.map(series => series.label));
+  eq(labels(makeTrace(), [1, 1], "db"), ["|S11| · E"], "magnitude bars surround the S-parameter label, never the run suffix");
+  eq(labels(makeTrace([2, 7]), [1, 2], "db"), ["|S12 [P2 <- P7]| · E"], "comparison keeps matrix indices and identifies the physical ports");
+  eq(labels(makeTrace([2, 7]), [1, 2], "plot", "phase"), ["∠S12 [P2 <- P7] · E"], "phase retains the physical-port annotation and separate run suffix");
   check(/export const totalEffText = /.test(card) && /totalEffText\(summary\(\)!\.totalEff!\)/.test(views) && /totalEffText\(ffSummary\(\)!\.totalEff!\)/.test(read("src/components/Dock.tsx")), "the total efficiency keeps '−1.22 dB' whole everywhere");
   check(en["format.percent"] === "{value} %", "a percentage keeps its sign on its line");
 }
