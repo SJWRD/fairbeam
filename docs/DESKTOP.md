@@ -267,23 +267,31 @@ it is shown. Then it:
    the OS reset the connection. The server also starts its stop when writing the 202 answer fails.
    Before these fixes, about one quit in four on Windows waited for the 8 s grace period.
 7. Checks for updates once the viewer is up (release builds; [RELEASES.md](RELEASES.md)), unless
-   "Check for updates on start" is off in General settings. Help › Check for updates runs the same
+   "Check for updates on start" is off in General settings. Help › Check for Updates… runs the same
    check on demand. General settings also has a manual check with a visible outcome; turning off
    the startup check does not disable manual checks.
 
 Menus (`app_menu` in `src-tauri/src/main.rs`; the viewer answers each action through
 `window.fairbeamMenuAction`, `src/lib/menuActions.ts`):
 
-- **File**: New Design…, Import VBA macro…, Import PCB Artwork…, Open…, Open Recent (the last eight designs), Save
-  (Cmd/Ctrl+S), Save As…, Export (VBA macro…, Python…, Touchstone of current result…, Package…),
+- **File**: New Design…, Import VBA Macro…, Import PCB Artwork…, Open…, Open Recent (the last eight designs), Save
+  (Cmd/Ctrl+S), Save As…, Export (Geometry…, Python…, Touchstone of Current Result…, Package…),
   Close Design, then Close Window on macOS, or Settings… and Exit on Windows. On macOS Settings…
   (Cmd+,) is in the Fairbeam menu.
 - **Edit**: Undo, Redo, Cut, Copy, Paste, Select All, Delete.
-- **View**: Start, Design, Examples, Toggle tree / dock / properties, Minimize ribbon, the standard
-  views (Isometric, Top, Front, Right, Bottom, Back, Left) and Zoom in / out / Reset zoom.
-- **Window**: Minimize, Maximize, Full screen, Close Window.
-- **Help**: Keyboard Shortcuts, About Fairbeam, Getting Started Guide, Report a Problem…, Check
-  for updates.
+- **View**: Start, Design, Examples, Toggle Tree / Dock / Properties, Minimize Ribbon, the standard
+  views (Isometric, Top, Front, Right, Bottom, Back, Left) and Zoom In / Out / Reset Zoom.
+- **Window** on macOS: Minimize, Zoom, separator, Full Screen, separator, Bring All to Front,
+  separator, Close Window. Other platforms retain the custom Full Screen command and no
+  macOS-only items.
+- **Help**: Keyboard Shortcuts, Getting Started Guide, Report a Problem…, Check for Updates….
+  On macOS About Fairbeam is only in the Fairbeam menu; other platforms also put it in Help.
+
+The translated Help menu carries Tauri's stable Help submenu ID so AppKit can register it
+without guessing from the visible title. Full Screen uses AppKit's predefined selector and
+Ctrl+Cmd+F; its title is supplied by the platform. Verify the Help search field under **Yardım**
+and Full Screen's Enter/Exit title on a built Mac app; source and Windows tests do not establish
+that platform behavior.
 
 On macOS these are real menu key equivalents: Cmd+N for New, Cmd+O for Open, Cmd+S,
 Shift+Cmd+S, Ctrl+Shift+1/2/3 for panels, Ctrl+F1 for the ribbon, and

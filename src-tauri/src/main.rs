@@ -1930,6 +1930,7 @@ fn sync_native_menu_availability(
 
 fn action_submenu(
     handle: &AppHandle,
+    id: Option<&str>,
     title: &str,
     entries: &[(&str, &str)],
 ) -> tauri::Result<Submenu<tauri::Wry>> {
@@ -1941,7 +1942,10 @@ fn action_submenu(
         .iter()
         .map(|i| i as &dyn tauri::menu::IsMenuItem<tauri::Wry>)
         .collect::<Vec<_>>();
-    Submenu::with_items(handle, title, true, &refs)
+    match id {
+        Some(id) => Submenu::with_id_and_items(handle, id, title, true, &refs),
+        None => Submenu::with_items(handle, title, true, &refs),
+    }
 }
 
 fn app_menu(handle: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
@@ -1991,7 +1995,7 @@ fn app_menu(handle: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
         .iter()
         .map(|(id, label)| (*id, label.as_str()))
         .collect::<Vec<_>>();
-    let export = action_submenu(handle, &tx("export"), &export_refs)?;
+    let export = action_submenu(handle, None, &tx("export"), &export_refs)?;
     let file_actions = vec![
         action_item(handle, "file-new", &tx("file-new"))?,
         action_item(handle, "file-import-cst", &tx("file-import-cst"))?,
@@ -2061,9 +2065,10 @@ fn app_menu(handle: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
         .iter()
         .map(|(id, label)| (*id, label.as_str()))
         .collect::<Vec<_>>();
-    let view_menu = action_submenu(handle, &tx("view"), &view_refs)?;
+    let view_menu = action_submenu(handle, None, &tx("view"), &view_refs)?;
     let mut help_labels = vec![
         ("help-shortcuts", tx("help-shortcuts")),
+        #[cfg(not(target_os = "macos"))]
         ("about", tx("about")),
         ("help-docs", tx("help-docs")),
         ("help-issues", tx("help-issues")),
@@ -2075,7 +2080,7 @@ fn app_menu(handle: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
         .iter()
         .map(|(id, label)| (*id, label.as_str()))
         .collect::<Vec<_>>();
-    let help_menu = action_submenu(handle, &tx("help"), &help_refs)?;
+    let help_menu = action_submenu(handle, Some(tauri::menu::HELP_SUBMENU_ID), &tx("help"), &help_refs)?;
     let window_menu = Submenu::with_id_and_items(
         handle,
         tauri::menu::WINDOW_SUBMENU_ID,
@@ -2084,7 +2089,18 @@ fn app_menu(handle: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
         &[
             &PredefinedMenuItem::minimize(handle, Some(&tx("minimize")))?,
             &PredefinedMenuItem::maximize(handle, Some(&tx("maximize")))?,
+            #[cfg(target_os = "macos")]
+            &PredefinedMenuItem::separator(handle)?,
+            #[cfg(target_os = "macos")]
+            &PredefinedMenuItem::fullscreen(handle, None)?,
+            #[cfg(not(target_os = "macos"))]
             &action_item(handle, "window-fullscreen", &tx("window-fullscreen"))?,
+            #[cfg(target_os = "macos")]
+            &PredefinedMenuItem::separator(handle)?,
+            #[cfg(target_os = "macos")]
+            &PredefinedMenuItem::bring_all_to_front(handle, Some(&tx("bring-all-to-front")))?,
+            #[cfg(target_os = "macos")]
+            &PredefinedMenuItem::separator(handle)?,
             &close_window,
         ],
     )?;

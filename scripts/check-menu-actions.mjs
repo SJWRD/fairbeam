@@ -60,7 +60,7 @@ assert.deepEqual([...appAvailabilityIds].sort(), [...nativeAvailabilityIds].sort
 assert.ok(nativeAvailabilityIds.every((id) => MENU_ACTION_IDS.includes(id)), "contextual native IDs remain in the stable menu action allowlist");
 assert.match(app, /const hasViewport = !!currentBundle && viewportPresent\(\) && \(mode === "design" \|\| mode === "results"\)/, "camera and zoom actions require a loaded viewport in Design or Results");
 assert.match(shell, /fn sync_native_menu_availability\([\s\S]*?availability: HashMap<String, bool>/, "native availability accepts typed booleans");
-assert.match(shell, /MenuItem::with_id\(handle, id, label, action_enabled\(handle, id\), None::<&str>\)/, "native menu rebuilds use the stored enabled state");
+assert.match(shell, /MenuItem::with_id\(handle, id, label, action_enabled\(handle, id\),\s*native_action_accelerator\(id, cfg!\(target_os = "macos"\)\)\)/, "native menu rebuilds preserve stored enabled state and platform-owned accelerators");
 assert.match(app, /native\.invoke\("sync_native_menu_availability", \{ availability \}\)/, "the viewer synchronizes contextual menu state");
 // ⌘Z on a dialog button is not prevented by the page: the menu must not undo the design behind it
 assert.match(app, /document\.querySelector\("\.scrim, dialog\[open\]"\)\) return;\s*if \(action === "undo"\) undoDesign/);

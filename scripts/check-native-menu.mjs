@@ -36,4 +36,19 @@ assert.match(plist, /<key>CFBundleDevelopmentRegion<\/key>\s*<string>en<\/string
 assert.match(plist, /<key>CFBundleLocalizations<\/key>\s*<array>\s*<string>en<\/string>\s*<string>tr<\/string>\s*<\/array>/);
 assert.match(plist, /<key>CFBundleAllowMixedLocalizations<\/key>\s*<true\s*\/>/);
 assert.equal(JSON.parse(read("src-tauri/tauri.conf.json")).bundle.category, "DeveloperTool");
+assert.match(main, /action_submenu\(handle, Some\(tauri::menu::HELP_SUBMENU_ID\), &tx\("help"\), &help_refs\)/,
+  "the translated Help menu has AppKit's stable Help ID");
+assert.match(main, /Some\(id\) => Submenu::with_id_and_items\(handle, id, title, true, &refs\)/,
+  "the helper carries that ID into the actual submenu");
+const help = main.slice(main.indexOf("let mut help_labels"), main.indexOf("// the importer's removal entry"));
+assert.match(help, /#\[cfg\(not\(target_os = "macos"\)\)\]\s*\("about", tx\("about"\)\)/,
+  "macOS About stays exclusively in the app menu; other platforms keep Help About");
+const windowMenu = main.slice(main.indexOf("let window_menu ="), main.indexOf("let mut found_file"));
+assert.match(windowMenu, /#\[cfg\(target_os = "macos"\)\]\s*&PredefinedMenuItem::fullscreen\(handle, None\)\?/,
+  "macOS uses the native Full Screen selector without freezing its title");
+assert.match(windowMenu, /#\[cfg\(not\(target_os = "macos"\)\)\]\s*&action_item\(handle, "window-fullscreen"/,
+  "other platforms retain the custom Full Screen command");
+assert.match(windowMenu, /PredefinedMenuItem::bring_all_to_front\(handle, Some\(&tx\("bring-all-to-front"\)\)\)/);
+assert.equal((windowMenu.match(/#\[cfg\(target_os = "macos"\)\]\s*&PredefinedMenuItem::separator/g) ?? []).length, 3,
+  "native Window groups have three separators");
 console.log("check-native-menu: native accelerator declarations, page passthrough and Mac bundle locale/category contract pass");
