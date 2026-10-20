@@ -1,9 +1,11 @@
 """Native document/workspace integration without a solver, server, or native dialogs."""
 import copy
+from concurrent.futures import ThreadPoolExecutor
 import json
 import os
 from pathlib import Path
 import tempfile
+import threading
 from types import SimpleNamespace
 import unittest
 import uuid
@@ -441,6 +443,120 @@ class DocumentWorkspaceTests(unittest.TestCase):
         self.assertEqual(saved["results"][0]["status"], "stale")
         self.assertEqual(saved["results"][0]["design_sha256"], doc.design_digest(file["design"]))
         self.assertEqual(saved["results"][0]["provenance"], "source-design")
+
+    def test_completion_is_recorded_while_save_holds_workspace_lock(self):
+        file = self.workspace_design()
+        saved = self.bridge.save(self.path, file['id'], file['hash'])
+        first = self.completed(saved['file'], job_id='first')
+        self.bridge.record_completed(first)
+        saved = self.save_opened(saved)
+        second = self.completed(saved['file'], name='second.json', job_id='second')
+        # Different canonical bytes distinguish the new output from the attached one.
+        with (self.projects / second.bundle).open('ab') as stream:
+            stream.write(b'\n')
+        entered, release = threading.Event(), threading.Event()
+        from fairbeam.document_exports import export_sections
+
+        def held_export(*args, **kwargs):
+            entered.set()
+            if not release.wait(10):
+                raise AssertionError('test did not release the save/export barrier')
+            return export_sections(*args, **kwargs)
+
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            with mock.patch('fairbeam.document_exports.export_sections', side_effect=held_export):
+                saving = pool.submit(self.save_opened, saved)
+                try:
+                    self.assertTrue(entered.wait(5), 'save reached export while holding its real lock')
+                    completion = pool.submit(self.bridge.record_completed, second)
+                    self.assertTrue(completion.result(timeout=5), 'recording must not wait for save to release its lock')
+                finally:
+                    release.set()
+                saved = saving.result(timeout=5)
+        # The in-flight save had already taken its result snapshot. A later save must
+        # attach the completed run, including after recreating the workspace bridge.
+        self.assertEqual(len(saved['results']), 1)
+        self.bridge = DocumentWorkspace(self.models, self.projects, self.history, self.manager)
+        again = self.save_opened(saved)
+        self.assertEqual(len(again['results']), 2)
+        self.assertEqual({r['sha256'] for r in again['results']},
+                         {doc.digest((self.projects / job.bundle).read_bytes()) for job in (first, second)})
+
+    def test_concurrent_completion_publications_are_idempotent_or_conflict(self):
+        file = self.workspace_design()
+        publish = doc._publish_new
+        for conflict in (False, True):
+            with self.subTest(conflict=conflict):
+                first = self.completed(file, name='first-output.json', job_id=f'concurrent-{conflict}')
+                second = copy.copy(first)
+                if conflict:
+                    second.bundle = 'other-output.json'
+                    (self.projects / second.bundle).write_bytes((self.projects / first.bundle).read_bytes())
+                target = self.bridge.state_dir / 'runs' / (doc.digest(first.id.encode()) + '.json')
+                ready = threading.Barrier(2)
+
+                def together(temporary, destination):
+                    if destination == target:
+                        ready.wait(timeout=5)
+                    return publish(temporary, destination)
+
+                with mock.patch.object(doc, '_publish_new', side_effect=together):
+                    with ThreadPoolExecutor(max_workers=2) as pool:
+                        futures = [pool.submit(self.bridge.record_completed, job) for job in (first, second)]
+                        outcomes = []
+                        for future in futures:
+                            try:
+                                outcomes.append(future.result(timeout=10))
+                            except doc.DocumentConflict:
+                                outcomes.append('conflict')
+                self.assertCountEqual(outcomes, [True, 'conflict'] if conflict else [True, True])
+                before = target.read_bytes()
+                record = json.loads(before)
+                self.assertEqual(record['job_id'], first.id)
+                self.assertIn(record['project_file'], {first.bundle, second.bundle})
+                accepted = first if record['project_file'] == first.bundle else second
+                self.assertTrue(self.bridge.record_completed(accepted))
+                self.assertEqual(target.read_bytes(), before)
+                self.assertEqual(list(target.parent.glob('.fb-result-*.tmp')), [])
+
+    def test_completion_readers_never_see_staged_partial_metadata(self):
+        file = self.workspace_design()
+        job = self.completed(file)
+        staged, release = threading.Event(), threading.Event()
+        publish = doc._publish_new
+
+        def hold_publication(temporary, destination):
+            staged.set()
+            if not release.wait(10):
+                raise AssertionError('test did not release publication')
+            return publish(temporary, destination)
+
+        with mock.patch.object(doc, '_publish_new', side_effect=hold_publication):
+            with ThreadPoolExecutor(max_workers=1) as pool:
+                future = pool.submit(self.bridge.record_completed, job)
+                try:
+                    self.assertTrue(staged.wait(5))
+                    self.assertEqual(self.bridge._completed(file['id']), ([], []))
+                finally:
+                    release.set()
+                self.assertTrue(future.result(timeout=5))
+        records, warnings = self.bridge._completed(file['id'])
+        self.assertEqual([r['job_id'] for r in records], [job.id])
+        self.assertEqual(warnings, [])
+
+    def test_completed_record_rejects_linked_runs_directory(self):
+        file = self.workspace_design()
+        job = self.completed(file)
+        self.bridge.state_dir.mkdir(parents=True)
+        outside = self.root / 'outside-runs'
+        outside.mkdir()
+        try:
+            (self.bridge.state_dir / 'runs').symlink_to(outside, target_is_directory=True)
+        except OSError:
+            self.skipTest('symbolic links unavailable')
+        with self.assertRaises(doc.DocumentError):
+            self.bridge.record_completed(job)
+        self.assertEqual(list(outside.iterdir()), [])
 
     def test_named_result_replacement_cannot_reuse_old_provenance(self):
         file = self.workspace_design()

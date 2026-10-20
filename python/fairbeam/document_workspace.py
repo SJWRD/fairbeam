@@ -448,10 +448,15 @@ class DocumentWorkspace:
         record = {"schema": RUN_SCHEMA, "job_id": job.id, "model_id": job.model,
                   "project_file": name, "sha256": doc.digest(raw), "design_sha256": source_hash,
                   **({"backup_scope": admitted["backup_scope"]} if research else {})}
-        with self._lock():
-            folder = self.state_dir / "runs"
-            _directory(folder)
-            _immutable(folder / (doc.digest(str(job.id).encode("utf-8")) + ".json"), doc._json_bytes(record))
+        # Completion records are immutable, independent entries, not workspace state.
+        # Publish complete bytes exclusively so a slow save/export cannot make this
+        # callback time out on the workspace lock and permanently omit the record.
+        # A save already reading its snapshot may miss this addition; its next save
+        # discovers it. Conflicting bytes for the same job still fail closed.
+        _directory(self.state_dir)
+        folder = self.state_dir / "runs"
+        _directory(folder)
+        _immutable(folder / (doc.digest(str(job.id).encode("utf-8")) + ".json"), doc._json_bytes(record))
         return True
 
     def _completed(self, key: str) -> tuple[list[dict], list[str]]:
@@ -490,8 +495,8 @@ class DocumentWorkspace:
              document_id: str | None = None, save_as: bool = False, design: dict | None = None) -> dict:
         path = doc._path(path)
         modelfiles.check_id(model_id)
-        # Snapshot run metadata before taking the document lock: the completion callback
-        # records provenance while it owns the job lock, so never acquire job locks inside.
+        # Snapshot run metadata before taking the document lock; keep job-lock acquisition
+        # outside document operations even though completion records publish independently.
         list_jobs = getattr(self.manager, "list", None)
         jobs = list_jobs() if callable(list_jobs) else []
         with self._lock(), modelfiles._transaction(self.models_dir, model_id):
