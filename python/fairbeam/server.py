@@ -23,7 +23,7 @@ Endpoints (all JSON unless noted)::
                                     name?, end_criteria_db?} -> job
     (end_criteria_db: the energy end criterion in dB, passed on as --end-db; absent or null keeps the
     model's or design's own)
-    GET  /api/runs                  job history, newest first
+    GET  /api/runs                  job history, newest first; ?summary=1 omits result payloads
     GET  /api/runs/{id}             one job
     GET  /api/runs/{id}/events      Server-Sent Events: replay, then live; heartbeat every 15 s
     GET  /api/runs/{id}/log         plain-text log
@@ -1818,8 +1818,8 @@ class App:
         except OSError as exc:
             raise ApiError(409, str(exc)) from exc
 
-    def research_runs(self) -> dict:
-        return {"runs": [row for row in self.manager.list() if row.get("kind") == "research"]}
+    def research_runs(self, *, include_results: bool = True) -> dict:
+        return {"runs": [row for row in self.manager.list(include_results=include_results) if row.get("kind") == "research"]}
 
     def research_job(self, job_id: str):
         job = self.job(job_id)
@@ -2046,6 +2046,8 @@ class Handler(BaseHTTPRequestHandler):
             return
         app = self.app
         path = urlsplit(self.path).path
+        # List summaries are opt-in; old API clients still receive complete rows.
+        summary = parse_qs(urlsplit(self.path).query).get("summary") == ["1"]
         if app.ui_dir is not None and not (path == "/api" or path.startswith("/api/")):
             try:
                 return self._static()
@@ -2069,10 +2071,10 @@ class Handler(BaseHTTPRequestHandler):
             ("GET", r"/api/research/elmer/runtime", lambda: self._json(200, app.elmer_runtime_status())),
             ("POST", r"/api/research/elmer/install", lambda: self._json(202, app.elmer_runtime_install())),
             ("POST", r"/api/research/runs", lambda: self._json(201, app.research_submit(self._body()))),
-            ("GET", r"/api/research/runs", lambda: self._json(200, app.research_runs())),
+            ("GET", r"/api/research/runs", lambda: self._json(200, app.research_runs(include_results=not summary))),
             ("GET", r"/api/research/runs/([\w.-]+)", lambda i: self._json(200, app.research_detail(i))),
             ("POST", r"/api/research/runs/([\w.-]+)/cancel", self._cancel_research),
-            ("GET", r"/api/runs", lambda: self._json(200, {"runs": app.manager.list()})),
+            ("GET", r"/api/runs", lambda: self._json(200, {"runs": app.manager.list(include_results=not summary)})),
             ("POST", r"/api/runs", lambda: self._json(201, app.submit(self._body()))),
             ("GET", r"/api/runs/([\w.-]+)", lambda i: self._json(200, app.job(i).to_dict())),
             ("GET", r"/api/runs/([\w.-]+)/events", self._events),
