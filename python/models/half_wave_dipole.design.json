@@ -1,0 +1,148 @@
+{
+  "schema": "fairbeam.design/1",
+  "model": {
+    "id": "half-wave-dipole",
+    "name": "Half-wave dipole",
+    "description": "Centre-fed half-wave strip dipole in free space, 50 ohm port; the length follows f0."
+  },
+  "params": [
+    {
+      "key": "f0",
+      "default": 2.4,
+      "label": "Design frequency",
+      "unit": "GHz",
+      "min": 0.1,
+      "max": 30
+    },
+    {
+      "key": "k",
+      "default": 0.466,
+      "label": "Length in wavelengths (tip to tip)",
+      "unit": "",
+      "min": 0.3,
+      "max": 0.7
+    },
+    {
+      "key": "w",
+      "default": 1,
+      "label": "Strip width",
+      "unit": "mm",
+      "min": 0.1,
+      "max": 20
+    },
+    {
+      "key": "g",
+      "default": 1,
+      "label": "Feed gap",
+      "unit": "mm",
+      "min": 0.2,
+      "max": 10
+    },
+    {
+      "key": "lam",
+      "expr": "wavelength(f0)",
+      "label": "Free-space wavelength at f0",
+      "unit": "mm"
+    },
+    {
+      "key": "L",
+      "expr": "k * lam",
+      "label": "Dipole length (tip to tip)",
+      "unit": "mm"
+    }
+  ],
+  "simulation": {
+    "f_min": "f0 * 0.7",
+    "f_max": "f0 * 1.3",
+    "boundaries": "PML_8",
+    "end_criteria_db": -60
+  },
+  "materials": [
+    {
+      "name": "copper",
+      "kind": "metal"
+    }
+  ],
+  "parts": [
+    {
+      "name": "arms",
+      "material": "copper",
+      "label": "Dipole arms",
+      "primitives": [
+        {
+          "kind": "box",
+          "start": [
+            "-w/2",
+            "0",
+            "g/2"
+          ],
+          "stop": [
+            "w/2",
+            "0",
+            "L/2"
+          ]
+        },
+        {
+          "kind": "box",
+          "start": [
+            "-w/2",
+            "0",
+            "-L/2"
+          ],
+          "stop": [
+            "w/2",
+            "0",
+            "-g/2"
+          ]
+        }
+      ]
+    }
+  ],
+  "ports": [
+    {
+      "type": "lumped",
+      "number": 1,
+      "R": "50",
+      "start": [
+        "-w/2",
+        "0",
+        "-g/2+0.01"
+      ],
+      "stop": [
+        "w/2-0.5",
+        "0",
+        "g/2"
+      ],
+      "direction": "z"
+    }
+  ],
+  "resistors": [
+    {
+      "start": [
+        "w/2",
+        0,
+        "-g/2"
+      ],
+      "stop": [
+        "-w/2+0.5",
+        0,
+        "g/2-0.01"
+      ],
+      "direction": "z",
+      "name": "LE1",
+      "topology": "parallel",
+      "R": "50"
+    }
+  ],
+  "mesh": {
+    "mode": "design",
+    "refine_features": false,
+    "overrides": {}
+  },
+  "far_field": {
+    "enabled": true,
+    "frequencies": [
+      "f0"
+    ]
+  }
+}

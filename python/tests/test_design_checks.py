@@ -22,7 +22,7 @@ import designer_fixture  # noqa: E402
 from fairbeam.design import DesignError, blank_design, evaluate, prim_bbox  # noqa: E402
 from fairbeam.design_checks import CHEAP, END_DB_MAX, END_DB_MIN, EXPLANATIONS, PLACEMENT, _Lint, _first_crossing, _segments_cross, errors, lint, polygon_problems, run_blockers  # noqa: E402
 from fairbeam.jobs import JobManager  # noqa: E402
-from fairbeam.preview import build_preview, design_checks as preview_checks  # noqa: E402
+from fairbeam.preview import build_preview, design_checks as preview_checks, handle as preview_request  # noqa: E402
 from fairbeam.server import App, make_server  # noqa: E402
 
 TEMPLATES = Path(__file__).resolve().parents[1] / "templates"
@@ -228,6 +228,26 @@ class Checks(unittest.TestCase):
             self.assertEqual(rows["ports[0].stop"]["status"], expected)
             floating = [c["path"] for c in checks if c["code"] == "port-floating"]
             self.assertEqual("ports[0].stop" in floating, bool(gap))
+
+    def test_endpoint_contacts_identify_primitives_within_a_solid(self):
+        d = blank_design("contacts", "Contacts")
+        # Both shapes belong to the ground solid, but the port only touches the first.
+        d["parts"][1]["primitives"].append({"kind": "box", "start": [80, 80, 0], "stop": [90, 90, 0]})
+        contacts = []
+        lint(d, endpoint_contacts=contacts)
+        start = next(c for c in contacts if c["path"] == "ports[0].start")
+        self.assertEqual(start["parts"], ["gnd"])
+        self.assertEqual(start["primitives"], [{"part": "gnd", "index": 0, "path": "parts[1].primitives[0]"}])
+        response = preview_request({"op": "preview_design", "design": d})
+        self.assertTrue(response["ok"], response)
+        start = next(c for c in response["result"]["endpoint_contacts"] if c["path"] == "ports[0].start")
+        self.assertEqual(start["meshes"], [{"part": "gnd", "index": 0}])
+
+        d["ports"][0]["start"][2] = 0.0001
+        contacts = []
+        lint(d, endpoint_contacts=contacts)
+        start = next(c for c in contacts if c["path"] == "ports[0].start")
+        self.assertEqual((start["status"], start["parts"], start["primitives"]), ("floating", [], []))
 
     def test_transformed_copies_count_for_the_geometry(self):
         # an array of patches, each fed: the ports touch the mirrored copies only

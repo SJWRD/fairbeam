@@ -434,6 +434,10 @@ export interface EndpointContact {
   parts: string[];
   boundary: boolean;
   status: "touching" | "floating" | "unknown";
+  /** Indices refer to resolved checker geometry, not the rendered mesh array. */
+  primitives?: { part: string; index: number; path: string | null }[];
+  /** Matching primitive indices in the returned preview bundle. */
+  meshes?: { part: string; index: number }[];
 }
 
 export interface PreviewResult {

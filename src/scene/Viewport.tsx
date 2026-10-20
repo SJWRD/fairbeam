@@ -1219,8 +1219,11 @@ export default function Viewport() {
       const lift = cssVar("--al-copper-300");
       const pick = selectionColour();
       for (const p of parts) {
-        const contact = endpointContacts().some((row) => row.status === "touching" && row.parts.includes(p.part.name));
         for (const m of p.meshes) {
+          const index = p.part.primitives.indexOf(m.userData.primitive);
+          // Rejected builds leave the quick preview visible, in resolved design order.
+          const contact = endpointContacts().some((row) => row.status === "touching"
+            && (row.meshes ?? row.primitives ?? []).some((hit) => hit.part === p.part.name && hit.index === index));
           const mat = m.material as THREE.MeshStandardMaterial;
           const s = isPicked(p, m, sel, shape), inPart = p.part.name === sel, h = p.part.name === name;
           mat.emissive?.set(s || inPart ? pick : contact ? "#ffffff" : h ? lift : "#000000");

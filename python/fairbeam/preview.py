@@ -193,7 +193,17 @@ def build_preview(model_path: str | None, overrides: dict, design: dict | None =
     bundle = sim.to_bundle(module.MODEL, params, name=label)
     bundle["preview"] = True
     json.dumps(bundle, allow_nan=False)  # fail here, not in the server, on NaN/inf
-    return {"bundle": bundle, "build_s": round(time.time() - t0, 3)}
+    result = {"bundle": bundle, "build_s": round(time.time() - t0, 3)}
+    if design is not None:
+        # Preserve the rendered order, including wires expanded into several native shapes.
+        sources = getattr(sim, "_contact_primitives", {})
+        physical = {part["name"] for part in bundle["parts"]}
+        result["primitive_sources"] = {name: [] for name in physical}
+        for primitive in sim.csx.GetAllPrimitives():
+            name = primitive.GetProperty().GetName()
+            if name in physical:
+                result["primitive_sources"][name].append(sources.get(primitive.GetID()))
+    return result
 
 
 def handle(req: dict) -> dict:
@@ -226,6 +236,12 @@ def handle(req: dict) -> dict:
                 return resp
             contacts = []
             result["checks"] = design_checks(req["design"], req.get("overrides") or {}, result["bundle"], endpoint_contacts=contacts)
+            sources = result.pop("primitive_sources", {})
+            for contact in contacts:
+                hits = {(p["part"], p["index"]) for p in contact["primitives"]}
+                contact["meshes"] = [{"part": name, "index": i} for name, primitives in sources.items()
+                                     for i, source in enumerate(primitives)
+                                     if source and (source["part"], source["index"]) in hits]
             result["endpoint_contacts"] = contacts
             return {"ok": True, "result": result}
         if op == "describe":
