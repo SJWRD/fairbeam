@@ -16,8 +16,9 @@ Turkish students and Teknofest teams are welcome.
 - Product names, file formats and code stay as they are: Fairbeam, openEMS, CSXCAD, Python,
   Touchstone, `.design.json`, `.s2p`, Gerber, PDF, CSV, GPU/CPU, TE10.
 - Units and symbols stay: mm, GHz, dB, dBi, Ω, S/m, εr, tan δ, λ.
-- Short, natural UI Turkish. Buttons are imperatives ("Kaydet", "Çalıştır", "İptal"), menus use
-  the fixed command names below ("Farklı Kaydet…", "Geri Al"); other menu items use sentence case. Sentences end with a full stop.
+- Short, natural UI Turkish. Buttons are imperatives ("Kaydet", "Çalıştır", "İptal"). Native menus
+  use title case and the fixed command names below ("Farklı Kaydet…", "Geri Al", "Başlarken Kılavuzu").
+  Ordinary UI text uses sentence case. Sentences end with a full stop.
 - Suffixes on names and codes take an apostrophe: openEMS'in, Python'u, S11'in. Fairbeam
   is read with a front vowel (/iː/) before the final m and takes the front-vowel suffixes: Fairbeam'i, Fairbeam'e,
   Fairbeam'de, Fairbeam'den, Fairbeam'in, Fairbeam'le. Write them by hand; never add a suffix to the
