@@ -25,4 +25,3 @@ Her adım beklenen durumu doğrular ve sayfayı inceler: kapsayıcı dışına t
 `node scripts/check-scenarios.mjs S8 S9 S10 --compact --skip-run`, yerel masaüstü minimum boyutunda EN/TR Görünüm, görünür yüzey çıktıları ve RF formlarını çalıştırır. Rust pencere boyutlandırması 1024 × 700 mantıksal nokta kullanır; 728 noktalık çalışma alanında başlık çubuğu payıyla 1024 × 688'e iner. RF formları iki yükseklikte çalışır; İptal/Oluştur işlemleri iletişim kutusu içinde ve Tab ile ekranda erişilebilir kalmalıdır. Bu genişliklerde gezinti/özellikler panelleri üst katmandır; senaryolar gerektiğinde gerçek kenar şeritlerini açar. Varsayılan senaryo boyutları ve adım sayısı değişmez. Komut FDTD çözümü istemez.
 
 `node scripts/check-scenarios.mjs S9 --compact --skip-run --ribbon-file-audit`, EN/TR dillerinde 1024, 1280, 1440 pikselde Görünüm/Simülasyon simge hizasını da denetler; Diğer menüsünün dosya seçicisinden gerçek sonuç paketi açar. Ek denetim isteğe bağlıdır.
-
