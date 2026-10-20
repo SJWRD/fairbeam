@@ -302,6 +302,15 @@ coplanar with the original, with a rotation-axis/center or mirror-plane referenc
   of the selected far-field cut, the run time written without colons, and only letters, digits and
   `_ . + -`, so the name is valid on Windows and macOS. Touchstone files use the view `sparams`.
 
+The result toolbar and the exported package use different CSV layouts. Toolbar CSV has
+human-readable headers with units, efficiency in percent, CRLF line endings, and empty cells for
+missing or non-finite values. Package CSV uses ASCII `snake_case` headers, efficiency fractions
+(0–1), LF line endings, and `inf`, `-inf` or `nan` for non-finite values; missing values are empty.
+Both use comma-separated columns and a decimal point, regardless of the UI language. In Excel
+with Turkish or other decimal-comma settings, import with **Data › From Text/CSV** and choose
+comma as the delimiter and decimal point for numeric conversion; the files contain no `sep=`
+directive. Compare the header and units before combining the two exports.
+
 The **Filter** box at the top keeps the items whose name or detail contains every word typed, with
 the folders above them; Escape clears it. The tree works from the keyboard: Up/Down move, Right
 opens or steps in, Left closes or goes to the parent, Home/End jump, Enter selects.
