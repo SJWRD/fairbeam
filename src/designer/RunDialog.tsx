@@ -13,6 +13,7 @@ import { PreflightNote } from "./PreflightNote";
 import { addPort, applyFix, checks, defaultDesignerSession, dirty, draft, errorCount, file, focusPath, saving } from "./store";
 import { openDesignerOptimize } from "./OptimizeDialog";
 import { readGeneralSettings } from "../lib/generalSettings";
+import { isDesktopShell } from "../lib/telemetry";
 import { autoThreads } from "../lib/autoThreads";
 import { t } from "../i18n";
 import { checkFixLabel, checkTitle } from "./checkText";
@@ -82,7 +83,7 @@ export default function RunDialog() {
     setBusy(true);
     try {
       if (serverState() !== "online" && !(await probeServer())) {
-        if (dialogActive) setErr(t("run.err.server"));
+        if (dialogActive) setErr(t(isDesktopShell() ? "run.err.server.desktop" : "run.err.server"));
         return;
       }
       if (!dialogActive || !defaultDesignerSession.asyncState.isDraftCurrent(request)) return;

@@ -542,7 +542,7 @@ def check_design(d: dict) -> None:
         w = f"parts[{i}]"
         name = _need(pt, "name", w, str)
         if not name or is_reserved_name(name) or name in parts:
-            raise DesignError(f"part name {name!r} is empty, reserved or used twice", f"{w}.name")
+            raise DesignError(f"solid name {name!r} is empty, reserved or used twice", f"{w}.name")
         parts.add(name)
         if pt.get("material") not in mats:
             raise DesignError(f"unknown material {pt.get('material')!r}", f"{w}.material")

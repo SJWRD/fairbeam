@@ -54,7 +54,7 @@ export function efficiencyWarningUi(ff: FarField): string | null {
     return t(toleranceMatch[1] ? "runText.efficiency.losslessWithin" : "runText.efficiency.losslessOutside", {
       raw: fmt.fixed(raw * 100, 1),
       delta: fmt.fixed((raw - 1) * 100, 1),
-      tolerance: toleranceMatch[1] ?? toleranceMatch[2],
+      tolerance: fmt.num(Number(toleranceMatch[1] ?? toleranceMatch[2]), 2),
       frequency: fmt.fixed(ff.f / 1e9, 3),
     });
   }

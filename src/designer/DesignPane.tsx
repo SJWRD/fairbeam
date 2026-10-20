@@ -28,7 +28,7 @@ import { deleteVertex, insertVertexAt, pickedVertex, pickVertex, toggleVertexEdi
 import { edgeMidpoint, isVertexPrimitive } from "./vertexModel";
 import { saveDesignMaterial } from "./userMaterialsStore";
 import { conductorLabel, libraryLabel, libraryNote, materialKindLabel } from "./MaterialLibrary";
-import { hasKey, localeTag, t } from "../i18n";
+import { fmt as numberFormat, hasKey, localeTag, t } from "../i18n";
 import NumberField from "../components/NumberField";
 import { OptimizationInspector, ParamInspector, RunInspector } from "./PropsExtras";
 import { resultFocus } from "./resultFocus";
@@ -858,7 +858,7 @@ function PrimitiveInspector(props: { i: number; j: number; editLabel?: boolean }
                   <Plus size={13} aria-hidden="true" /> {t("props.point")}
                 </button>
               </fieldset>
-              <p class="note">{t("props.wire.note")}</p>
+              <p class="note">{t("props.wire.note", { min: numberFormat.num(0.02) })}</p>
             </>
           );
         })()}

@@ -6,7 +6,7 @@
 
 import { convergenceText, efficiencyWarning, energyText } from "../src/lib/run.ts";
 import { convergenceTextUi, efficiencyWarningUi, energyTextUi } from "../src/lib/runText.ts";
-import { setLanguage } from "../src/i18n/index.ts";
+import { setDecimalChoice, setLanguage } from "../src/i18n/index.ts";
 
 let checks = 0;
 let failures = 0;
@@ -73,11 +73,25 @@ const farfield = {
   prad_w: 1.1, pacc_w: 1, qa_warnings: ["radiation efficiency 110.0 % at 2.000 GHz exceeds 100 %"],
 };
 const trWarning = efficiencyWarningUi(farfield);
-has(trWarning, "ışıma verimi", "Turkish UI efficiency warning");
+has(trWarning, "ışıma verimliliği", "Turkish UI efficiency warning");
 lacks(trWarning, "radiation efficiency", "Turkish UI efficiency warning: no English copy");
 has(convergenceText(converged, -50, limits), "Converged", "English report remains English under Turkish UI");
 has(energyText({ db: -60, bound: true, timestep: 1234 }), "at timestep", "English report energy remains English under Turkish UI");
 has(efficiencyWarning(farfield), "radiation efficiency", "English report warning remains English under Turkish UI");
+const lossless = {
+  ...farfield, rad_efficiency: 1, rad_efficiency_raw: 1.008,
+  qa_warnings: ["lossless model: within the 2.5 % tolerance"],
+};
+for (const choice of ["language", "comma", "point"]) {
+  setDecimalChoice(choice);
+  const separator = choice === "point" ? "." : ",";
+  const note = efficiencyWarningUi(lossless);
+  has(note, `%2${separator}5`, `Turkish tolerance ${choice}`);
+  has(note, `%100${separator}8`, `Turkish measured efficiency ${choice}`);
+  lacks(note, "2.5 %", `Turkish tolerance placement ${choice}`);
+  has(lossless.qa_warnings[0], "2.5 %", `stored warning remains unchanged ${choice}`);
+}
+setDecimalChoice("language");
 setLanguage("en");
 has(convergenceTextUi(converged, -50, limits), "Converged", "English UI copy remains unchanged");
 

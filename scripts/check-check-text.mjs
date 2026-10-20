@@ -17,7 +17,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { delimiter, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { setLanguage } from "../src/i18n/index.ts";
+import { setDecimalChoice, setLanguage } from "../src/i18n/index.ts";
 import { designChecks } from "../src/designer/checks.ts";
 import { checkExplain, checkFixLabel, checkMessage, checkTemplateEnglish, matchCheckMessage } from "../src/designer/checkText.ts";
 
@@ -104,7 +104,7 @@ const SAMPLES = [
     "bu çalıştırma yaklaşık 233.727 zaman adımı isterdi (en küçük hücrenin (0,0117 mm) belirlediği 31 fs zaman adımıyla uyarım darbesi (1,81 ns) ve sönümlenmesi), 1,56 M hücrede: CPU'da kabaca 24 dk, çalıştırma bütçesinden fazla. Çözüm: ince metali levha olarak modelleyin ya da en ince ayrıntıyı kabalaştırın"],
   ["run-too-long", "this run would need about 233,727 timesteps (the 1.81 ns excitation pulse and its decay at a timestep of 31 fs) on 1.56 M cells: roughly 1.4 h on a CPU, more than the run budget. To fix: model thin metal as sheets or coarsen the finest detail", null],
   ["smallest-cell", "the smallest cell, 0.0116 mm along z at z = 0.0117, comes from 'ground': 35 µm metal kept as a volume",
-    "en küçük hücre, z ekseninde 0,0117 konumunda 0,0116 mm: 'ground' parçasından geliyor, 35 µm kalınlıkta hacim olarak tutulan metal"],
+    "en küçük hücre, z ekseninde 0,0117 konumunda 0,0116 mm: 'ground' katısından geliyor, 35 µm kalınlıkta hacim olarak tutulan metal"],
   ["smallest-cell", "the smallest cell, 0.05 mm along x at x = 24.1, comes from 'substrate': 50 µm material", null],
   ["smallest-cell", "the smallest cell is 0.0117 mm along y at y = -3.2", null],
   ["mesh-feature", "a feature 0.035 mm thick along z falls between mesh lines: the automatic mesh cannot resolve it and FDTD drops it (make it thicker or a sheet, or raise cells per wavelength)", null],
@@ -180,7 +180,10 @@ for (const { side, c } of all) {
   if (counted.has(id)) continue;
   const r = tryMessage(c.code, c.message, `${side} ${c.code}: ${c.message}`);
   counted.set(id, r.matched);
+  // With point display the translated template is unchanged; comma display is checked below.
+  setDecimalChoice("point");
   check(checkExplain(c) === tr[`checks.explain.${c.code}`], `${side} ${c.code}`, "explanation not shown in Turkish");
+  setDecimalChoice("language");
 }
 let samplesDone = 0;
 for (const [code, message, want] of SAMPLES) {
@@ -205,6 +208,28 @@ check(pe.startsWith("The run server is not reachable. ") && pe !== PREVIEW_EXPLA
 // a server wording fairbeam does not know stays English, also in Turkish
 check(checkMessage({ code: "radius", message: "the radius must be positive" }) === "the radius must be positive", "unknown wording", "must stay as it is");
 check(checkExplain({ code: "radius", explain: "Another text." }) === "Another text.", "unknown explanation", "must stay as it is");
+// Display literals follow the decimal preference without touching captured code or server data.
+const metal = { code: "metal-thickness", explain: en["checks.explain.metal-thickness"] };
+const criterion = {
+  code: "end-criterion",
+  message: "-5 dB is above the -10 dB limit: the run would stop before the field energy has decayed by 10 dB (-40 quick, -60 accurate)",
+};
+const rawExpression = { code: "expr", message: "unknown name 'part-1.5' in 'part-1.5 + -0.035'" };
+for (const preference of ["language", "comma", "point"]) {
+  setDecimalChoice(preference);
+  const expectedNumber = preference === "point" ? "0.035" : "0,035";
+  const explanation = checkExplain(metal);
+  check(explanation.split(expectedNumber).length === 3, `literal ${preference}`, "both copper thickness literals must use the chosen separator");
+  const message = checkMessage(criterion);
+  const minus = preference === "point" ? "-" : "−";
+  check(message.includes(`${minus}40`) && message.includes(`${minus}60`), `literal minus ${preference}`, "advice and captured values must use the same minus convention");
+  const raw = checkMessage(rawExpression);
+  check(raw.includes("'part-1.5'") && raw.includes("'part-1.5 + -0.035'"), `raw ${preference}`, "names and expressions must remain byte-identical");
+}
+setLanguage("en");
+setDecimalChoice("comma");
+check(checkExplain(metal) === metal.explain && checkMessage(criterion) === criterion.message, "English machine text", "English check parity remains unchanged even with comma display selected");
+setDecimalChoice("language");
 setLanguage("en");
 
 const translated = [...counted.values()].filter(Boolean).length;
