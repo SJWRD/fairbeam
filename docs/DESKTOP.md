@@ -285,6 +285,13 @@ Menus (`app_menu` in `src-tauri/src/main.rs`; the viewer answers each action thr
 - **Help**: Keyboard Shortcuts, About Fairbeam, Getting Started Guide, Report a Problem…, Check
   for updates.
 
+On macOS these are real menu key equivalents: Cmd+N for New, Cmd+O for Open, Cmd+S,
+Shift+Cmd+S, Ctrl+Shift+1/2/3 for panels, Ctrl+F1 for the ribbon, and
+Cmd+=/Cmd+-/Cmd+0 for zoom. A handled page shortcut prevents the native fallback, so one key
+press performs one action; New and Open are owned by the native menu. The New command opens
+the Start creation choices without discarding the current design. Windows keeps its existing
+page shortcut ownership. The shortcut sheet lists the native New/Open bindings only on Mac.
+
 External links: the viewer page has a loopback-only Tauri capability
 (`src-tauri/capabilities/viewer.json`) for a fixed list of shell commands: showing and saving its
 own downloads, the General settings values (updates, GPU build, opening the workspace folder),
@@ -314,6 +321,14 @@ process.
 | WebView | WKWebView (system) | WebView2 (bootstrapper included) |
 | Build | `npm run desktop:build` on a Mac | `npm run desktop:build` on Windows (Rust MSVC toolchain) |
 | Signing | Developer ID, notarized and stapled (a plain `npm run desktop:build` is only ad-hoc signed; [RELEASES.md](RELEASES.md)) | none: the installer is not code-signed (SmartScreen warns; More info › Run anyway) |
+
+The Mac bundle merges `src-tauri/Info.plist`: English is its development language and English
+and Turkish are declared localizations, with mixed framework localizations allowed. System
+Open/Save panels, text context menus and AppKit-provided items follow macOS's preferred app
+language. Fairbeam's in-app Language setting still controls its own UI; it does not overwrite
+`AppleLanguages`. The bundle category is Developer Tool. After changing these declarations,
+verify the generated bundle with `plutil -p` and try Open/Save and text menus on a Mac whose
+preferred language is Turkish; source checks cannot verify AppKit's rendered system strings.
 
 On Windows, `src-tauri/tauri.windows.conf.json` is merged over `tauri.conf.json` (JSON
 merge patch: arrays are replaced). It sets the `nsis` target, the icons without `.icns`, WebView2

@@ -1845,8 +1845,29 @@ fn action_enabled(handle: &AppHandle, id: &str) -> bool {
     enabled
 }
 
+fn native_action_accelerator(id: &str, macos: bool) -> Option<&'static str> {
+    // WKWebView's prevented keys stay with the page; unhandled keys reach AppKit. Keep the
+    // existing WebView2 shortcut ownership until its native accelerator path is verified.
+    if !macos { return None; }
+    match id {
+        "file-new" => Some("CmdOrCtrl+N"),
+        "file-open" => Some("CmdOrCtrl+O"),
+        "file-save" => Some("CmdOrCtrl+S"),
+        "file-save-as" => Some("CmdOrCtrl+Shift+S"),
+        "view-tree" => Some("Ctrl+Shift+1"),
+        "view-dock" => Some("Ctrl+Shift+2"),
+        "view-properties" => Some("Ctrl+Shift+3"),
+        "view-ribbon" => Some("Ctrl+F1"),
+        "view-zoom-in" => Some("CmdOrCtrl+="),
+        "view-zoom-out" => Some("CmdOrCtrl+-"),
+        "view-zoom-reset" => Some("CmdOrCtrl+0"),
+        _ => None,
+    }
+}
+
 fn action_item(handle: &AppHandle, id: &str, label: &str) -> tauri::Result<MenuItem<tauri::Wry>> {
-    MenuItem::with_id(handle, id, label, action_enabled(handle, id), None::<&str>)
+    MenuItem::with_id(handle, id, label, action_enabled(handle, id),
+        native_action_accelerator(id, cfg!(target_os = "macos")))
 }
 
 fn set_menu_item_enabled_in_items(
@@ -1928,16 +1949,6 @@ fn app_menu(handle: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
     // the menus in the viewer's language (src-tauri/src/i18n.rs)
     let lang = i18n::lang(&load_settings(handle));
     let tx = |key: &str| i18n::text(lang, key);
-    let command = if cfg!(target_os = "macos") {
-        "⌘"
-    } else {
-        "Ctrl+"
-    };
-    let control = if cfg!(target_os = "macos") {
-        "⌃"
-    } else {
-        "Ctrl+"
-    };
     let close_window = MenuItem::with_id(
         handle,
         "close-window",
@@ -1986,11 +1997,7 @@ fn app_menu(handle: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
         action_item(handle, "file-import-cst", &tx("file-import-cst"))?,
         action_item(handle, "file-import-pcb", &tx("file-import-pcb"))?,
         action_item(handle, "file-open", &tx("file-open"))?,
-        action_item(
-            handle,
-            "file-save",
-            &format!("{}    {command}S", tx("file-save")),
-        )?,
+        action_item(handle, "file-save", &tx("file-save"))?,
         action_item(handle, "file-save-as", &tx("file-save-as"))?,
         action_item(handle, "file-close", &tx("file-close"))?,
         #[cfg(target_os = "macos")]
@@ -2035,22 +2042,10 @@ fn app_menu(handle: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
         ("view-start", tx("view-start")),
         ("view-design", tx("view-design")),
         ("view-examples", tx("view-examples")),
-        (
-            "view-tree",
-            format!("{}    {control}Shift+1", tx("view-tree")),
-        ),
-        (
-            "view-dock",
-            format!("{}    {control}Shift+2", tx("view-dock")),
-        ),
-        (
-            "view-properties",
-            format!("{}    {control}Shift+3", tx("view-properties")),
-        ),
-        (
-            "view-ribbon",
-            format!("{}    {control}F1", tx("view-ribbon")),
-        ),
+        ("view-tree", tx("view-tree")),
+        ("view-dock", tx("view-dock")),
+        ("view-properties", tx("view-properties")),
+        ("view-ribbon", tx("view-ribbon")),
         ("view-iso", tx("view-iso")),
         ("view-top", tx("view-top")),
         ("view-front", tx("view-front")),

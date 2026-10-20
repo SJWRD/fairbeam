@@ -16,6 +16,7 @@ import { health, meshFreshness, setRunOpen } from "../runner/store";
 import { setCstImportOpen } from "../lib/cstImport";
 import { setPcbImportOpen } from "../lib/pcbImport";
 import { CLOSE_KEY, requestCloseProject } from "./CloseProject";
+import { desktopBrowserKey } from "../lib/reloadGuard";
 import { bundle, layers, setLayers, setSelectedPart, setSelectedShape, type Layers as LayerState } from "../state";
 import { SAVE_KEY } from "../editor/store";
 import { openSaveAs } from "./SaveAsDialog";
@@ -1025,8 +1026,9 @@ export function DesignKeys() {
       if (matchesShortcut("saveAs", e)) { e.preventDefault(); if (!e.repeat && !t?.closest?.(".dialog, .scrim, dialog[open]")) openSaveAs(); return; }
       // Save remains ahead of the field/dialog/drawing guard (`if (inField || inOverlay || tool()) return;`).
       // Tree and viewport handlers run first and own their local keys.
-      if (e.defaultPrevented && !(desktop && mod && ["t", "n", "w", "r"].includes(k))) return;
-      if (desktop && ((mod && ["t", "n", "w", "r"].includes(k)) || e.key === "F5")) e.preventDefault();
+      const browserKey = desktop && desktopBrowserKey(e);
+      if (e.defaultPrevented && !browserKey) return;
+      if (browserKey) e.preventDefault();
       const inField = !!t?.closest?.("input, textarea, select, [contenteditable=true]");
       const inOverlay = !!t?.closest?.(".dialog, .scrim, .rb-pop, [role=menu]");
       if (desktop && inField && mod && ["d", "b", "e"].includes(k)) e.preventDefault();
