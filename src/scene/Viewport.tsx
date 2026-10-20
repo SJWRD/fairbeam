@@ -344,7 +344,12 @@ export default function Viewport() {
       shown.forEach(({ label: l }, i) => { if (lift[i] > 0) l.element.style.transform += ` translateY(${-lift[i]}px)`; });
     }
 
+    let contactMaterials: THREE.MeshStandardMaterial[] = [];
     function render() {
+      const pulseContacts = contactMaterials.length > 0 && hostVisible && !document.hidden
+        && !motionQuery.matches && centerView() !== "drawing" && !rendered?.active;
+      const contactIntensity = pulseContacts ? 0.125 + 0.125 * Math.cos(performance.now() * 2 * Math.PI / 2500) : 0.05;
+      for (const material of contactMaterials) material.emissiveIntensity = contactIntensity;
       renderer.setScissorTest(false);
       renderer.setViewport(0, 0, size.w, size.h);
       // ports are drawn in screen pixels: rescale them for this view (a few meshes, no geometry rebuild)
@@ -369,6 +374,7 @@ export default function Viewport() {
       renderer.autoClear = true;
       flushGraveyard();
       updateScaleBar();
+      if (pulseContacts) requestRender();
     }
 
     function updateScaleBar() {
@@ -405,12 +411,16 @@ export default function Viewport() {
     const io = new IntersectionObserver(([entry]) => {
       hostVisible = !!entry?.isIntersecting && entry.intersectionRatio > 0;
       if (!hostVisible) setPhasePlaying(false);
+      requestRender();
     });
     io.observe(host);
     let phaseTimer: ReturnType<typeof setInterval> | undefined;
     const motionQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
     const stopPhaseTimer = () => { clearInterval(phaseTimer); phaseTimer = undefined; };
-    const onMotionChange = () => { if (motionQuery.matches || document.hidden) setPhasePlaying(false); };
+    const onMotionChange = () => {
+      if (motionQuery.matches || document.hidden) setPhasePlaying(false);
+      requestRender();
+    };
     motionQuery.addEventListener("change", onMotionChange);
     document.addEventListener("visibilitychange", onMotionChange);
     createEffect(() => {
@@ -1218,6 +1228,7 @@ export default function Viewport() {
     createEffect(on([hoverPart, selectedPart, selectedShape, partsTick, themeTick, theme, endpointContacts], ([name, sel, shape]) => {
       const lift = cssVar("--al-copper-300");
       const pick = selectionColour();
+      contactMaterials = [];
       for (const p of parts) {
         for (const m of p.meshes) {
           const index = p.part.primitives.indexOf(m.userData.primitive);
@@ -1226,8 +1237,9 @@ export default function Viewport() {
             && (row.meshes ?? row.primitives ?? []).some((hit) => hit.part === p.part.name && hit.index === index));
           const mat = m.material as THREE.MeshStandardMaterial;
           const s = isPicked(p, m, sel, shape), inPart = p.part.name === sel, h = p.part.name === name;
-          mat.emissive?.set(s || inPart ? pick : contact ? "#ffffff" : h ? lift : "#000000");
-          mat.emissiveIntensity = s ? 0.55 : inPart ? 0.15 : contact ? 0.05 : h ? 0.25 : 0;
+          mat.emissive?.set(s || inPart ? pick : h || contact ? lift : "#000000");
+          mat.emissiveIntensity = s ? 0.55 : inPart ? 0.15 : h ? 0.25 : contact ? 0.05 : 0;
+          if (contact && !s && !inPart && !h) contactMaterials.push(mat);
         }
       }
       requestRender();
