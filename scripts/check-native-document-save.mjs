@@ -259,3 +259,5 @@ try {
  disposeEffects();io.dispose();core.dispose();
  for(const [key,descriptor] of previous){if(descriptor)Object.defineProperty(globalThis,key,descriptor);else delete globalThis[key];}
 }
+
+await import("./check-server-messages.mjs");

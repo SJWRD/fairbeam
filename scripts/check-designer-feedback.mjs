@@ -14,6 +14,7 @@ const root = fileURLToPath(new URL('../', import.meta.url)).replaceAll('\\', '/'
 // The picker harness owns browser globals and timers; keep those fixtures out of
 // this suite's independently bundled designer store.
 execFileSync(process.execPath, [fileURLToPath(new URL('./check-model-picker-discard.mjs', import.meta.url))], { stdio: 'inherit' });
+execFileSync(process.execPath, [fileURLToPath(new URL('./check-design-submission-owner.mjs', import.meta.url))], { stdio: 'inherit' });
 const built = await build({
   root, configFile: false, logLevel: 'silent', resolve: { conditions: ['browser'] },
   plugins: [{
@@ -268,4 +269,5 @@ ok(/selectAddedFeed\(\{ type: "port", i: draft\.ports\.length - 1 \}\); props\.c
 ok(/\.\.\.boundsPortTarget\(i\)/.test(src('scene/Viewport.tsx')), 'the menu key in the 3D view offers a port too');
 
 console.log(`check-designer-feedback: ${checks} checks passed (components, tree port start, framing new feeds, design/results separation, banners).`);
+await import('./check-designer-input-feedback.mjs');
 process.exit(0);

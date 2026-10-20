@@ -156,6 +156,8 @@ async function saveOwned(f: ModelSource): Promise<boolean> {
     setMessage(
       v.valid
         ? { tone: "good", text: t("editor.saved", { params: v.model?.params?.length ?? 0 }) }
+        : v.error?.stage === "timeout" || v.error?.stage === "worker"
+        ? { tone: "warn", text: t("editor.savedUnvalidated") }
         : { tone: "critical", text: t(v.error?.stage === "build" ? "editor.savedNoBuild" : "editor.savedNoLoad") },
     );
     refreshHistory();
@@ -226,6 +228,8 @@ export async function createModel(body: { id: string; name?: string; template?: 
   setMessage(
     res.validation.valid
       ? { tone: "good", text: t("editor.created", { file: res.file, key: SAVE_KEY }) }
+      : res.validation.error?.stage === "timeout" || res.validation.error?.stage === "worker"
+      ? { tone: "warn", text: t("editor.savedUnvalidated") }
       : { tone: "critical", text: t("editor.createdNoLoad", { file: res.file }) },
   );
   setPanelTab("code");

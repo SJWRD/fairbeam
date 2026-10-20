@@ -22,8 +22,8 @@ assert.equal(results.length, 2);
 console.log("Native download completion: URL correlation, cancellation, cleanup and single delivery passed");
 
 const calls = [];
-window.__TAURI__ = { core: { invoke: async (command, args) => {
-  calls.push({ command, args });
+window.__TAURI__ = { core: { invoke: async (command, args, options) => {
+  calls.push({ command, args, ...(options ? {options} : {}) });
   return calls.length === 1 ? { status: "saved", path: "C:/exports/report.csv" } : { status: "cancelled" };
 } } };
 const nativeSaved = await saveDownload("report.csv", "hello", "text/csv");
@@ -45,8 +45,20 @@ for (const text of ["", "\ufeffİzmir 😀\n", "unpaired: \ud800 end"]) {
 }
 for (const data of [new Uint8Array([0, 255, 128]), new Blob([new Uint8Array([0, 255, 128])])]) {
   await saveDownload("binary.zip", data);
-  assert.deepEqual(calls.at(-1).args, {name: "binary.zip", bytes: [0, 255, 128], extension: "zip"});
+  assert.ok(calls.at(-1).args instanceof Uint8Array, "binary exports use raw IPC, never a number array");
+  assert.deepEqual([...calls.at(-1).args], [0, 255, 128]);
+  assert.deepEqual(calls.at(-1).options, {headers:{"x-fairbeam-name":"binary.zip", "x-fairbeam-extension":"zip"}});
 }
+// A subarray must not accidentally send bytes before/after its own view.
+const backing = new Uint8Array([99,0,255,128,77]), view = backing.subarray(1,4);
+await saveDownload("İzmir 😀.zip",view);
+assert.equal(calls.at(-1).args,view,"the raw IPC body does not clone or expand the JS view");
+assert.equal(decodeURIComponent(calls.at(-1).options.headers["x-fairbeam-name"]),"İzmir 😀.zip");
+const beforeOversize = calls.length;
+await assert.rejects(saveDownload("large.zip",new Uint8Array(200*1024*1024+1)),/200 MiB/);
+assert.equal(calls.length,beforeOversize,"oversized exports are rejected before IPC");
+window.__TAURI__.core.invoke = async () => { throw {code:"export_reserved_name",error:"English native fallback"}; };
+await assert.rejects(saveDownload("NUL.txt","content"),/reserved by the operating system/);
 window.__TAURI__.core.invoke = async () => { throw new Error("disk unavailable"); };
 await assert.rejects(saveDownload("failed.txt", "content"), /disk unavailable/);
 

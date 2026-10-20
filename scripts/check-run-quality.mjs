@@ -107,7 +107,7 @@ assert.equal(runQuality(preview), null, "a geometry preview has no verdict");
   assert.ok(/RunQualityBanner/.test(src("designer/RunDock.tsx")) && /<RunQualityBadge q=\{bundleQuality\(row\.bundle\)\}/.test(src("designer/RunDock.tsx")), "the Run tab has the banner and the Runs table the badge");
   assert.ok(/<RunQualityBadge compact q=\{runQualityOf\(/.test(src("designer/NavTree.tsx")), "the navigation tree marks the run");
   const design = src("runner/designRun.ts");
-  assert.ok(/verdict === "not-converged"/.test(design) && /&& !stops\) setDesignDockTab\("runs"\)/.test(design), "a run that did not converge keeps the dock on its Run tab");
+  assert.ok(/verdict === "not-converged"/.test(design) && /&& !stops\) showDesignDockTab\("runs"\)/.test(design), "a run that did not converge keeps the dock on its Run tab; an automatic switch preserves collapsed state");
   const en = JSON.parse(readFileSync(new URL("../src/i18n/en.json", import.meta.url), "utf8"));
   const tr = JSON.parse(readFileSync(new URL("../src/i18n/tr.json", import.meta.url), "utf8"));
   for (const key of ["quality.banner.notConverged", "quality.banner.suspicious", "quality.reason.timestepLimit", "quality.reason.timestepLimitPort", "quality.reason.s11", "quality.reason.efficiency", "quality.badge.notConverged", "quality.badge.check"]) {

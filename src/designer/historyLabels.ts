@@ -6,6 +6,12 @@ import type { Design } from "./types.ts";
 /** Consecutive edits of the same field of the same object within this long are one step. */
 export const MERGE_WINDOW_MS = 1500;
 
+/** Stable system history entries also follow a language change after restoration. */
+export function historyLabel(label: string): string {
+  if (!label || label === "Initial state") return t("history.initialState");
+  return label === "Restored backup" ? t("history.restoredBackup") : label;
+}
+
 export interface MergeState { key: string; at: number; el: unknown }
 const isTextInput = (el: unknown): boolean => {
   const e = el as { tagName?: string; isContentEditable?: boolean } | null;

@@ -74,7 +74,7 @@ export default function ModelPanel() {
                   {(p) => {
                     const kind = partKind(p);
                     // the line under the name may be cut by the panel width: its full text is the tooltip
-                    const subText = `${kind === "metal" ? "PEC" : kind === "dielectric" ? `εr ${num(p.material?.eps_r, 2)}` : p.type} · ${dims(p.bbox)}`;
+                    const subText = () => `${kind === "metal" ? "PEC" : kind === "dielectric" ? `εr ${num(p.material?.eps_r, 2)}` : p.type} · ${dims(p.bbox, modelToMm(b()))}`;
                     return (
                       <li
                         class="part-row"
@@ -85,10 +85,10 @@ export default function ModelPanel() {
                         <span class={`swatch swatch-${kind}`} aria-hidden="true" />
                         <span class="part-text">
                           <span class="part-name">{p.label ?? p.name}</span>
-                          <span class="part-sub" title={subText}>
+                          <span class="part-sub" title={subText()}>
                             {kind === "metal" ? "PEC" : kind === "dielectric" ? `εr ${num(p.material?.eps_r, 2)}` : p.type}
                             {" · "}
-                            <span class="mono">{dims(p.bbox)}</span>
+                            <span class="mono">{dims(p.bbox, modelToMm(b()))}</span>
                           </span>
                         </span>
                         <button
@@ -110,7 +110,7 @@ export default function ModelPanel() {
                     <span class="swatch swatch-ground" aria-hidden="true" />
                     <span class="part-text">
                       <span class="part-name">{t("model.infiniteGround")}</span>
-                      <span class="part-sub">{t("model.pecBoundary")} · {b().half_space!.axis} = {fmt.num(b().half_space!.position, 6)} mm</span>
+                      <span class="part-sub">{t("model.pecBoundary")} · {b().half_space!.axis} = {fmt.num(b().half_space!.position * modelToMm(b()), 6)} mm</span>
                     </span>
                   </li>
                 </Show>
@@ -208,7 +208,7 @@ export default function ModelPanel() {
                     aria-label={t("results.mesh.planePosition")}
                   />
                   <span class="mono mesh-pos">
-                    {meshPlane.axis} = {num(axisLines()[meshPlane.index], 3)} mm
+                    {meshPlane.axis} = {num(axisLines()[meshPlane.index] * modelToMm(b()), 3)} mm
                   </span>
                 </div>
               </Show>

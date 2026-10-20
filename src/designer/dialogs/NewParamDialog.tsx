@@ -11,6 +11,7 @@ import { shown as fmt } from "../displayNumber.ts";
 import { toExpr } from "../draw";
 import type { DesignParam } from "../types";
 import { t } from "../../i18n";
+import { parameterErrorTitle } from "../checkText";
 
 /** A sentence with one code-styled name: `id` is a key with a {key} placeholder. */
 function WithKey(props: { id: string; name: string; bold?: boolean }) {
@@ -56,7 +57,7 @@ function NewParamDialog(props: { ask: ParamAsk; onDone: () => void }) {
   const keyError = () => {
     const k = key().trim();
     const bad = paramKeyError(k);
-    if (bad) return bad;
+    if (bad) return parameterErrorTitle(bad);
     if (draft.params.some((q) => q.key === k)) return t("newParam.error.exists");
     return "";
   };
@@ -106,7 +107,7 @@ function NewParamDialog(props: { ask: ParamAsk; onDone: () => void }) {
             <input autocomplete="off" ref={valueInput} class="rp-input dz-input mono" type="text" spellcheck={false} value={value()} placeholder={t("newParam.valuePlaceholder")}
               aria-invalid={tried() && !!evaluated().error} onInput={(e) => setValue(e.currentTarget.value)} />
             <span class="dz-value" classList={{ "dz-bad": tried() && !!evaluated().error }}>
-              {evaluated().error ? (tried() || value().trim() ? evaluated().error : "") : typeof toExpr(value()) === "number" ? "" : t("newParam.derived", { value: derivedValue(evaluated().value!) })}
+              {evaluated().error ? (tried() || value().trim() ? parameterErrorTitle(evaluated().error!) : "") : typeof toExpr(value()) === "number" ? "" : t("newParam.derived", { value: derivedValue(evaluated().value!) })}
             </span>
           </label>
           <div class="dz-pair">
@@ -157,6 +158,6 @@ export function InlineParam(props: { ask: ParamAsk; onCreated?: () => void }) {
       style={{ "min-width": `min(${t("newParam.inlinePlaceholder").length + 3}ch, 100%)` }}
       aria-invalid={tried() && !!result().error} placeholder={t("newParam.inlinePlaceholder")} onInput={(e) => setValue(e.currentTarget.value)} />
     <span>{props.ask.unit}</span><button type="button" class="btn btn-sm" onClick={submit}>{t("newParam.create")}</button>
-    <Show when={tried() && result().error}><span class="dz-bad" role="alert">{result().error}</span></Show>
+    <Show when={tried() && result().error}><span class="dz-bad" role="alert">{parameterErrorTitle(result().error!)}</span></Show>
   </div>;
 }

@@ -8,7 +8,7 @@
 // "fairbeam:download" window event, matched to the request by its exact URL, so there the message
 // becomes "Saved to <path>" (with Show in folder) or failed/cancelled.
 import { t } from "../i18n/index.ts";
-import { errorText } from "./errorText.ts";
+import { nativeErrorMessage } from "./nativeErrors.ts";
 
 export type DownloadStatus = "requested" | "saved" | "cancelled" | "failed";
 
@@ -115,8 +115,11 @@ async function invokeSaveDownload(name: string, bytes: Uint8Array, asText = fals
   const extension = name.includes(".") ? name.slice(name.lastIndexOf(".") + 1).toLowerCase() : "";
   // After the size check: preserve TextEncoder's replacement of lone UTF-16 surrogates
   // and any leading BOM, without expanding text exports into a JSON array of byte numbers.
-  const payload = asText ? { text: new TextDecoder("utf-8", { ignoreBOM: true }).decode(bytes) } : { bytes: Array.from(bytes) };
-  const result = await invoke("save_download", { name, ...payload, extension }) as { status?: string; path?: string };
+  // Binary bodies stay binary across IPC. Percent-encoding the name keeps Unicode out of
+  // HTTP header values; the shell decodes it and applies the same filename/path checks.
+  const result = await (asText
+    ? invoke("save_download", { name, text: new TextDecoder("utf-8", { ignoreBOM: true }).decode(bytes), extension })
+    : invoke("save_download", bytes, { headers: { "x-fairbeam-name": encodeURIComponent(name), "x-fairbeam-extension": extension } })).catch(error => { throw new Error(nativeErrorMessage(error)); }) as { status?: string; path?: string };
   if (result?.status === "cancelled") return { name, status: "cancelled" };
   if (result?.status === "saved" && typeof result.path === "string") return { name, status: "saved", path: result.path };
   throw new Error(t("download.error.invalid"));
@@ -124,7 +127,7 @@ async function invokeSaveDownload(name: string, bytes: Uint8Array, asText = fals
 
 /** The feedback when the content itself could not be generated or handed over. */
 export function downloadFailedMessage(name: string, e: unknown): string {
-  const why = errorText(e);
+  const why = nativeErrorMessage(e);
   return t("download.exportFailed", { name, error: why || t("download.unknownError") });
 }
 
@@ -133,7 +136,7 @@ type NativeDownloadEvent = { url: string; path: string | null; success: boolean 
 
 declare global {
   interface Window {
-    __TAURI__?: { core?: { invoke?: (command: string, args?: Record<string, unknown>) => Promise<unknown> } };
+    __TAURI__?: { core?: { invoke?: (command: string, args?: Record<string, unknown> | Uint8Array, options?: { headers: Record<string, string> }) => Promise<unknown> } };
   }
 }
 

@@ -8,7 +8,7 @@ import { CircleAlert, LoaderCircle, Play, TriangleAlert, X } from "lucide-solid"
 import "../styles/convergence.css";
 import { useModal } from "../lib/dialog";
 import { api, isTerminal } from "../runner/api";
-import { attachDesignOptimize, prepareDesignOptimize } from "../runner/designRun";
+import { attachDesignOptimize, prepareDesignSubmission } from "../runner/designRun";
 import { engine, health, jobs, refreshRuns, runSettings, setEngine } from "../runner/store";
 import type { Bundle } from "../types";
 import {
@@ -17,10 +17,11 @@ import {
 } from "./convergence";
 import { PreflightNote } from "./PreflightNote";
 import { cellsText, durationText, estimateText, estimateTime, meshStats, type TimeEstimate } from "./meshStats";
-import { draft, edit, file } from "./store";
+import { draft, edit } from "./store";
 import { setBottomDockCollapsed } from "./layoutState";
 import type { Design } from "./types";
 import { fmt, t } from "../i18n";
+import NumberField from "../components/NumberField";
 
 /** open: null closed; studyId null shows the setup, else that study's progress and report */
 const [open, setOpen] = createSignal<{ studyId: string | null } | null>(null);
@@ -43,7 +44,9 @@ type Estimate = { density: number; cells: number | null; nodes?: number; est: Ti
 
 function Content(props: { studyId: string | null }) {
   let box: HTMLDivElement | undefined;
-  const close = () => setOpen(null);
+  let dialogActive = true;
+  onCleanup(() => { dialogActive = false; });
+  const close = () => { dialogActive = false; setOpen(null); };
   useModal(() => box, close, () => box?.querySelector<HTMLElement>("input,button"));
   const [studyId, setStudyId] = createSignal(props.studyId);
   const [notice, setNotice] = createSignal("");
@@ -53,12 +56,14 @@ function Content(props: { studyId: string | null }) {
   const parsed = createMemo(() => parseDensities(densText()));
   const runs = () => Number(maxRuns());
   const tol = () => ({ f_pct: Number(tolF()), s11_db: Number(tolS()), dmax_db: Number(tolD()) });
+  const toleranceBad = (text: string) => !Number.isFinite(Number(text)) || Number(text) <= 0;
+  const runsBad = () => !Number.isInteger(runs()) || runs() < 2 || runs() > 12;
   const planned = () => planDensities(parsed().values, runs());
   const blocker = () => meshBlocker(draft);
   const setupError = () => {
     if (blocker()) return blocker();
     if (parsed().error) return parsed().error!;
-    if (!Number.isInteger(runs()) || runs() < 2 || runs() > 12) return t("conv.err.maxRuns");
+    if (runsBad()) return t("conv.err.maxRuns");
     if (Object.values(tol()).some((v) => !Number.isFinite(v) || v <= 0)) return t("conv.err.tolerances");
     if (planned().length < 2) return t("conv.err.twoDensities");
     return null;
@@ -102,10 +107,11 @@ function Content(props: { studyId: string | null }) {
     setBusy(true);
     setNotice("");
     try {
-      const err = await prepareDesignOptimize(); // saves the design and refuses check errors
-      if (err) throw new Error(err);
-      const f = file();
-      if (!f) throw new Error(t("conv.err.noDesign"));
+      const prepared = await prepareDesignSubmission(() => dialogActive); // saves the design and refuses check errors
+      if (!dialogActive) return;
+      if (prepared.error) throw new Error(prepared.error);
+      if (!prepared.target?.isCurrent()) throw new Error(t("conv.err.noDesign"));
+      const f = prepared.target.file;
       const res = await api.submitConvergence({ model: f.id, params: {}, densities: planned(), ...(largestNodes() ? { cells: largestNodes() } : {}), tolerances: tol(), max_runs: runs(), ...runSettings() });
       setStudyId(res.study.id);
       setStudy(res.study);
@@ -115,7 +121,7 @@ function Content(props: { studyId: string | null }) {
         setBottomDockCollapsed(false);
       }
     } catch (e) {
-      setNotice(e instanceof Error ? e.message : String(e));
+      if (dialogActive) setNotice(e instanceof Error ? e.message : String(e));
     } finally {
       setBusy(false);
     }
@@ -176,16 +182,16 @@ function Content(props: { studyId: string | null }) {
                 <input autocomplete="off" class="rp-input mono" aria-label={t("conv.densities")} value={densText()} onInput={(e) => setDensText(e.currentTarget.value)} />
               </label>
               <label class="rp-mini">{t("conv.tol.f")}
-                <input autocomplete="off" class="rp-input mono" aria-label={t("conv.tol.f.aria")} inputmode="decimal" value={tolF()} onInput={(e) => setTolF(e.currentTarget.value)} />
+                <NumberField class="rp-input mono" aria-label={t("conv.tol.f.aria")} step="any" value={tolF()} aria-invalid={toleranceBad(tolF())} aria-describedby={toleranceBad(tolF()) ? "cv-setup-error" : undefined} onInput={(e) => setTolF(e.currentTarget.value)} />
               </label>
               <label class="rp-mini">{t("conv.tol.s11")}
-                <input autocomplete="off" class="rp-input mono" aria-label={t("conv.tol.s11.aria")} inputmode="decimal" value={tolS()} onInput={(e) => setTolS(e.currentTarget.value)} />
+                <NumberField class="rp-input mono" aria-label={t("conv.tol.s11.aria")} step="any" value={tolS()} aria-invalid={toleranceBad(tolS())} aria-describedby={toleranceBad(tolS()) ? "cv-setup-error" : undefined} onInput={(e) => setTolS(e.currentTarget.value)} />
               </label>
               <label class="rp-mini">{t("conv.tol.dmax")}
-                <input autocomplete="off" class="rp-input mono" aria-label={t("conv.tol.dmax.aria")} inputmode="decimal" value={tolD()} onInput={(e) => setTolD(e.currentTarget.value)} />
+                <NumberField class="rp-input mono" aria-label={t("conv.tol.dmax.aria")} step="any" value={tolD()} aria-invalid={toleranceBad(tolD())} aria-describedby={toleranceBad(tolD()) ? "cv-setup-error" : undefined} onInput={(e) => setTolD(e.currentTarget.value)} />
               </label>
               <label class="rp-mini" title={t("conv.maxRuns.title")}>{t("conv.maxRuns")}
-                <input autocomplete="off" class="rp-input mono" aria-label={t("conv.maxRuns")} inputmode="numeric" value={maxRuns()} onInput={(e) => setMaxRuns(e.currentTarget.value)} />
+                <NumberField class="rp-input mono" aria-label={t("conv.maxRuns")} min="2" max="12" step="1" value={maxRuns()} aria-invalid={runsBad()} aria-describedby={runsBad() ? "cv-setup-error" : undefined} onInput={(e) => setMaxRuns(e.currentTarget.value)} />
               </label>
               <Show when={engines().length > 1}>
                 <label class="rp-mini">{t("run.engine")}
@@ -275,7 +281,7 @@ function Content(props: { studyId: string | null }) {
 
           <Show when={!studyId() && !setupError()}><PreflightNote cells={largestNodes()} engine={engine()} /></Show>
           <Show when={(!studyId() && setupError()) || notice()}>
-            <p class="status-block status-critical" role="alert"><CircleAlert size={14} aria-hidden="true" />{notice() || setupError()}</p>
+            <p id="cv-setup-error" class="status-block status-critical" role="alert"><CircleAlert size={14} aria-hidden="true" />{notice() || setupError()}</p>
           </Show>
           <div class="cv-actions">
             <Show when={studyId()} fallback={

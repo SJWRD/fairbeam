@@ -17,6 +17,7 @@ import { svgPagesToPdf, type PdfFonts } from "../drawing/pdfdoc.ts";
 import { engineText, meshText, reproduceCommand, reproduceNote, simulated, type ModelFileRef } from "./report.ts";
 import { APP_VERSION, bundleWriter } from "../lib/appVersion.ts";
 import { bandTexts } from "../lib/bands.ts";
+import { modelMmText, modelToMm } from "../lib/modelUnits.ts";
 
 const W = 210;
 const H = 297;
@@ -245,6 +246,7 @@ export function fileFormats(paths: readonly string[]): [string, string][] {
 /** The report as A4 SVG pages. */
 export function reportPages(bundle: Bundle, opt: ReportOptions): string[] {
   const b = withoutVoids(bundle);
+  const toMm = modelToMm(b);
   const d = new Doc(b, opt);
   const r = b.results;
   const run = b.run;
@@ -271,7 +273,7 @@ export function reportPages(bundle: Bundle, opt: ReportOptions): string[] {
       return;
     }
     const conv = run
-      ? `${run.converged ? "✓ " : ""}${convergenceText(run, b.solver.end_criteria_db, { maxTimesteps: b.solver.max_timesteps, minCell: b.mesh.min_cell }).replace(/-(?=\d)/g, "−").replace(/\.$/, "")}, ${fx(run.solver_time_s, 1)} s solver time.`
+      ? `${run.converged ? "✓ " : ""}${convergenceText(run, b.solver.end_criteria_db, { maxTimesteps: b.solver.max_timesteps, minCell: b.mesh.min_cell * toMm }).replace(/-(?=\d)/g, "−").replace(/\.$/, "")}, ${fx(run.solver_time_s, 1)} s solver time.`
       : "No run statistics.";
     d.para(conv, FS_S);
     d.page.push(text(d.ml, d.y + FS_S, "Matched bands (|S11| < −10 dB)", { "font-size": FS_S, "font-weight": 600 }));
@@ -330,14 +332,14 @@ export function reportPages(bundle: Bundle, opt: ReportOptions): string[] {
       p.label ?? p.name, p.type === "Material" ? "Dielectric" : p.type === "Metal" ? "PEC" : p.type, String(p.primitives.length),
       p.material ? String(p.material.eps_r) : "—",
       p.material?.tan_d != null ? `${p.material.tan_d}${p.material.tan_d_freq ? ` @ ${f3(p.material.tan_d_freq)} GHz` : ""}` : "—",
-      p.bbox[1].map((v, i) => Number((v - p.bbox[0][i]).toFixed(3))).join(" × "),
+      p.bbox[1].map((v, i) => Number(((v - p.bbox[0][i]) * toMm).toFixed(3))).join(" × "),
     ]),
     [1.5, 0.9, 0.8, 0.5, 1.3, 1.4], ["l", "l", "r", "r", "l", "r"],
   );
-  if (b.half_space) d.para(`Infinite ${b.half_space.kind} ground plane at z = ${b.half_space.position} mm (boundary condition; image theory).`, FS_S);
+  if (b.half_space) d.para(`Infinite ${b.half_space.kind} ground plane at ${b.half_space.axis} = ${modelMmText(b.half_space.position, toMm)} mm (boundary condition; image theory).`, FS_S);
   d.table(
     ["Port", "Type", "R (Ω)", "Direction", "Start (mm)", "Stop (mm)", "Excited"],
-    b.ports.map((p) => [String(p.number), p.type, String(p.R), p.direction, p.start.join(", "), p.stop.join(", "), p.excite ? "yes" : "no"]),
+    b.ports.map((p) => [String(p.number), p.type, String(p.R), p.direction, p.start.map((v) => modelMmText(v, toMm)).join(", "), p.stop.map((v) => modelMmText(v, toMm)).join(", "), p.excite ? "yes" : "no"]),
     [0.5, 0.8, 0.6, 0.8, 1.3, 1.3, 0.7], ["r", "l", "r", "l", "r", "r", "l"],
   );
   d.h2("Solver, mesh and run");

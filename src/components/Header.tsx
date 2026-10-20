@@ -134,7 +134,7 @@ export default function Header() {
   // when Design is current but disabled (no design open).
   // A compiled user project is still a viewer file when it has geometry but no results.
   // Reselecting this screen must never turn an open file into a gallery selection.
-  const userProject = () => appMode() === "results" && !!bundle() && !isExampleSource(source(), sourceOrigin());
+  const userProject = () => !!bundle() && !bundle()?.preview && !isExampleSource(source(), sourceOrigin());
   const viewerScreen = () => userProject() ? (bundle()?.results ? "results" : "geometry") : "examples";
   const tabStop = () => (appMode() === "design" && !designFile() ? "home" : appMode());
   const designPath = () => nativeDocumentFor(designFile())?.path ?? designFile()?.file ?? "";
@@ -156,7 +156,7 @@ export default function Header() {
           <button class="seg-btn" aria-current={appMode() === "home" ? "page" : undefined} tabindex={tabStop() === "home" ? 0 : -1} onClick={() => setAppMode("home")}>{t("header.screen.start")}</button>
           <button class="seg-btn" aria-current={appMode() === "design" ? "page" : undefined} tabindex={tabStop() === "design" ? 0 : -1} disabled={!designFile()} title={designFile() ? t("header.screen.designTitle") : t("header.screen.designDisabled")}
             onClick={() => setAppMode("design")}>{t("header.screen.design")}</button>
-          <button class="seg-btn" aria-current={appMode() === "results" ? "page" : undefined} tabindex={tabStop() === "results" ? 0 : -1} onClick={() => { if (!userProject()) void openExamples(); }}
+          <button class="seg-btn" aria-current={appMode() === "results" ? "page" : undefined} tabindex={tabStop() === "results" ? 0 : -1} onClick={() => { if (userProject()) setAppMode("results"); else void openExamples(); }}
             title={t(`header.screen.${viewerScreen()}Title`)}>{t(`header.screen.${viewerScreen()}`)}</button>
         </nav>
       </Show>

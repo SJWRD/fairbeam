@@ -277,7 +277,9 @@ export default function SimSettingsDialog() {
   };
 
   return (
-    <div class="scrim" onPointerDown={(e) => e.target === e.currentTarget && cancel()}>
+    // Live edits can span several sections. Only explicit dialog actions discard them;
+    // clicking the surrounding dimmed area must not silently roll back the form.
+    <div class="scrim">
       <div class="dialog ss-dialog" role="dialog" aria-modal="true" aria-labelledby="ss-title" ref={box} tabindex={-1} onKeyDown={onEnter}>
         <div class="dialog-head">
           <div>

@@ -1,27 +1,30 @@
 import { createSignal, Show } from "solid-js";
-import { X } from "lucide-solid";
+import { CircleAlert, LoaderCircle, X } from "lucide-solid";
 import { useModal } from "../lib/dialog";
 import OptimizePanel from "../runner/OptimizePanel";
 import { t } from "../i18n";
 import type { Job } from "../runner/api";
-import { attachDesignOptimize, optimizeDialogOpen, prepareDesignOptimize, setOptimizeDialogOpen, setDesignDockTab } from "../runner/designRun";
+import { attachDesignOptimize, optimizeDialogOpen, prepareDesignSubmission, setOptimizeDialogOpen, setDesignDockTab } from "../runner/designRun";
 
 const [opening, setOpening] = createSignal(false);
 const [openError, setOpenError] = createSignal<string | null>(null);
+let preparation = 0;
+const close = () => { preparation++; setOpening(false); setOptimizeDialogOpen(false); };
 
 /** Save/check the current document, then open the shared runner optimizer for its fresh model. */
 export async function openDesignerOptimize() {
   if (opening()) return;
+  const mine = ++preparation;
+  const isCurrent = () => mine === preparation && optimizeDialogOpen();
   setOpening(true);
   setOpenError(null);
+  setOptimizeDialogOpen(true);
   try {
-    const error = await prepareDesignOptimize();
-    if (error) { setOpenError(error); setOptimizeDialogOpen(true); return; }
-    setOptimizeDialogOpen(true);
+    const prepared = await prepareDesignSubmission(isCurrent);
+    if (isCurrent()) setOpenError(prepared.error ?? (prepared.target?.isCurrent() ? null : t("runner.optimize.notSaved")));
   } catch (e) {
-    setOpenError(e instanceof Error ? e.message : String(e));
-    setOptimizeDialogOpen(true);
-  } finally { setOpening(false); }
+    if (isCurrent()) setOpenError(e instanceof Error ? e.message : String(e));
+  } finally { if (mine === preparation) setOpening(false); }
 }
 
 export default function OptimizeDialog() {
@@ -30,7 +33,6 @@ export default function OptimizeDialog() {
 
 function OptimizeDialogContent() {
   let box: HTMLDivElement | undefined;
-  const close = () => setOptimizeDialogOpen(false);
   useModal(() => box, close, () => box?.querySelector<HTMLElement>("select"));
   const started = (job: Job) => {
     attachDesignOptimize(job);
@@ -43,11 +45,17 @@ function OptimizeDialogContent() {
         <div class="dialog-head">
           <div>
             <h2 id="od-title">{t("opt.dialog.title")}</h2>
-            <p class="muted">{openError() ?? t("opt.dialog.subtitle")}</p>
+            <p class="muted">{t("opt.dialog.subtitle")}</p>
           </div>
           <button class="icon-btn" onClick={close} aria-label={t("common.close")}><X size={16} /></button>
         </div>
-        <div class="rd-body"><Show when={!openError()}><OptimizePanel onStarted={started} /></Show></div>
+        <div class="rd-body" aria-busy={opening()}>
+          <Show when={opening()}><p class="note" role="status"><LoaderCircle size={14} class="rs-spin" aria-hidden="true" /> {t("opt.dialog.preparing")}</p></Show>
+          <Show when={!opening() && openError()}><div class="status-block status-critical" role="alert"><CircleAlert size={14} aria-hidden="true" /><div>
+            <p>{openError()}</p><button class="btn btn-ghost btn-sm" onClick={() => void openDesignerOptimize()}>{t("opt.dialog.retry")}</button>
+          </div></div></Show>
+          <Show when={!opening() && !openError()}><OptimizePanel onStarted={started} /></Show>
+        </div>
       </div>
     </div>
   </>;

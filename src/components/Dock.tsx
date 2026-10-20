@@ -535,7 +535,7 @@ export default function Dock() {
                 <SParamSmith markers={smithMarks()} />
               </Match>
               <Match when={dockTab() === "array"}>
-                <PanelBoundary name="Array panel">
+                <PanelBoundary name={t("panel.name.array")}>
                   <ArrayPanel />
                 </PanelBoundary>
               </Match>

@@ -61,10 +61,13 @@ if (process.argv.includes('--built')) {
     const permission = `allow-${command.replaceAll('_', '-')}`;
     assert.deepEqual(generated[permission]?.commands.allow, [command], `Generated ACL missing ${command}`);
   }
-  assert.ok(capability.permissions.includes('allow-native-document-archive'), 'Generated viewer ACL missing archive');
+  for (const command of app.filter(name => name.startsWith('native_document_'))) {
+    const permission = `allow-${command.replaceAll('_', '-')}`;
+    assert.ok(capability.permissions.includes(permission), `Generated viewer ACL missing ${command}`);
+  }
   assert.deepEqual(capability.windows, ['main']);
   assert.equal(capability.local, false);
   assert.deepEqual(capability.remote.urls, ['http://127.0.0.1:*/*']);
-  console.log('Generated build ACL: archive permitted for the loopback main viewer; every app command has a generated permission');
+  console.log('Generated build ACL: native documents permitted for the loopback main viewer; every app command has a generated permission');
 }
 console.log(`Command ACL: ${app.length} app and ${account.length} account handlers match manifests; viewer permissions and negative regressions passed`);

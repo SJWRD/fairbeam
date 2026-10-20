@@ -49,14 +49,14 @@ impl DocumentClient {
         operation: DocumentOperation,
         body: &serde_json::Value,
     ) -> Result<serde_json::Value, serde_json::Value> {
-        let error = |message: &str| serde_json::json!({"error": message, "status": 503});
-        let body = serde_json::to_vec(body).map_err(|_| error("Invalid document request"))?;
+        let error = |code: &str, message: &str| serde_json::json!({"code":code, "error": message, "status": 503});
+        let body = serde_json::to_vec(body).map_err(|_| error("document_invalid_request", "Invalid document request"))?;
         let limit = match operation {
             DocumentOperation::Open | DocumentOperation::Archive => DOCUMENT_REQUEST_LIMIT,
             DocumentOperation::Save => DOCUMENT_SAVE_REQUEST_LIMIT,
         };
         if body.len() > limit {
-            return Err(error("Document request exceeds its size limit"));
+            return Err(error("document_request_size", "Document request exceeds its size limit"));
         }
         let path = match operation {
             DocumentOperation::Open => "/api/native-document/open",
@@ -65,35 +65,35 @@ impl DocumentClient {
         };
         let address = SocketAddr::from(([127, 0, 0, 1], self.port));
         let mut stream = TcpStream::connect_timeout(&address, Duration::from_secs(2))
-            .map_err(|_| error("The document server is unavailable"))?;
+            .map_err(|_| error("document_server_unavailable", "The document server is unavailable"))?;
         stream.set_write_timeout(Some(Duration::from_secs(10)))
-            .map_err(|_| error("Could not configure the document connection"))?;
+            .map_err(|_| error("document_connection_failed", "Could not configure the document connection"))?;
         let head = format!(
             "POST {path} HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nContent-Type: application/json\r\nX-Fairbeam-Token: {token}\r\nContent-Length: {length}\r\nConnection: close\r\n\r\n",
             port = self.port, token = self.token, length = body.len()
         );
         stream.write_all(head.as_bytes()).and_then(|_| stream.write_all(&body))
-            .map_err(|_| error("Could not send the document request"))?;
+            .map_err(|_| error("document_request_failed", "Could not send the document request"))?;
         let deadline = Instant::now() + DOCUMENT_REQUEST_TIMEOUT;
         let mut answer = Vec::new();
         let mut buffer = [0u8; 16 * 1024];
         loop {
             let remaining = deadline.saturating_duration_since(Instant::now());
             if remaining.is_zero() {
-                return Err(error("The document request timed out; reopen the file before retrying"));
+                return Err(error("document_request_timeout", "The document request timed out; reopen the file before retrying"));
             }
             stream.set_read_timeout(Some(remaining))
-                .map_err(|_| error("Could not configure the document connection"))?;
+                .map_err(|_| error("document_connection_failed", "Could not configure the document connection"))?;
             match stream.read(&mut buffer) {
                 Ok(0) => break,
                 Ok(count) => {
                     if answer.len() + count > DOCUMENT_RESPONSE_LIMIT {
-                        return Err(error("Document response exceeds its size limit"));
+                        return Err(error("document_response_size", "Document response exceeds its size limit"));
                     }
                     answer.extend_from_slice(&buffer[..count]);
                 }
                 Err(e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
-                Err(_) => return Err(error("The document response was interrupted; reopen the file before retrying")),
+                Err(_) => return Err(error("document_response_interrupted", "The document response was interrupted; reopen the file before retrying")),
             }
         }
         parse_document_response(&answer)
@@ -101,7 +101,7 @@ impl DocumentClient {
 }
 
 fn parse_document_response(answer: &[u8]) -> Result<serde_json::Value, serde_json::Value> {
-    let invalid = || serde_json::json!({"error": "Invalid document server response", "status": 502});
+    let invalid = || serde_json::json!({"code":"document_invalid_response", "error": "Invalid document server response", "status": 502});
     let boundary = answer.windows(4).position(|part| part == b"\r\n\r\n").ok_or_else(invalid)?;
     if boundary > 16 * 1024 {
         return Err(invalid());

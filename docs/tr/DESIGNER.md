@@ -438,10 +438,51 @@ Yeni tarama ekseni parametrenin geçerli değerinin ±%10'u aralığında 5 adı
 
 Optimizasyon aracı simülasyondan önce tasarımın her adayını denetler. Denetim hatalı veya tasarımın kendi değerlerinde olmayan metal taşması/havada kalma (`metal-overhang`, `metal-floating`) oluşturan aday simüle edilmez. Değerlendirme tablosunda nedenli **Atlandı** görünür (ör. "'patch', 'substrate' üzerinden 1,2 mm taşıyor (x+)"); en az başarısız değerlendirme cezası alır, arama devam eder. Taramalar her noktayı olduğu gibi çalıştırır.
 
+## Kayıtlı veya silinen çalışma alanı tasarımlarını kurtarma
+
+`.design.json` tasarımlarının diskteki sürümlerini listeleyen veya geri yükleyen bir uygulama
+arayüzü henüz yoktur. Kod düzenleyicisinin sürüm geçmişi ve `/api/models/<id>/history` uç noktası
+sadece Python `.py` modellerini kapsar; bu tasarım yedeklerini listelemez.
+
+Tasarımın kullanıldığı çalışma alanını bulun. Özel bir çalışma alanı başka bir konumda olabilir:
+
+| Depolama | Tasarım yedekleri |
+| --- | --- |
+| Windows masaüstü varsayılanı | `%USERPROFILE%\Documents\Fairbeam\model-history\<çalışma-alanı-model-kimliği>\` |
+| macOS masaüstü varsayılanı | `~/Documents/Fairbeam/model-history/<çalışma-alanı-model-kimliği>/` |
+| Kaynak kopyası varsayılanı | `<kaynak-kopyası>/.sim/model-history/<çalışma-alanı-model-kimliği>/` |
+| Özel çalıştırma sunucusu | Yapılandırılmış jobs klasörünün yanında `model-history/<çalışma-alanı-model-kimliği>/` |
+
+`<çalışma-alanı-model-kimliği>`, görünen ad değil, çalışma alanındaki kayıtlı dosyanın
+`.design.json` uzantısı çıkarılmış adıdır. Taşınabilir belgenin önbellek tasarımı genellikle
+`fb_<UUID>` kimliğini kullanır. Kayıtlı sürümler `<zaman-damgası>.design.json`, çalışma alanından
+silinen tasarımlar `deleted-<zaman-damgası>.design.json` biçimindedir. Aynı saniyedeki kayıtlar
+numaralı ek alır. Windows Gezgini uzantıyı, macOS Finder ise `.sim` klasörünü gizleyebilir;
+Finder'da **Klasöre Git** ile tam yolu yazabilirsiniz.
+
+Daha yeni bir tasarımın üzerine yazmadan kurtarmak için:
+
+1. Açık çalışmaları kaydedin ve çalışma alanı dosyalarını incelemeden önce Fairbeam'den çıkın.
+2. Seçilen `.design.json` yedeğini ayrı bir klasöre kopyalayın; yedeğin aslı kalsın. Kopyaya
+   `Kurtarılan yama.design.json` gibi tanınabilir bir dosya adı verin.
+3. Fairbeam'i açın ve **Proje aç…** ile JSON kopyasını tasarım olarak içe aktarın. Geometriyi,
+   parametreleri ve adı kontrol edip **Farklı Kaydet** ile yeni bir `.fb` konumuna kaydedin.
+
+Bu işlem kayıtlı tasarımı kurtarır; eski bir `.fb` sürümünü veya sonuç dosyalarını geri getirmez.
+`fb_*.design.json` önbelleğini elle değiştirmeyin: taşınabilir belge ve çalışma alanı meta verileri
+daha yeni bir sürüme ait olabilir. Yedeği içe aktarmak ayrı bir tasarım oluşturur.
+
+Silme sırasında **.fb dosyasını ve sonuçları da kaldır** seçildiğinde taşınabilir proje, işlem
+sonrasında gösterilen kurtarma konumundadır: asıl konumun yanında `Fairbeam Deleted/<benzersiz-klasör>/`.
+Fairbeam kapalıyken `.fb` dosyasıyla yanındaki sonuç klasörünü, adlarını koruyarak birlikte boş bir
+klasöre kopyalayın; sonra kopyalanan `.fb` dosyasını açın. Var olan bir projenin üzerine yazmayın;
+kayıtlı sonuçları istiyorsanız yalnız `.fb` dosyasını kopyalamayın. Bu kurtarma, yukarıdaki çalışma
+alanı tasarım yedeklerinden ayrıdır.
+
 ## Dosyalar
 
 - **Konum**: tasarımlar çalıştırma sunucusunun modeller klasöründe, Python modellerinin yanında kaydedilir. Kaynak kopyasında `python/models/`; masaüstü uygulamasında çalışma klasörünün `models/` alt klasörü (macOS'te `~/Documents/Fairbeam`, Windows'ta `%USERPROFILE%\Documents\Fairbeam`).
-- **Kaydetme**: her kayıt önceki sürümü `model-history/` içinde tutar. Dosya açıldıktan sonra diskte değiştiyse tasarımcı bildirir; yeniden kaydetmek sizin sürümünüzle üzerine yazar.
+- **Kaydetme**: değişen bir çalışma alanı tasarımı kaydedildiğinde önceki sürüm `model-history/<çalışma-alanı-model-kimliği>/` altında tutulur (son 50 kayıtlı sürüm; silinen kopyalar budanmaz). Diskteki bu sürümler, oturumun modelleme Geri Al/Yinele geçmişinden ve tarayıcıdaki **Taslağı geri yükle** kurtarmasından ayrıdır. Dosya diskte değişmişse çakışmayı inceleyip çalışmanızı nasıl koruyacağınızı açıkça seçin. [Elle kurtarma](#recovering-saved-or-deleted-workspace-designs) bölümüne bakın.
 - **Biçim**: `fairbeam.design/1`, tek JSON nesnesi; `python/fairbeam/design.py` başında belgelenmiştir (tüm şekil türleri, dalga kılavuzu portları, dönüşümler, kesimler, bileşenler). Tam ve geçerli sonda beslemeli yama örneği:
 
   ```json
