@@ -12,7 +12,7 @@ const baseline=process.env.FAIRBEAM_TEST_BASELINE;
 const modules=['state.ts','workspace.ts','designer/navModel.ts','home/projectList.ts','runner/designRun.ts',
   'designer/dockState.ts','designer/layoutState.ts','compare/store.ts','runner/dropFile.ts','lib/toast.ts','i18n/index.ts','runner/optimizationText.ts','runner/openProject.ts','runner/store.ts'];
 const original=new Map();
-if(baseline) for(const path of ['src/state.ts','src/designer/navModel.ts','src/home/projectList.ts','src/runner/designRun.ts','src/compare/store.ts'])
+if(baseline) for(const path of ['src/state.ts','src/designer/navModel.ts','src/home/projectList.ts','src/runner/designRun.ts','src/compare/store.ts','src/runner/dropFile.ts','src/runner/optimizationText.ts'])
   original.set(root+path,execFileSync('git',['show',`${baseline}:${path}`],{cwd:root,encoding:'utf8'}));
 const built=await build({root,configFile:false,logLevel:'silent',resolve:{conditions:['browser']},css:{postcss:{}},
   plugins:[{name:'viewer-feedback-baseline',enforce:'pre',load(id){return original.get(id.replaceAll('\\','/'));}},solid(),{
@@ -129,12 +129,73 @@ await check('#183 visible result import retains real reference data and reports 
   await drop.openDroppedFile({name:'measurement.s1p',text:async()=>'# GHz S RI R 50\n1 0.1 0\n2 0.2 0'});
   assert.equal(compare.reference()?.reference.files[0],'measurement.s1p');assert.equal(toast.toasts().at(-1).tone,'info');
 });
+const numericReference='Frequency (GHz)\tS11 (dB)\n1\t-10\n2\t-20';
+for(const extension of ['txt','dat','tsv','snp']) await check(`#183 dropped .${extension} reference matches file-picker support`,async()=>{
+  open();workspace.setAppMode('results');compare.clearReference();let reads=0;
+  const text=extension==='snp'?'# GHz S RI R 50\n1 0.1 0\n2 0.2 0':numericReference;
+  await drop.openDroppedFile({name:`measurement.${extension}`,text:async()=>{reads++;return text;}});
+  assert.equal(compare.reference()?.reference.files[0],`measurement.${extension}`);
+  assert.deepEqual(compare.reference()?.results.frequency,[1e9,2e9]);assert.equal(reads,1);
+  assert.equal(toast.toasts().at(-1).tone,'info');
+});
+await check('#183 retains arbitrary Touchstone port counts and plain-text MIME acceptance',async()=>{
+  open();workspace.setAppMode('results');compare.clearReference();
+  const row=Array.from({length:81},()=> '0.1 0').join(' ');
+  await drop.openDroppedFile({name:'measurement.s9p',text:async()=>`# GHz S RI R 50\n1 ${row}\n2 ${row}`});
+  assert.equal(compare.reference()?.results.sparams.ports.length,9);
+  compare.clearReference();
+  await drop.openDroppedFile({name:'measurement',type:'text/plain',text:async()=>numericReference});
+  assert.equal(compare.reference()?.reference.files[0],'measurement');
+});
+await check('#183 .txt VBA/history gets macro guidance but numeric text with marker comments imports',async()=>{
+  open();workspace.setAppMode('results');compare.clearReference();
+  for(const macro of ['Sub Main()\nEnd Sub','With Brick\n .Name "body"\nEnd With','AddToHistory "brick", sCommand']) {
+    await drop.openDroppedFile({name:'history.txt',text:async()=>macro});
+    assert.equal(compare.reference(),undefined);assert.equal(toast.toasts().at(-1).text,i18n.t('app.dropCst',{name:'history.txt'}));
+  }
+  await drop.openDroppedFile({name:'measurement.txt',text:async()=>`! AddToHistory is a comment in this exported measurement\n${numericReference}`});
+  assert.equal(compare.reference()?.reference.files[0],'measurement.txt');
+});
+await check('#183 invalid/read-failed .txt keeps the reference import error contract',async()=>{
+  open();workspace.setAppMode('results');compare.clearReference();
+  await drop.openDroppedFile({name:'invalid.txt',text:async()=>'not numeric data'});
+  assert.equal(compare.reference(),undefined);assert.equal(toast.toasts().at(-1).text,compare.refError());
+  assert.ok(compare.refError().startsWith('invalid.txt:'));
+  await drop.openDroppedFile({name:'unreadable.txt',text:async()=>{throw Error('fixture read failed');}});
+  assert.equal(toast.toasts().at(-1).text,'unreadable.txt: fixture read failed');
+});
+await check('#183 pending .txt drop cannot replace a newer import or a newer project',async()=>{
+  open();workspace.setAppMode('results');compare.clearReference();
+  const first=pending();const old=drop.openDroppedFile({name:'old.txt',text:()=>first.promise});
+  await drop.openDroppedFile({name:'new.dat',text:async()=>numericReference});
+  first.resolve(numericReference);await old;
+  assert.deepEqual(compare.reference()?.reference.files,['new.dat']);
+  const second=pending();const departed=drop.openDroppedFile({name:'departed.txt',text:()=>second.promise});
+  state.openBundle(structuredClone(patch),'newer-project.json','local-file');compare.clearReference();
+  second.resolve(numericReference);await departed;assert.equal(compare.reference(),undefined);
+});
+await check('#183 JSON and native-document extensions still use the project loader',async()=>{
+  workspace.setAppMode('home');compare.clearReference();
+  await drop.openDroppedFile({name:'dropped.json',text:async()=>JSON.stringify(patch)});
+  assert.equal(state.source(),'dropped.json');assert.equal(workspace.appMode(),'results');assert.equal(compare.reference(),undefined);
+  await drop.openDroppedFile({name:'invalid.fb',text:async()=>'not a document'});
+  assert.ok(state.loadError()?.includes('invalid.fb'));assert.equal(compare.reference(),undefined);
+});
 for(const lang of ['en','tr']) await check(`#202 ${lang} reason/value formatting and matched units`,()=>{
   i18n.setLanguage(lang);i18n.setDecimalChoice('point');assert.equal(opt.reasonText('simplex converged'),i18n.t('opt.reason.simplexConverged'));
   assert.equal(opt.reasonText('goals met'),i18n.t('opt.reason.goalsMet'));
   assert.equal(opt.reasonText('unfamiliar solver diagnostic'),'unfamiliar solver diagnostic');
   assert.equal(opt.optimizationValues({L:31.427583920113,n:2},[{key:'L',unit:'mm'}]),'L=31.4276 mm; n=2');
   i18n.setDecimalChoice('comma');assert.equal(opt.optimizationValues({L:31.427583920113},[{key:'L',unit:'mm'}]),'L=31,4276 mm');
+});
+for(const lang of ['en','tr']) for(const decimals of ['point','comma','language']) await check(`#202 ${lang}/${decimals} preserves tiny, large, negative and zero values`,()=>{
+  i18n.setLanguage(lang);i18n.setDecimalChoice(decimals);
+  const comma=decimals==='comma'||(decimals==='language'&&lang==='tr'),sep=comma?',':'.';
+  const values={C:1.37e-12,R:1.23456789e9,offset:-1.37e-12,zero:0,negativeZero:-0};
+  const before=JSON.stringify(values);
+  assert.equal(opt.optimizationValues(values,[{key:'C',unit:'F'},{key:'R',unit:'Ω'}]),
+    `C=1${sep}37E-12 F; R=1${sep}23457E9 Ω; offset=−1${sep}37E-12; zero=0; negativeZero=0`);
+  assert.equal(JSON.stringify(values),before,'display formatting does not change optimizer values');
 });
 console.log(`viewer-feedback: ${checks} passed, ${failures.length} failed`);
 if(failures.length)console.error(failures.join('\n'));

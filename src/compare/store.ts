@@ -105,7 +105,7 @@ export const REF_KEY = "ref:reference";
 export const [refError, setRefError] = createSignal<string | null>(null);
 export const reference = () => pinned().find((p) => p.file === REF_KEY)?.bundle as RefBundle | undefined;
 
-export async function importReferenceFile(file: File): Promise<{ status: "imported" } | { status: "failed"; error: string } | { status: "superseded" }> {
+export async function importReferenceFile(file: Pick<File, "name" | "text">): Promise<{ status: "imported" } | { status: "failed"; error: string } | { status: "superseded" }> {
   // Newer import intent wins; awaited sequential imports still merge into the current reference.
   const generation = ++referenceGeneration;
   const owner = bundle();
