@@ -2820,6 +2820,7 @@ def build(d: dict, values: dict):
     port_priority = ranks[5] if ranks else 5
     sheets = thin_sheets(parts, thin_limit)
     flat = {(sh["part"], sh["prim"]): sh for sh in sheets}
+    sim._contact_primitives = {}   # native primitive ID -> resolved design primitive
     for i, (part, pt) in enumerate(zip(parts, d.get("parts", []))):
         mt = part["material"]
         label, color, opacity = pt.get("label"), pt.get("color") or mt.get("color"), display_opacity(pt, mt)
@@ -2844,7 +2845,9 @@ def build(d: dict, values: dict):
                                         "drawn": [sh["lo"], sh["hi"]]})
             if isinstance(prop, LossyMetal):
                 prop.drawn_thickness = sh["thickness"] if sh else None   # a thin brick keeps its own
-            add_primitive(prop, p)
+            primitive = add_primitive(prop, p)
+            for native in getattr(primitive, "primitives", [primitive]):
+                sim._contact_primitives[native.GetID()] = {"part": pt["name"], "index": j}
             grow(*prim_bbox(p))
         if part["voids"]:
             # the part's carvers: vacuum above its own shapes (added after them)
@@ -3181,6 +3184,8 @@ def add_wire(prop, points, radius, **kw):
               if _bend(pts[:, i - 1], pts[:, i], pts[:, i + 1])]
 
     class _Group:
+        primitives = prims
+
         def AddTransform(self, *a, **k):
             for q in prims:
                 q.AddTransform(*a, **k)

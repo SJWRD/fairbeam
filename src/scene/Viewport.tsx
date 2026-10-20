@@ -1,5 +1,5 @@
 import { lumpedLabel } from "../lumped.ts";
-import { createEffect, createSignal, For, on, onCleanup, onMount, Show, untrack } from "solid-js";
+import { createEffect, createMemo, createSignal, For, on, onCleanup, onMount, Show, untrack } from "solid-js";
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
@@ -51,7 +51,7 @@ import { vertexTarget } from "../designer/vertexEdit";
 import { extrudeFacePicking, facePicking, localFrame as drawFrame, plane as drawPlane, shapeRequest, tool as drawTool, wcsIsGlobal, worldToWcs } from "../designer/draw";
 import { frameBasis } from "../designer/localFrame";
 import { appMode } from "../workspace";
-import { draft as designDraft, selection, selectionBounds } from "../designer/store";
+import { draft as designDraft, endpointContacts as serverEndpointContacts, selection, selectionBounds } from "../designer/store";
 import { boundsPortTarget, contextTarget, openContext, type ContextTarget } from "../designer/context";
 import { pickedShape } from "../designer/contextGeometry";
 import { measure as measurePoints } from "../designer/measure.ts";
@@ -340,7 +340,14 @@ export default function Viewport() {
       shown.forEach(({ label: l }, i) => { if (lift[i] > 0) l.element.style.transform += ` translateY(${-lift[i]}px)`; });
     }
 
+    let contactMaterials: THREE.MeshStandardMaterial[] = [];
+    let updateContactMarkers: (() => void) | undefined;
     function render() {
+      const pulseContacts = contactMaterials.length > 0 && hostVisible && !document.hidden
+        && !motionQuery.matches && centerView() !== "drawing" && !rendered?.active;
+      const contactIntensity = pulseContacts ? 0.2 + 0.2 * Math.cos(performance.now() * 2 * Math.PI / 2500) : 0.05;
+      for (const material of contactMaterials) material.emissiveIntensity = contactIntensity;
+      updateContactMarkers?.();
       renderer.setScissorTest(false);
       renderer.setViewport(0, 0, size.w, size.h);
       // ports are drawn in screen pixels: rescale them for this view (a few meshes, no geometry rebuild)
@@ -365,6 +372,7 @@ export default function Viewport() {
       renderer.autoClear = true;
       flushGraveyard();
       updateScaleBar();
+      if (pulseContacts) requestRender();
     }
 
     function updateScaleBar() {
@@ -399,12 +407,16 @@ export default function Viewport() {
     const io = new IntersectionObserver(([entry]) => {
       hostVisible = !!entry?.isIntersecting && entry.intersectionRatio > 0;
       if (!hostVisible) setPhasePlaying(false);
+      requestRender();
     });
     io.observe(host);
     let phaseTimer: ReturnType<typeof setInterval> | undefined;
     const motionQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
     const stopPhaseTimer = () => { clearInterval(phaseTimer); phaseTimer = undefined; };
-    const onMotionChange = () => { if (motionQuery.matches || document.hidden) setPhasePlaying(false); };
+    const onMotionChange = () => {
+      if (motionQuery.matches || document.hidden) setPhasePlaying(false);
+      requestRender();
+    };
     motionQuery.addEventListener("change", onMotionChange);
     document.addEventListener("visibilitychange", onMotionChange);
     createEffect(() => {
@@ -529,6 +541,59 @@ export default function Viewport() {
       requestRender();
     };
     window.addEventListener("fairbeam:frame-added", onFrameAdded);
+
+    // Contact feedback belongs only to the selected discrete port or passive element.
+    const endpointContacts = createMemo(() => {
+      const s = selection();
+      if (appMode() !== "design" || (s.type !== "port" && s.type !== "resistor")) return [];
+      const item = s.type === "port" ? designDraft.ports[s.i] : designDraft.resistors[s.i];
+      if (!item || ("type" in item && item.type !== "lumped")) return [];
+      const path = `${s.type === "port" ? "ports" : "resistors"}[${s.i}].`;
+      return serverEndpointContacts().filter((contact) => contact.path.startsWith(path));
+    });
+    createEffect(() => {
+      const rows = endpointContacts(), b = bundle();
+      if (!b || renderedView()) return;
+      const isElement = selection().type === "resistor";
+      const glyphRadius = portMarkerRadius(sceneRadius(b).radius, b.mesh.x);
+      const group = new THREE.Group();
+      const updates: (() => void)[] = [];
+      for (const row of rows) {
+        // RLC elements show every endpoint, ports mark only confirmed missing contact.
+        if (!isElement && row.status !== "floating") continue;
+        const color = row.status === "unknown" ? "#808080" : row.status === "touching" ? "#22a447" : "#e34242";
+        const circle = Array.from({ length: 48 }, (_, i) => {
+          const angle = i * 2 * Math.PI / 48;
+          return new THREE.Vector3(Math.cos(angle), Math.sin(angle), 0);
+        });
+        const marker = new THREE.LineLoop(new THREE.BufferGeometry().setFromPoints(circle),
+          new THREE.LineBasicMaterial({ color, transparent: true, depthTest: false, depthWrite: false }));
+        marker.position.set(...row.point); marker.renderOrder = 1000; marker.raycast = () => {};
+        marker.scale.setScalar(glyphRadius * (isElement ? 0.55 : 1.05));
+        // Port rings keep a minimum screen size, like the port glyph; element rings follow the model.
+        updates.push(() => {
+          const worldPerPixel = 2 * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2))
+            * camera.position.distanceTo(marker.position) / Math.max(host.clientHeight, 1);
+          marker.quaternion.copy(camera.quaternion);
+          if (!isElement) marker.scale.setScalar(Math.max(glyphRadius * 1.05, worldPerPixel * 9));
+          // Skip fully faded rings.
+          const projectedRadius = glyphRadius * 1.15 / worldPerPixel;
+          marker.material.opacity = THREE.MathUtils.clamp(isElement ? (projectedRadius - 14) / 4 : (projectedRadius - 2) / 2, 0, 1);
+          marker.visible = marker.material.opacity > 0;
+          marker.updateMatrixWorld();
+        });
+        group.add(marker);
+      }
+      updateContactMarkers = () => { for (const update of updates) update(); };
+      scene.add(group); requestRender();
+      onCleanup(() => {
+        updateContactMarkers = undefined;
+        group.traverse((object) => {
+          if (object instanceof THREE.LineLoop) { object.geometry.dispose(); (object.material as THREE.Material).dispose(); }
+        });
+        scene.remove(group); requestRender();
+      });
+    });
 
     // Ports and resistors are overlays, so the solid-part emissive highlight cannot mark them.
     // Keep this selection marker reactive without moving the camera on edits or preview updates.
@@ -1161,15 +1226,21 @@ export default function Viewport() {
       const has = p.meshes.some((q) => (q.userData.primitive as { source?: number } | undefined)?.source !== undefined);
       return !has || (m.userData.primitive as { source?: number } | undefined)?.source === shape;
     };
-    createEffect(on([hoverPart, selectedPart, selectedShape, partsTick, themeTick, theme], ([name, sel, shape]) => {
+    createEffect(on([hoverPart, selectedPart, selectedShape, partsTick, themeTick, theme, endpointContacts], ([name, sel, shape]) => {
       const lift = cssVar("--al-copper-300");
       const pick = selectionColour();
+      contactMaterials = [];
       for (const p of parts) {
         for (const m of p.meshes) {
+          const index = p.part.primitives.indexOf(m.userData.primitive);
+          // Rejected builds leave the quick preview visible, in resolved design order.
+          const contact = endpointContacts().some((row) => row.status === "touching"
+            && (row.meshes ?? row.primitives ?? []).some((hit) => hit.part === p.part.name && hit.index === index));
           const mat = m.material as THREE.MeshStandardMaterial;
           const s = isPicked(p, m, sel, shape), inPart = p.part.name === sel, h = p.part.name === name;
-          mat.emissive?.set(s || inPart ? pick : h ? lift : "#000000");
-          mat.emissiveIntensity = s ? 0.55 : inPart ? 0.15 : h ? 0.25 : 0;
+          mat.emissive?.set(s || inPart ? pick : h || contact ? lift : "#000000");
+          mat.emissiveIntensity = s ? 0.55 : inPart ? 0.15 : h ? 0.25 : contact ? 0.05 : 0;
+          if (contact && !s && !inPart && !h) contactMaterials.push(mat);
         }
       }
       requestRender();

@@ -434,6 +434,19 @@ export interface Job {
   info: RunInfo;
 }
 
+/** Terminal contacts in the drawn geometry, from the python floating-port check. */
+export interface EndpointContact {
+  path: string;
+  point: [number, number, number];
+  parts: string[];
+  boundary: boolean;
+  status: "touching" | "floating" | "unknown";
+  /** Indices refer to resolved checker geometry, not the rendered mesh array. */
+  primitives?: { part: string; index: number; path: string | null }[];
+  /** Matching primitive indices in the returned preview bundle. */
+  meshes?: { part: string; index: number }[];
+}
+
 export interface PreviewResult {
   model: string;
   params: Record<string, ParamValue>;
@@ -443,6 +456,7 @@ export interface PreviewResult {
   bundle: Bundle;
   /** design previews: fairbeam.design_checks results */
   checks?: DesignCheck[];
+  endpoint_contacts?: EndpointContact[];
 }
 
 export class ApiError extends Error {

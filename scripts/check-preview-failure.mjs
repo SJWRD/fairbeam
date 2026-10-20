@@ -99,9 +99,13 @@ globalThis.fetch = async (url, init = {}) => {
     if (how instanceof Promise) how = await how;
     if (how === "offline") throw new TypeError("fetch failed");
     if (how === "error500") return json(500, { error: "the preview worker exited" });
+    if (how === "offgrid") return json(422, { error: "port coordinate must lie on a mesh line",
+      checks: [{ severity: "error", path: "ports[0].start", code: "build", message: "Off-grid port" }],
+      endpoint_contacts: [{ path: "ports[0].start", point: [0,0,0.01], parts: [], boundary: false, status: "floating" }] });
     if (how === "unbuildable") return json(422, { error: "the design does not build", fields: { "parts[0].primitives[0].stop[0]": "zero width" },
       checks: [{ severity: "error", path: "parts[0].primitives[0].stop[0]", code: "zero_size", message: "The box has zero width" }] });
-    return json(200, { bundle: previewBundle(body.design), checks: [{ severity: "info", path: "mesh", code: "server_note", message: "Server note" }] });
+    return json(200, { bundle: previewBundle(body.design), checks: [{ severity: "info", path: "mesh", code: "server_note", message: "Server note" }],
+      endpoint_contacts: [{ path: "ports[0].start", point: [0,0,0], parts: ["patch"], boundary: false, status: "touching" }] });
   }
   return json(404, { error: `not mocked: ${method} ${path}` });
 };
@@ -130,6 +134,7 @@ assert.ok(cells20 > 0, "the 20 cells/λ preview has a mesh");
 assert.equal(runner.meshFreshness(), "current");
 assert.equal(runner.previewFailure(), null);
 assert.ok(codes().includes("server_note"), "server checks of the successful preview are listed");
+assert.equal(store.endpointContacts().length, 1, "current preview exposes server contact verdicts");
 
 // ------------------------------------------------------------------ 1. network failure
 
@@ -138,6 +143,7 @@ assert.ok(codes().includes("server_note"), "server checks of the successful prev
   const opens = state.openCount();
   nextPreview = "offline";
   setCpw(24);
+  assert.deepEqual(store.endpointContacts(), [], "contact feedback clears immediately, before the debounce");
   await settle();
   assert.equal(runner.previewState(), "error");
   assert.equal(runner.previewFailure(), "The run server stopped responding.");
@@ -147,6 +153,7 @@ assert.ok(codes().includes("server_note"), "server checks of the successful prev
   assert.equal(cells(), cells20, "its #88 cell count is unchanged, only its provenance changes");
   assert.equal(runner.meshFreshness(), "stale", "the mesh numbers are marked as the last successful preview's");
   assert.equal(unavailable().length, 1, "Checks name the missing server verdict");
+  assert.deepEqual(store.endpointContacts(), [], "offline previews cannot reuse old contacts");
   assert.equal(unavailable()[0].severity, "warning", "a warning, not a run-blocking error");
   assert.ok(!codes().includes("server_note"), "the old server checks are not presented for the new draft");
   assert.ok(store.checks().some((c) => c.severity !== "info"), "no unqualified all-clear after a network failure");
@@ -182,6 +189,7 @@ assert.ok(codes().includes("server_note"), "server checks of the successful prev
   assert.equal(runner.previewFailure(), "the preview worker exited", "a late success cannot validate the newer edit");
   assert.equal(runner.meshFreshness(), "stale");
   assert.equal(unavailable().length, 1, "a server error without checks is no verdict either");
+  assert.deepEqual(store.endpointContacts(), [], "a late success cannot reinstall old contacts");
   assert.match(unavailable()[0].explain, /the preview worker exited/);
 
   store.retryPreview();
@@ -191,11 +199,17 @@ assert.ok(codes().includes("server_note"), "server checks of the successful prev
   assert.ok(cells() > cells20, "the 24 cells/λ mesh is shown now");
   assert.deepEqual(unavailable(), []);
   assert.ok(codes().includes("server_note"));
+  assert.equal(store.endpointContacts().length, 1, "Retry restores contacts for the current draft");
 }
 
 // ------------------------------------------------------------------ 3. a design that does not build
 
 {
+  nextPreview = "offgrid";
+  store.edit((d) => { d.model.description = "off-grid disconnected port"; });
+  await settle();
+  assert.equal(runner.previewState(), "error");
+  assert.equal(store.endpointContacts()[0]?.status, "floating", "current contact verdict survives a rejected mesh preview");
   const shown = state.bundle();
   nextPreview = "unbuildable";
   store.edit((d) => { d.parts[0].primitives[0].stop[0] = 0; });
@@ -205,6 +219,7 @@ assert.ok(codes().includes("server_note"), "server checks of the successful prev
   assert.deepEqual(unavailable(), [], "the server gave its verdict: no 'unavailable' entry");
   assert.ok(codes().includes("zero_size"), "the server's checks of the failed build are listed");
   assert.ok(store.errorCount() >= 1, "the failed build blocks the run as before");
+  assert.deepEqual(store.endpointContacts(), [], "failed builds do not imply contact");
 }
 
 // ------------------------------------------------------------------ 4. undo / redo, restored connectivity

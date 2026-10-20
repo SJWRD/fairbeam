@@ -318,7 +318,9 @@ export function buildParts(b: Bundle, colors: SceneColors, env: THREE.Texture | 
       const g = cached?.geometry ?? (cache ? null : primitiveGeometry(prim));
       if (!g) continue;
       // shapes the exporter could only approximate by their bounding box are drawn as wireframes
-      const mesh = new THREE.Mesh(g, prim.exact ? material : new THREE.MeshBasicMaterial({ color, wireframe: true, transparent: true, opacity: 0.6 }));
+      // Shapes need independent emissive highlights, even when they share a solid and color.
+      const mesh = new THREE.Mesh(g, prim.exact ? (meshes.length ? material.clone() : material)
+        : new THREE.MeshBasicMaterial({ color, wireframe: true, transparent: true, opacity: 0.6 }));
       mesh.userData.part = hostName;
       mesh.userData.primitive = prim;
       mesh.userData.metal = !ghost && kind !== "dielectric";
