@@ -38,8 +38,22 @@ save / Cancel question while a design has unsaved changes or a save is still run
 the window and the draft; the app only goes after a clean save or Don't save. The shell holds
 the close and asks the viewer (`window.fairbeamWindowClose`, see `src/designer/windowClose.ts`
 and `request_leave` in `src-tauri/src/main.rs`); a viewer that does not answer cannot keep the app
-open against a second close. Quitting from the macOS Dock or at logout goes past this question
-(Tauri cannot hold `terminate:`); the local draft backup covers those.
+open against a second close.
+
+Before closing the app, the viewer queries the run server's full queue, including other models,
+sweeps, optimizations and research runs. Running or queued simulations require **Quit and cancel
+runs** or **Cancel**. This question comes before unsaved-work questions; the queue is checked again
+after them so a newly submitted run also needs permission. **Don't save** keeps the draft and
+backup until all exit questions have been accepted. A failed status query asks explicitly whether
+to quit with the simulation status unknown; it never implies the queue is empty. Closing only a
+design keeps the server and simulations running.
+
+On macOS, Dock Quit and system logout/restart requests use `applicationShouldTerminate:` and wait
+for these same questions. Cancel replies to AppKit that the app will stay open, canceling the
+system termination request. Approval follows the normal app termination and server cleanup.
+Repeated Dock/system requests keep that one pending decision; they do not force a quit if the
+page stops answering. The menu's second-quit fallback for an unresponsive page remains separate.
+Force Quit, forced power-off and Windows session shutdown are outside this consent flow.
 
 Status: 0.7.0 is the first release.
 

@@ -26,6 +26,8 @@ mod antenlab_import;
 mod i18n;
 #[cfg(target_os = "macos")]
 mod macos_update;
+#[cfg(target_os = "macos")]
+mod macos_quit;
 mod paths;
 mod native_document;
 mod runtime;
@@ -279,11 +281,16 @@ fn finish_leave(app: &AppHandle, id: u64, leave: bool) {
     };
     if let (true, Some(req)) = (leave, taken) {
         leave_now(app, req.leave);
+    } else {
+        #[cfg(target_os = "macos")]
+        macos_quit::reply(app, false);
     }
 }
 
 /// Leave without asking again; the server stops on RunEvent::Exit.
 fn leave_now(app: &AppHandle, leave: Leave) {
+    #[cfg(target_os = "macos")]
+    if leave != Leave::Update && macos_quit::reply(app, true) { return; }
     match (leave, app.get_webview_window("main")) {
         (Leave::Update, _) => {} // update consent is never permission to quit
         // destroy, not close: close would raise CloseRequested and ask again
@@ -2233,6 +2240,8 @@ fn main() {
         })
         .invoke_handler(tauri::generate_handler![splash_state, retry, install_runtime, use_default_workspace, use_managed, set_prefer_gpu, set_gpu_build, choose_python, reveal_download, reveal_design, save_download, get_general_settings, set_update_check_on_start, check_updates_now, set_language, sync_native_menu_availability, open_workspace, pick_workspace_folder, pick_blender_executable, set_workspace_folder, install_gpu_runtime, set_gpu_runtime_enabled, open_external_link, remember_recent_design, telemetry::telemetry_status, telemetry::telemetry_set_consent, telemetry::telemetry_preview, telemetry::telemetry_reset_id, antenlab_import::take_imported_viewer_prefs, native_document::native_document_open, native_document::native_document_save, native_document::native_document_next_open, native_document::native_document_dismiss_pending, native_document::native_document_restore, native_document::native_document_archive])
         .setup(|app| {
+            #[cfg(target_os = "macos")]
+            macos_quit::install(app.handle()).map_err(std::io::Error::other)?;
             native_document::queue_startup_arguments(app.handle());
             // the menu reads the saved recent designs, so it is built once the path resolver exists
             // (Builder::menu runs before setup and panicked: state() called before manage())

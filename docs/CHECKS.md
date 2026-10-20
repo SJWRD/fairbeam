@@ -33,6 +33,7 @@ node scripts/check-coaxial-port-ui.mjs
 node scripts/check-run-profile-dialog.mjs
 node scripts/check-shape-workflow.mjs
 node scripts/check-telemetry-ui.mjs
+node scripts/check-quit-activity-browser.mjs
 ```
 
 These harnesses start an isolated development server and run server, use temporary projects
@@ -41,7 +42,13 @@ uses a fake native telemetry interface; it does not send usage data. It also acc
 `FAIRBEAM_USAGE_URL` for an already-running development server. Docs and telemetry accept
 the older `CHROME_PATH` override as well as `FAIRBEAM_CHROME`.
 
-Set `FAIRBEAM_SCREENSHOT_DIR` to save optional docs and telemetry screenshots. No fixed
+The quit-activity check exercises the desktop's polling protocol in the browser with a
+controlled run-status response. It verifies running/queued work, Cancel, a run submitted
+during the unsaved-draft question, and an unavailable server in English and Turkish. It does
+not quit a native application or run a solver. macOS Dock Quit, logout cancellation and
+approved termination still need a built native application.
+
+Set `FAIRBEAM_SCREENSHOT_DIR` to save optional docs, telemetry and quit-activity screenshots. No fixed
 `/tmp` directory is required.
 
 ## Built documentation site
