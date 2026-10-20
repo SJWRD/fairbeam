@@ -40,6 +40,24 @@ export default {
       assert.equal(await s.ev(async()=>!!(await import('/src/compare/store.ts')).reference()),false);
       await clearToasts();
     });
+    await s.step('Home and Design text drops distinguish macro guidance from reference context',async()=>{
+      const cases=[
+        ['history.txt','With Brick\n .Name "body"\nEnd With','app.dropCst'],
+        ['macro.txt','Sub Main()\nEnd Sub','app.dropCst'],
+        ['measurement.txt','Frequency (GHz)\tS11 (dB)\n1\t-10\n2\t-20','app.dropReferenceContext'],
+      ];
+      for(const mode of ['home','design']) {
+        if(mode==='design'){await s.ev(async(id,m)=>m.d.enterDesign(id),a,mods);await s.wait('.rb');}
+        const before=await s.ev((_,m)=>({mode:m.w.appMode(),id:m.d.file()?.id,draft:JSON.stringify(m.d.draft)}),null,mods);
+        for(const [name,text,key] of cases) {
+          await clearToasts();await drop(name,text);
+          await s.wait('[data-toast-key="file-drop"]',await s.T(key,{name}));
+          assert.equal(await s.ev(async()=>!!(await import('/src/compare/store.ts')).reference()),false);
+          assert.deepEqual(await s.ev((_,m)=>({mode:m.w.appMode(),id:m.d.file()?.id,draft:JSON.stringify(m.d.draft)}),null,mods),before);
+        }
+      }
+      await clearToasts();await s.click('header.screen.start',{sel:'.mode-switch button'});await s.wait('.home');
+    });
     await s.step('Start returns to the opened result or geometry without loading an example',async()=>{
       for(const kind of ['result','geometry']) {
         await project(kind);await s.wait('.workspace');
