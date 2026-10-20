@@ -7,6 +7,7 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { safeDiagnosticText } from './startup-diagnostics.mjs';
 
 export const failureDir = join(tmpdir(), 'fairbeam-scenario-failures');
 
@@ -71,8 +72,9 @@ function visibleMatch(sel, text, within, exact) {
 }
 
 export class Session {
-  constructor(page, { lang, scenario, url }) {
+  constructor(page, { lang, scenario, url, artifactDirectory = failureDir }) {
     this.page = page; this.lang = lang; this.scenario = scenario; this.url = url;
+    this.artifactDirectory = artifactDirectory;
     this.results = []; this.stepName = ''; this.consoleIssues = [];
     this.auditIgnore = [];
     /** console messages this step expects (a request the server refuses on purpose is logged by the browser) */
@@ -260,8 +262,8 @@ export class Session {
     const rec = { scenario: this.scenario, lang: this.lang, step: name, ok: !problems.length, problems, ms };
     if (problems.length) {
       try {
-        mkdirSync(failureDir, { recursive: true });
-        rec.screenshot = join(failureDir, `${this.scenario}-${this.lang}-${name.replace(/[^a-z0-9]+/gi, '-').slice(0, 40)}.png`);
+        mkdirSync(this.artifactDirectory, { recursive: true });
+        rec.screenshot = join(this.artifactDirectory, `${this.scenario}-${this.lang}-${name.replace(/[^a-z0-9]+/gi, '-').slice(0, 40)}.png`);
         await this.page.screenshot({ path: rec.screenshot });
         const layout = await this.page.evaluate(() => [...document.querySelectorAll('.rb-shell, .rb:not([hidden]) .rb-toolbar, .rb:not([hidden]) .rb-toolbar *')].map(e => {
           const r = e.getBoundingClientRect(), c = getComputedStyle(e);
@@ -269,7 +271,8 @@ export class Session {
             data: { ...e.dataset }, x: r.x, width: r.width, client: e.clientWidth, scroll: e.scrollWidth,
             display: c.display, position: c.position, margin: c.margin, padding: c.padding };
         }));
-        writeFileSync(rec.screenshot.replace(/\.png$/, '.json'), JSON.stringify({ problems, layout }, null, 2));
+        writeFileSync(rec.screenshot.replace(/\.png$/, '.json'), JSON.stringify({ problems, layout },
+          (_key, value) => typeof value === 'string' ? safeDiagnosticText(value) : value, 2));
       } catch { /* the page is gone */ }
     }
     this.results.push(rec);

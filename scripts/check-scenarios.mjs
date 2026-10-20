@@ -18,6 +18,8 @@ import { chromePath, root, startStack } from './scenarios/stack.mjs';
 import { Session, auditSelfTest, failureDir } from './scenarios/harness.mjs';
 import { interactionSelfTest } from './scenarios/harness-self-test.mjs';
 import { withStartupDiagnostics } from './scenarios/startup-diagnostics.mjs';
+import { scenarioAttemptDirectory, withScenarioAttemptDiagnostics } from './scenarios/attempt-diagnostics.mjs';
+import { scenarioAttemptDiagnosticsSelfTest } from './check-scenario-attempt-diagnostics.mjs';
 import { startupDiagnosticsSelfTest } from './check-scenario-startup-diagnostics.mjs';
 import { selfTestArtifactsSelfTest } from './check-scenario-self-test-artifacts.mjs';
 
@@ -166,6 +168,7 @@ try {
   stack = reuse ? { ...reuse, stop: async () => {} } : await startStack({ log: (m) => console.log(m) });
   browser = await puppeteer.launch({ headless: true, executablePath: await chromePath(), args: ['--no-sandbox', '--enable-unsafe-swiftshader', '--use-angle=swiftshader'] });
   await selfTestArtifactsSelfTest(); console.log('Startup self-test evidence retention checks passed.');
+  await scenarioAttemptDiagnosticsSelfTest(); console.log('Scenario attempt evidence retention checks passed.');
   await startupDiagnosticsSelfTest(browser); console.log('Startup diagnostics self-test passed.');
   {
     const page = await browser.newPage();
@@ -195,12 +198,15 @@ try {
       // Keep waits bounded at 20s while allowing that initial dev-server navigation to finish.
       page.setDefaultNavigationTimeout(45000);
       await page.evaluateOnNewDocument((l) => { try { const saved=JSON.parse(localStorage.getItem('fairbeam.generalSettings')||'{}'); localStorage.setItem('fairbeam.generalSettings', JSON.stringify({ ...saved, language: l })); } catch { /* blocked */ } }, lang);
-      const s = new Session(page, { lang, scenario: scenario.id, url: stack.url });
-      try {
-        await scenario.run(s, { stack, root, skipRun, takeSimLock, stamp: attempt > 1 ? `${stamp}r${attempt}` : stamp, compact, ribbonFileAudit });
-      } catch (e) {
-        if (!e.fatalStep) { console.log(`  FAIL ${scenario.id}/${lang} scenario error: ${e.message}`); s.results.push({ scenario: scenario.id, lang, step: 'scenario', ok: false, problems: [e.stack ?? e.message], ms: 0 }); }
-      }
+      const directory = scenarioAttemptDirectory(failureDir, scenario.id, lang, attempt);
+      const s = new Session(page, { lang, scenario: scenario.id, url: stack.url, artifactDirectory: directory });
+      await withScenarioAttemptDiagnostics(page, { directory, stack, scenario: scenario.id, lang, attempt, results: s.results }, async () => {
+        try {
+          await scenario.run(s, { stack, root, skipRun, takeSimLock, stamp: attempt > 1 ? `${stamp}r${attempt}` : stamp, compact, ribbonFileAudit });
+        } catch (e) {
+          if (!e.fatalStep) { console.log(`  FAIL ${scenario.id}/${lang} scenario error: ${e.message}`); s.results.push({ scenario: scenario.id, lang, step: 'scenario', ok: false, problems: [e.stack ?? e.message], ms: 0 }); }
+        }
+      });
       await context.close();
       const failed = s.results.some((r) => !r.ok);
       if (failed && attempt < ATTEMPTS) { retried.push(`${scenario.id}/${lang}`); continue; }

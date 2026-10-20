@@ -12,10 +12,11 @@ const urlWithoutSecrets = value => {
     return clipped(u.href, 500);
   } catch { return '[invalid URL]'; }
 };
-const safeText = (value, limit = 10000) => clipped(value, limit)
+export const safeDiagnosticText = (value, limit = 10000) => clipped(value, limit)
   .replace(/https?:\/\/[^\s<>"']+/g, urlWithoutSecrets)
   .replace(/\bBearer\s+\S+/gi, 'Bearer [redacted]')
   .replace(/((?:token|password|secret|authorization|api[_-]?key)\s*[:=]\s*)[^\s,;]+/gi, '$1[redacted]');
+const safeText = safeDiagnosticText;
 
 /** Attach before the first navigation; keep bounded request metadata, never bodies or headers. */
 export function startupDiagnostics(page, { directory, stack } = {}) {
