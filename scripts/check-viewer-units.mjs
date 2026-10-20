@@ -31,6 +31,9 @@ const built = await build({
         `export * as i18n from ${src("i18n/index.ts")};`,
         `export { dims } from ${src("lib/format.ts")};`,
         `export { modelToMm } from ${src("lib/modelUnits.ts")};`,
+        `export * as readouts from ${src("scene/viewportReadouts.ts")};`,
+        `export { worldToLocalPoint } from ${src("designer/localFrame.ts")};`,
+        `export { measure } from ${src("designer/measure.ts")};`,
         'export { renderToString } from "solid-js/web";',
         'export { createComponent } from "solid-js";',
       ].join("\n");
@@ -40,7 +43,7 @@ const built = await build({
   build: { ssr: "viewer-units-entry", write: false, minify: false, rollupOptions: { output: { format: "es", inlineDynamicImports: true } } },
 });
 const chunk = (Array.isArray(built) ? built[0] : built).output.find((item) => item.type === "chunk");
-const { ModelPanel, SpecPanel, state, i18n, dims, modelToMm, renderToString, createComponent } =
+const { ModelPanel, SpecPanel, state, i18n, dims, modelToMm, readouts, worldToLocalPoint, measure, renderToString, createComponent } =
   await import(`data:text/javascript;base64,${Buffer.from(chunk.code).toString("base64")}`);
 const source = JSON.parse(read("public/projects/patch-antenna.json"));
 const text = (html) => html.replace(/<!--[^>]*-->/g, "").replace(/<[^>]*>/g, " ")
@@ -101,6 +104,37 @@ for (const language of ["en", "tr"]) {
     assert.equal(dims(b.parts[0].bbox, modelToMm(b)), `30 × 20 × 1${decimal}5 mm`);
     assert.equal(JSON.stringify(b), before, "formatting never rescales or mutates the bundle");
   }
+
+  let expectedReadouts;
+  for (const unit of [1e-3, 1e-2, 1, undefined]) {
+    const b = fixture(unit), toMm = modelToMm(b);
+    const point = [15, 10, 1.5].map((v) => v / toMm);
+    const frame = { origin: [5, 2, -0.5].map((v) => v / toMm), angle: 90 };
+    const before = JSON.stringify({ b, point, frame });
+    // Transform the unscaled point against an unscaled WCS first. Convert only the resulting
+    // coordinate text; scaling before the transform would apply the origin in the wrong units.
+    const local = worldToLocalPoint("z", point, frame, {});
+    const origin = [0, 0, 0], endpoint = [3, 4, 0].map((v) => v / toMm);
+    const actual = {
+      world: readouts.viewportCoordinates(point, toMm),
+      local: readouts.viewportCoordinates(local, toMm, true),
+      measured: readouts.viewportMeasurement(measure(origin, endpoint).distance, toMm),
+      scales: [0.09, 0.26, 17.3].map((mmPerPx) => readouts.viewportScaleBar(mmPerPx / toMm, toMm)),
+    };
+    expectedReadouts ??= actual;
+    assert.deepEqual(actual, expectedReadouts, `${language}/${unit}: viewport labels and scale pixel lengths agree physically`);
+    const decimal = language === "tr" ? "," : ".";
+    assert.equal(actual.world, `x 15${decimal}00 · y 10${decimal}00 · z 1${decimal}50 mm`);
+    assert.equal(actual.local, `u 8${decimal}00 · v −10${decimal}00 · w 2${decimal}00 mm`);
+    assert.equal(actual.measured, `5${decimal}000 mm`);
+    for (const [index, physicalLength] of [5, 20, 1000].entries()) {
+      assert.equal(actual.scales[index].label, `${physicalLength} mm`);
+      const mmPerPx = [0.09, 0.26, 17.3][index];
+      assert.ok(Math.abs(actual.scales[index].px * mmPerPx - physicalLength) <= mmPerPx / 4,
+        "scale-bar pixel length represents its labelled mm to the nearest half-pixel");
+    }
+    assert.equal(JSON.stringify({ b, point, frame }), before, "HUD formatting leaves geometry, cursor and WCS unchanged");
+  }
 }
 
 // The 3D viewer's hover and screen-reader descriptions share the same formatter. Keep those
@@ -108,4 +142,9 @@ for (const language of ["en", "tr"]) {
 const viewport = read("src/scene/Viewport.tsx");
 assert.match(viewport, /dims\(p\.bbox, modelToMm\(b\)\)/);
 assert.match(viewport, /dims\(tipPart\(\)!\.bbox, modelToMm\(bundle\(\)\)\)/);
-console.log("check-viewer-units: passed (real panels, mm/cm/m/legacy, EN/TR, hints, mesh, convergence, no mutation)");
+assert.match(viewport, /viewportScaleBar\(worldPerPx, modelToMm\(bundle\(\)\)\)/);
+assert.match(viewport, /viewportCoordinates\(\[c\(\)\.x, c\(\)\.y, c\(\)\.z\], modelToMm\(bundle\(\)\)\)/);
+assert.match(viewport, /viewportCoordinates\(l\(\), modelToMm\(bundle\(\)\), true\)/);
+assert.match(viewport, /viewportMeasurement\(measurePoints\(a\.point, b\.point\)\.distance, modelToMm\(bundle\(\)\)\)/);
+assert.match(viewport, /worldToWcs\(\[c\(\)\.x, c\(\)\.y, c\(\)\.z\]\)/, "WCS transform still receives raw model coordinates");
+console.log("check-viewer-units: passed (real panels and viewport readouts, mm/cm/m/legacy, EN/TR, scale pixels, WCS, measurements, no mutation)");

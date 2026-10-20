@@ -25,14 +25,14 @@ class ConvergenceCancellationTest(unittest.TestCase):
         self.studies = cv.ServerStudies(self.manager, self.root)
         self.manager.on_finished = self.studies.on_finished
 
-    def start(self, study_id="study"):
+    def start(self, study_id="study", *, planned=None):
         return self.studies.start(study_id=study_id, name="Mesh", model={"id": "patch"},
             job_kw={"model": "patch", "model_path": "patch.design.json", "threads": 1},
-            planned=[15, 20, 30], tol=dict(cv.DEFAULT_TOL), settings={})[1]
+            planned=planned or [15, 20, 30], tol=dict(cv.DEFAULT_TOL), settings={})[1]
 
-    def result(self, job):
+    def result(self, job, f_res=2.4e9):
         job.bundle = f"{job.id}.json"
-        (self.root / job.bundle).write_text(json.dumps(fake_bundle(2.4e9)), encoding="utf-8")
+        (self.root / job.bundle).write_text(json.dumps(fake_bundle(f_res)), encoding="utf-8")
 
     def stop_via_handler(self, study_id="study"):
         responses = []
@@ -180,6 +180,82 @@ class ConvergenceCancellationTest(unittest.TestCase):
         job = self.manager.submit(model="plain", model_path="plain.py", sweep={"id": "ordinary"})
         self.stop_via_handler("ordinary")
         self.assertEqual(job.status, "cancelled")
+
+    def assert_terminal_verdict_survives_stop(self, reason, *, planned=None, final_status="done",
+                                            final_frequency=2.4e9, during_metrics=False):
+        planned = planned or [15, 20, 30]
+        first = self.start(planned=planned)
+        self.result(first)
+        self.manager._finish(first, "done", error=None)
+        second = list(self.manager.jobs.values())[-1]
+        self.assertIsNot(second, first)
+        if final_status == "done":
+            self.result(second, final_frequency)
+        before = [(self.root / job.bundle).read_bytes() for job in (first, second) if job.bundle]
+        expected = cv.evaluate([
+            {"density": 15, "status": "done", "metrics": cv.metrics(fake_bundle(2.4e9))},
+            {"density": 20, "status": final_status,
+             "metrics": cv.metrics(fake_bundle(final_frequency)) if final_status == "done" else {}},
+        ], planned, cv.DEFAULT_TOL)
+        self.assertEqual(expected["reason"], reason, "the fixture must reach its own terminal verdict")
+        terminal, resume, requested = threading.Event(), threading.Event(), threading.Event()
+        def wait_at_terminal():
+            terminal.set()
+            if not resume.wait(5):
+                raise TimeoutError("test terminal-verdict barrier")
+        original_metrics = cv.metrics
+        def paused_metrics(bundle):
+            wait_at_terminal()
+            return original_metrics(bundle)
+        def finished(job):
+            if not during_metrics:
+                wait_at_terminal()
+            self.studies.on_finished(job)
+        class ObservedSet(set):
+            def add(self, value):
+                super().add(value)
+                requested.set()
+        self.studies._stop_requested = ObservedSet()
+        self.manager.on_finished = finished
+        with mock.patch.object(cv, "metrics", side_effect=paused_metrics if during_metrics else original_metrics):
+            completing = self.thread(lambda: self.manager._finish(
+                second, final_status, error="solver failed" if final_status == "failed" else None))
+            stopping = None
+            try:
+                self.assertTrue(terminal.wait(5))
+                self.assertTrue(second.terminal)
+                if during_metrics:
+                    # The completion holds the study lock, so Stop must first latch its intent.
+                    stopping = self.thread(self.stop_via_handler)
+                    self.assertTrue(requested.wait(5))
+                else:
+                    self.stop_via_handler()
+            finally:
+                resume.set()
+                self.join(completing, stopping)
+        study = self.studies.load("study")
+        self.assertEqual(study["convergence"], expected)
+        self.assertEqual(len(self.manager.jobs), 2, "Stop must never admit another density")
+        self.assertEqual([member["status"] for member in study["members"]], ["done", final_status])
+        self.assertEqual([member["file"] for member in study["members"]], [first.bundle, second.bundle])
+        self.assertEqual([(self.root / job.bundle).read_bytes() for job in (first, second) if job.bundle], before)
+        for job in (first, second):
+            saved = json.loads((job.dir / "job.json").read_text(encoding="utf-8"))
+            self.assertEqual(saved["sweep"]["reason"], reason)
+            self.assertEqual(saved["sweep"]["verdict"], expected["verdict"])
+            self.assertEqual(saved["sweep"]["converged_at"], expected["converged_at"])
+
+    def test_stop_before_delayed_converging_second_hook_preserves_converged_verdict(self):
+        self.assert_terminal_verdict_survives_stop("converged")
+
+    def test_stop_before_delayed_last_hook_preserves_exhausted_verdict(self):
+        self.assert_terminal_verdict_survives_stop("exhausted", planned=[15, 20], final_frequency=2.6e9)
+
+    def test_stop_before_delayed_failed_hook_preserves_failed_verdict(self):
+        self.assert_terminal_verdict_survives_stop("failed", final_status="failed")
+
+    def test_stop_during_converging_metrics_preserves_converged_verdict(self):
+        self.assert_terminal_verdict_survives_stop("converged", during_metrics=True)
 
     def test_unreadable_or_malformed_study_does_not_block_stopping_existing_jobs(self):
         for index, data in enumerate(("[1, 2]", "null", "{}", "{not json}")):

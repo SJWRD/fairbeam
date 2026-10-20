@@ -19,6 +19,13 @@ export const reasonText = (reason: string): string => REASONS[reason] ? t(REASON
 export function optimizationValues(values: Record<string, number>, specs: readonly Pick<ParamSpec, "key" | "unit">[] = []): string {
   return Object.entries(values).map(([key, value]) => {
     const unit = specs.find(spec => spec.key === key)?.unit;
-    return `${key}=${fmt.num(value, 4)}${unit ? ` ${unit}` : ""}`;
+    const magnitude = Math.abs(value);
+    // Component values may be far below one (F/H) or very large (ohms). Significant
+    // digits keep the best value meaningful without changing the stored parameters.
+    const number = fmt.intl(value === 0 ? 0 : value, {
+      maximumSignificantDigits: 6, useGrouping: false,
+      notation: magnitude > 0 && (magnitude < 1e-3 || magnitude >= 1e6) ? "scientific" : "standard",
+    });
+    return `${key}=${number}${unit ? ` ${unit}` : ""}`;
   }).join("; ");
 }

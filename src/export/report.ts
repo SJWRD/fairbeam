@@ -6,7 +6,7 @@ import { efficiencyWarning, energyText, finalEnergy } from "../lib/run.ts";
 import { APP_VERSION } from "../lib/appVersion.ts";
 import { designStem } from "../lib/exportNames.ts";
 import { bandTexts } from "../lib/bands.ts";
-import { modelToMm } from "../lib/modelUnits.ts";
+import { modelMmText, modelToMm } from "../lib/modelUnits.ts";
 
 const f3 = (hz: number) => (hz / 1e9).toFixed(3);
 const fx = (v: number | null | undefined, d = 2) => (v === null || v === undefined || !Number.isFinite(v) ? "—" : v.toFixed(d));
@@ -136,8 +136,8 @@ export function readmeReport(bundle: Bundle, opt: ReportOptions): string {
       ]),
     ),
   );
-  if (b.half_space) push("", `Infinite **${b.half_space.kind} ground plane** at ${b.half_space.axis} = ${b.half_space.position * toMm} mm (the ${b.half_space.axis}${b.half_space.side === "min" ? "−" : "+"} boundary; image theory). It is a boundary condition, not a part.`);
-  push("", table(["Port", "Type", "R (Ω)", "Direction", "Start (mm)", "Stop (mm)", "Excited"], b.ports.map((p) => [p.number, p.type, p.R, p.direction, p.start.map((v) => v * toMm).join(", "), p.stop.map((v) => v * toMm).join(", "), p.excite ? "yes" : "no"])), "");
+  if (b.half_space) push("", `Infinite **${b.half_space.kind} ground plane** at ${b.half_space.axis} = ${modelMmText(b.half_space.position, toMm)} mm (the ${b.half_space.axis}${b.half_space.side === "min" ? "−" : "+"} boundary; image theory). It is a boundary condition, not a part.`);
+  push("", table(["Port", "Type", "R (Ω)", "Direction", "Start (mm)", "Stop (mm)", "Excited"], b.ports.map((p) => [p.number, p.type, p.R, p.direction, p.start.map((v) => modelMmText(v, toMm)).join(", "), p.stop.map((v) => modelMmText(v, toMm)).join(", "), p.excite ? "yes" : "no"])), "");
 
   push("## Solver settings", "");
   const ex = b.solver.excitation;

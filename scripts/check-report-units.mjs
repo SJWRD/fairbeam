@@ -31,7 +31,7 @@ function fixture(unit) {
   return b;
 }
 
-let expectedReadme;
+let expectedReadme, expectedFigure;
 for (const unit of [1e-3, 1e-2, 1, undefined]) {
   const b = fixture(unit);
   const before = JSON.stringify(b);
@@ -46,6 +46,13 @@ for (const unit of [1e-3, 1e-2, 1, undefined]) {
   assert.ok(readme.includes("| -2, -1, 0.5 | 2, 1, 1.5 |"), "Markdown port coordinates");
 
   const pages = reportPages(b, pdfOptions);
+  const figure = pages.find((page) => page.includes(">Technical drawing<"));
+  assert.ok(figure, `${unit}: the PDF includes Figure 1`);
+  const figureText = texts(figure);
+  expectedFigure ??= figureText;
+  assert.equal(figureText, expectedFigure, `${unit}: actual PDF Figure 1 dimensions and notes agree in physical mm`);
+  for (const expected of ["30", "20", "1.5", "z = -1.25 mm", "All dimensions in mm."])
+    assert.ok(figureText.includes(expected), `${unit}: PDF Figure 1 includes ${expected}`);
   const summary = texts(pages[0]);
   const tables = pages.filter((page) => page.includes(">Geometry and materials<")).map(texts).join(" ");
   assert.ok(summary.includes("smallest cell (0.050 mm)"), `${unit}: PDF convergence hint uses mm`);
@@ -54,4 +61,26 @@ for (const unit of [1e-3, 1e-2, 1, undefined]) {
     assert.ok(tables.includes(expected), `${unit}: PDF setup tables include ${expected}`);
   assert.equal(JSON.stringify(b), before, `${unit}: reports do not rescale the original bundle`);
 }
-console.log("check-report-units: passed (Markdown/PDF tables, mm/cm/m/legacy, no input mutation)");
+
+// 0.07 cm * 10 used to print 0.7000000000000001. Keep significant digits rather than
+// fixed decimal places: even a sub-nanometre coordinate must not become a false zero.
+let expectedOffGrid;
+for (const unit of [1e-3, 1e-2, 1, undefined]) {
+  const b = fixture(unit), toMm = (unit ?? 1e-3) * 1000;
+  b.ports[0].start = [0.7, 7e-10, 0].map((v) => v / toMm);
+  b.ports[0].stop = [1.4, 0, 0].map((v) => v / toMm);
+  b.half_space.position = -0.7 / toMm;
+  const before = JSON.stringify(b);
+  const readme = readmeReport(b, markdownOptions);
+  const tables = reportPages(b, pdfOptions).filter((page) => page.includes(">Geometry and materials<")).map(texts).join(" ");
+  for (const [format, output] of [["Markdown", readme], ["PDF", tables]]) {
+    assert.ok(output.includes("0.7, 7e-10, 0"), `${unit}: ${format} coordinates use compact significant digits without losing small values`);
+    assert.ok(output.includes("1.4, 0, 0"), `${unit}: ${format} stop coordinates use the same formatter`);
+    assert.ok(output.includes("at z = -0.7 mm"), `${unit}: ${format} half-space has no binary arithmetic residue`);
+    assert.ok(!output.includes("0000000001"), `${unit}: ${format} has no scaled-coordinate floating-point noise`);
+  }
+  expectedOffGrid ??= { readme, tables };
+  assert.deepEqual({ readme, tables }, expectedOffGrid, `${unit}: off-grid report values agree across model units`);
+  assert.equal(JSON.stringify(b), before, "formatting off-grid report values does not alter the bundle");
+}
+console.log("check-report-units: passed (actual PDF Figure 1, Markdown/PDF tables, mm/cm/m/legacy, off-grid/tiny coordinates, no input mutation)");
