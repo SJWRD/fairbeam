@@ -130,6 +130,77 @@ await check('#183 visible result import retains real reference data and reports 
   assert.equal(compare.reference()?.reference.files[0],'measurement.s1p');assert.equal(toast.toasts().at(-1).tone,'info');
 });
 const numericReference='Frequency (GHz)\tS11 (dB)\n1\t-10\n2\t-20';
+for(const lang of ['en','tr']) for(const mode of ['home','design']) await check(`#183 ${lang}/${mode} .txt macros route to VBA import without touching hidden references`,async()=>{
+  i18n.setLanguage(lang);open();compare.clearReference();
+  await compare.importReferenceFile({name:'existing.s1p',text:async()=>'# GHz S RI R 50\n1 0.1 0\n2 0.2 0'});
+  await compare.importReferenceFile({name:'previous-error.s1p',text:async()=>''});
+  const existing=compare.reference(),error=compare.refError(),owner=state.bundle();
+  workspace.setAppMode(mode);
+  for(const macro of ['Sub Main()\nEnd Sub','Private Sub Main()\nEnd Sub','With Brick\n .Name "body"\nEnd With','AddToHistory "brick", sCommand']) {
+    let reads=0;
+    await drop.openDroppedFile({name:'history.txt',text:async()=>{reads++;return macro;}});
+    assert.equal(reads,1);assert.equal(toast.toasts().at(-1).text,i18n.t('app.dropCst',{name:'history.txt'}));
+    assert.equal(compare.reference(),existing);assert.equal(compare.refError(),error);
+    assert.equal(state.bundle(),owner);assert.equal(workspace.appMode(),mode);
+  }
+});
+for(const mode of ['home','design']) await check(`#183 ${mode} numeric .txt only explains the reference context`,async()=>{
+  open();compare.clearReference();workspace.setAppMode(mode);let reads=0;
+  await drop.openDroppedFile({name:'measurement.txt',text:async()=>{reads++;return `! AddToHistory is a measurement comment\n${numericReference}`;}});
+  assert.equal(reads,1);assert.equal(toast.toasts().at(-1).text,i18n.t('app.dropReferenceContext',{name:'measurement.txt'}));
+  assert.equal(toast.toasts().at(-1).tone,'info');assert.equal(compare.reference(),undefined);assert.equal(compare.refError(),null);
+});
+for(const mode of ['home','design']) await check(`#183 ${mode} .txt read failure reports the real error without mutating reference state`,async()=>{
+  open();compare.clearReference();workspace.setAppMode(mode);
+  for(const failure of [Error('fixture read failed'),'fixture string failure']) {
+    await drop.openDroppedFile({name:'unreadable.txt',text:async()=>{throw failure;}});
+    assert.equal(toast.toasts().at(-1).text,`unreadable.txt: ${failure instanceof Error?failure.message:failure}`);
+    assert.equal(toast.toasts().at(-1).tone,'error');assert.equal(compare.reference(),undefined);assert.equal(compare.refError(),null);
+  }
+});
+for(const change of ['navigation','leave-and-return','same-screen','bundle']) await check(`#183 pending outside-Results .txt classification yields to ${change}`,async()=>{
+  open();workspace.setAppMode('home');compare.clearReference();toast.dismissToast('file-drop');
+  const held=pending();let reads=0;
+  const opening=drop.openDroppedFile({name:'old-history.txt',text:()=>{reads++;return held.promise;}});
+  assert.equal(reads,1);assert.equal(toast.toasts().some(item=>item.key==='file-drop'),false);
+  if(change==='navigation') workspace.setAppMode('results');
+  else if(change==='leave-and-return') {workspace.setAppMode('design');workspace.setAppMode('home');}
+  else if(change==='same-screen') workspace.setAppMode('home');
+  else state.openBundle(structuredClone(patch),'newer-project.json','local-file');
+  const owner=state.bundle(),mode=workspace.appMode();
+  held.resolve('Sub Main()\nEnd Sub');await opening;
+  assert.equal(toast.toasts().some(item=>item.key==='file-drop'),false);
+  assert.equal(compare.reference(),undefined);assert.equal(compare.refError(),null);
+  assert.equal(state.bundle(),owner);assert.equal(workspace.appMode(),mode);
+});
+await check('#183 a newer drop owns feedback while an outside-Results .txt read is pending',async()=>{
+  open();workspace.setAppMode('design');compare.clearReference();toast.dismissToast('file-drop');
+  const held=pending();const opening=drop.openDroppedFile({name:'old-history.txt',text:()=>held.promise});
+  assert.equal(toast.toasts().some(item=>item.key==='file-drop'),false);
+  await drop.openDroppedFile({name:'new-image.png',text:async()=>''});
+  const current=toast.toasts().at(-1);
+  held.resolve('AddToHistory "brick", sCommand');await opening;
+  assert.equal(toast.toasts().at(-1),current);assert.ok(current.text.includes('new-image.png'));
+  assert.equal(compare.reference(),undefined);assert.equal(compare.refError(),null);
+});
+await check('#183 JSON open supersedes an outside-Results .txt classification',async()=>{
+  open();workspace.setAppMode('home');compare.clearReference();toast.dismissToast('file-drop');
+  const held=pending();const opening=drop.openDroppedFile({name:'old-history.txt',text:()=>held.promise});
+  assert.equal(toast.toasts().some(item=>item.key==='file-drop'),false);
+  await drop.openDroppedFile({name:'new-result.json',text:async()=>JSON.stringify(patch)});
+  held.resolve('Sub Main()\nEnd Sub');await opening;
+  assert.equal(state.source(),'new-result.json');assert.equal(workspace.appMode(),'results');
+  assert.equal(toast.toasts().some(item=>item.key==='file-drop'),false);assert.equal(compare.reference(),undefined);
+});
+await check('#183 stale outside-Results .txt read failure stays silent after a newer drop',async()=>{
+  open();workspace.setAppMode('home');compare.clearReference();toast.dismissToast('file-drop');
+  let rejectRead;const reading=new Promise((_,reject)=>{rejectRead=reject;});
+  const opening=drop.openDroppedFile({name:'unreadable-old.txt',text:()=>reading});
+  assert.equal(toast.toasts().some(item=>item.key==='file-drop'),false);
+  await drop.openDroppedFile({name:'new-history.bas',text:async()=>''});const current=toast.toasts().at(-1);
+  rejectRead(Error('stale read failure'));await opening;
+  assert.equal(toast.toasts().at(-1),current);assert.equal(compare.refError(),null);assert.equal(compare.reference(),undefined);
+});
 for(const extension of ['txt','dat','tsv','snp']) await check(`#183 dropped .${extension} reference matches file-picker support`,async()=>{
   open();workspace.setAppMode('results');compare.clearReference();let reads=0;
   const text=extension==='snp'?'# GHz S RI R 50\n1 0.1 0\n2 0.2 0':numericReference;
