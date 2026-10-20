@@ -7,6 +7,8 @@ import "../styles/designer-sim.css";
 export interface PolarSeries {
   id: string;
   label: string;
+  /** The same label with generated numeric suffixes in export notation; raw names stay intact. */
+  exportLabel?: string;
   color: string;
   /** signed angle from the zenith in degrees, clockwise positive */
   angle: number[];
@@ -154,7 +156,7 @@ export default function PolarChart(props: Props) {
       <div class="chart-legend chart-legend-full" role="group" aria-label={t("chart.polar.legendAria")} tabindex="0" ref={legendEl}>
         <For each={props.series}>
           {(s) => (
-            <span class="legend-item">
+            <span class="legend-item" data-figure-text={s.exportLabel}>
               <span class="legend-key" style={{ background: `var(${s.color})` }} />
               <span>{s.label}</span>
             </span>
@@ -193,7 +195,7 @@ export default function PolarChart(props: Props) {
         </For>
         <For each={props.series}>{(s) => <path d={path(s)} class="c-line" style={{ stroke: `var(${s.color})` }} />}</For>
         <For each={peakLabels()}>
-          {(l) => <text x={l.x} y={l.y} class="c-direct c-halo" text-anchor={l.anchor}>{l.text}</text>}
+          {(l, i) => <text x={l.x} y={l.y} class="c-direct c-halo" data-figure-text={props.series[i()].exportLabel ?? l.text} text-anchor={l.anchor}>{l.text}</text>}
         </For>
         <Show when={hover() !== null}>
           <line x1={geo().cx} y1={geo().cy} x2={pt(hover()!, geo().R)[0]} y2={pt(hover()!, geo().R)[1]} class="c-cross" />

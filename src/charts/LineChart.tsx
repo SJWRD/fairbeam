@@ -420,7 +420,7 @@ export default function LineChart(props: LineChartProps) {
           <For each={props.series}>
             {(s) => (
               <span class="legend-item" title={s.label}>
-                <span class="legend-key" style={seriesKeyStyle(s)} />
+                <span class="legend-key" data-dash={s.dash} style={seriesKeyStyle(s)} />
                 {s.label}
               </span>
             )}
@@ -528,7 +528,7 @@ export default function LineChart(props: LineChartProps) {
           {(d) => <text x={d.x} y={d.y} class={`${d.cls} c-halo`} text-anchor="end">{d.text}</text>}
         </For>
         <For each={gutterLabels()}>
-          {(d) => <text x={d.x} y={d.y} class="c-direct" text-anchor="start"><title>{d.full}</title>{d.text}</text>}
+          {(d) => <text x={d.x} y={d.y} class="c-direct" data-figure-raw="" text-anchor="start"><title>{d.full}</title>{d.text}</text>}
         </For>
 
         <For each={props.markers ?? []}>

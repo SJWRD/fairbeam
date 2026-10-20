@@ -5,17 +5,28 @@ import { saveDownload } from "../lib/download";
 import { downloadToast } from "../lib/toast";
 import { exportNotice } from "./exportContext";
 import { titledSvg } from "./figureTitle";
-import { t } from "../i18n";
+import { decimalComma, t } from "../i18n";
+const shown = (node: Element) => {
+  const box=node.getBoundingClientRect(), visibility=getComputedStyle(node).visibility;
+  return box.width>0 && box.height>0 && !node.closest("[hidden],[inert]") && visibility!=="hidden" && visibility!=="collapse";
+};
 export function visibleFigureSvgs(root:HTMLElement|null):SVGSVGElement[] {
-  return root ? [...root.querySelectorAll<SVGSVGElement>(".chart svg")].filter(svg=>svg.getBoundingClientRect().width>0 && svg.getBoundingClientRect().height>0 && !svg.closest("[hidden],[inert]")) : [];
+  return root ? [...root.querySelectorAll<SVGSVGElement>(".chart svg")].filter(shown) : [];
 }
 /** Snapshot the actual plotted SVGs, including comparison traces and current quantity choices.
  * Resolve CSS roles in the light theme for a standalone figure on white paper. */
 export function visibleFigureSvg(root:HTMLElement):string|null {
   const charts=visibleFigureSvgs(root);if(!charts.length)return null;
   const rect=root.getBoundingClientRect();
-  const width=Math.max(...charts.map(s=>s.getBoundingClientRect().right-rect.left));
-  const height=Math.max(...charts.map(s=>s.getBoundingClientRect().bottom-rect.top));
+  const chartParents=new Set(charts.map(svg=>svg.closest(".chart")));
+  const labels=[...root.querySelectorAll<HTMLElement>(".chart .legend-item,.chart .legend-note,.chart .chart-note")]
+    .filter(node=>chartParents.has(node.closest(".chart")) && shown(node));
+  const boxes=[...charts,...labels].map(node=>node.getBoundingClientRect());
+  const width=Math.max(...boxes.map(box=>box.right-rect.left));
+  const height=Math.max(...boxes.map(box=>box.bottom-rect.top));
+  // Decimal punctuation is a display preference. Engineering figures keep decimal points,
+  // but a point-decimal UI's commas (for example an English thousands separator) stay intact.
+  const comma=decimalComma(), plain=(value:string)=>comma ? value.replace(/(\d),(?=\d)/g,"$1.") : value;
   const out=document.createElementNS("http://www.w3.org/2000/svg","svg");
   out.setAttribute("xmlns","http://www.w3.org/2000/svg");out.setAttribute("viewBox",`0 0 ${width} ${height}`);
   out.setAttribute("width",`${width/96*25.4}mm`);out.setAttribute("height",`${height/96*25.4}mm`);
@@ -29,23 +40,54 @@ export function visibleFigureSvg(root:HTMLElement):string|null {
       const original=[svg,...svg.querySelectorAll<SVGElement>("*")],copies=[clone,...clone.querySelectorAll<SVGElement>("*")];
       original.forEach((node,k)=>{const style=getComputedStyle(node);for(const key of ["fill","fill-opacity","stroke","stroke-width","stroke-opacity","stroke-dasharray","font-family","font-size","font-weight","text-anchor","dominant-baseline","opacity","paint-order","stroke-linecap","stroke-linejoin"])copies[k].style.setProperty(key,style.getPropertyValue(key));});
       const box=svg.getBoundingClientRect();clone.setAttribute("x",String(box.left-rect.left));clone.setAttribute("y",String(box.top-rect.top));clone.setAttribute("width",String(box.width));clone.setAttribute("height",String(box.height));
-      for(const text of clone.querySelectorAll(".c-tick")) {
-        text.textContent=text.textContent?.replace(/(\d),(?=\d)/g,"$1.") ?? "";
+      // Include accessible titles within text too. Update nodes without flattening tspans.
+      const words=document.createTreeWalker(clone,NodeFilter.SHOW_TEXT);
+      for(let node=words.nextNode();node;node=words.nextNode()) {
+        const parent=node.parentElement;
+        if(parent?.closest("[data-figure-raw]"))continue;
+        const explicit=parent?.closest("[data-figure-text]")?.getAttribute("data-figure-text");
+        if(explicit!==null && explicit!==undefined)node.textContent=explicit;
+        else if(parent?.closest("text,tspan"))node.textContent=plain(node.textContent ?? "");
       }
       out.append(clone);
     }
-    // HTML legends occupy space reserved by the plotted SVG. Convert their keys and labels to vectors.
-    for(const item of root.querySelectorAll<HTMLElement>(".chart .legend-item")) {
-      const box=item.getBoundingClientRect();
-      if(!box.width || !box.height || item.closest("[hidden],[inert]"))continue;
+    // HTML legends and notes are not part of the chart SVG. Preserve their actual wrapped lines
+    // and positions, including the Smith reference note below the SVG and the polar radial units.
+    for(const item of labels) {
       const key=item.querySelector<HTMLElement>(".legend-key");
       const text=document.createElementNS("http://www.w3.org/2000/svg","text");
       const style=getComputedStyle(item);
-      text.setAttribute("x",String((key?.getBoundingClientRect().right ?? box.left)+4-rect.left));
-      text.setAttribute("y",String(box.top+box.height/2-rect.top));
       text.setAttribute("dominant-baseline","middle");text.setAttribute("fill",style.color);
       text.setAttribute("font-family",style.fontFamily);text.setAttribute("font-size",style.fontSize);
-      text.textContent=item.textContent?.trim() ?? "";out.append(text);
+      text.setAttribute("font-weight",style.fontWeight);
+      const lines:{left:number;top:number;height:number;value:string}[]=[];
+      const walker=document.createTreeWalker(item,NodeFilter.SHOW_TEXT), range=document.createRange();
+      // Legend labels can contain arbitrary run/reference names. Only the chart that created
+      // a localized numeric suffix can supply its export spelling; never rewrite the raw name.
+      const literal=item.classList.contains("legend-item"), explicit=item.dataset.figureText;
+      let offset=0;
+      for(let node=walker.nextNode();node;node=walker.nextNode()) {
+        if(key?.contains(node))continue;
+        const value=node.textContent ?? "";
+        for(let i=0;i<value.length;i++,offset++) {
+          range.setStart(node,i);range.setEnd(node,i+1);
+          const box=range.getBoundingClientRect();
+          if(!box.width || !box.height) {
+            // A collapsed space at a wrap still separates the words in the exported text.
+            if(/\s/.test(value[i]) && lines.length)lines[lines.length-1].value+=value[i];
+            continue;
+          }
+          let line=lines.at(-1);
+          if(!line || Math.abs(line.top-box.top)>1)lines.push(line={left:box.left,top:box.top,height:box.height,value:""});
+          line.value+=explicit?.[offset] ?? value[i];
+        }
+      }
+      for(const line of lines) {
+        const span=document.createElementNS("http://www.w3.org/2000/svg","tspan");
+        span.setAttribute("x",String(line.left-rect.left));span.setAttribute("y",String(line.top+line.height/2-rect.top));
+        span.textContent=literal ? line.value : plain(line.value);text.append(span);
+      }
+      out.append(text);
       if(key) {
         const r=key.getBoundingClientRect(), st=getComputedStyle(key);
         const color=st.backgroundImage.match(/rgba?\([^)]+\)/)?.[0] ?? st.backgroundColor;
@@ -60,7 +102,9 @@ export function visibleFigureSvg(root:HTMLElement):string|null {
         line.setAttribute("x1",String(r.left-rect.left));line.setAttribute("x2",String(r.right-rect.left));
         line.setAttribute("y1",String(r.top+r.height/2-rect.top));line.setAttribute("y2",String(r.top+r.height/2-rect.top));
         line.setAttribute("stroke",color);line.setAttribute("stroke-width","2");
-        if(st.backgroundImage!=="none")line.setAttribute("stroke-dasharray","4 3");out.append(line);
+        if(key.dataset.dash)line.setAttribute("stroke-dasharray",key.dataset.dash);
+        else if(st.backgroundImage!=="none")line.setAttribute("stroke-dasharray","4 3");
+        out.append(line);
       }
     }
   } finally {if(theme===null)html.removeAttribute("data-theme");else html.setAttribute("data-theme",theme);}
