@@ -197,8 +197,13 @@ class Documents(unittest.TestCase):
         with mock.patch.object(doc.sys, "platform", "darwin"), \
                 mock.patch.object(doc, "_macos_rename_exclusive", side_effect=OSError(errno.ENOTSUP, "unsupported")), \
                 mock.patch.object(doc.os, "link", side_effect=OSError(errno.ENOTSUP, "unsupported")):
-            with self.assertRaisesRegex(doc.DocumentError, "atomically create"):
+            with self.assertRaises(doc.DocumentError) as raised:
                 doc.save(self.path, self.document)
+        self.assertEqual(
+            str(raised.exception),
+            "This drive does not support the atomic file creation required by Fairbeam. "
+            "Save on an internal disk, then copy the .fb file and its adjacent results folder together.",
+        )
         self.assertEqual(list(self.root.iterdir()), [])
 
     def test_macos_rename_errors_do_not_fall_back(self):
@@ -241,49 +246,6 @@ class Documents(unittest.TestCase):
                          acl_get_fd_np=mock.Mock(side_effect=absent) if acl is None else mock.Mock(return_value=acl),
                          acl_free=mock.Mock(return_value=0))
 
-    def test_macos_plain_metadata_ffi_uses_descriptor_and_checks_absent_acl(self):
-        api = self.macos_metadata_api()
-        with mock.patch.object(ctypes, "CDLL", return_value=api) as library:
-            self.assertFalse(doc._macos_has_metadata(17))
-        library.assert_called_once_with(None, use_errno=True)
-        api.flistxattr.assert_called_once_with(17, None, 0, 0x20)
-        self.assertEqual(api.flistxattr.argtypes, (ctypes.c_int, ctypes.c_void_p, ctypes.c_size_t, ctypes.c_int))
-        self.assertEqual(api.flistxattr.restype, ctypes.c_ssize_t)
-        api.acl_get_fd_np.assert_called_once_with(17, 0x100)
-        self.assertEqual(api.acl_get_fd_np.restype, ctypes.c_void_p)
-        api.acl_free.assert_not_called()
-
-    def test_macos_extended_attributes_and_explicit_acl_are_detected(self):
-        for attributes, acl in ((12, None), (0, 1234)):
-            with self.subTest(attributes=attributes, acl=acl):
-                api = self.macos_metadata_api(attributes, acl)
-                with mock.patch.object(ctypes, "CDLL", return_value=api):
-                    self.assertTrue(doc._macos_has_metadata(17))
-                if attributes:
-                    api.acl_get_fd_np.assert_not_called()
-                else:
-                    api.acl_free.assert_called_once_with(acl)
-
-    def test_macos_metadata_query_errors_are_not_treated_as_absence(self):
-        for operation, error in (("flistxattr", errno.EACCES), ("flistxattr", errno.ENOTSUP),
-                                 ("acl_get_fd_np", errno.EIO), ("acl_get_fd_np", errno.ENOTSUP),
-                                 ("acl_get_fd_np", 0),
-                                 ("acl_free", errno.EINVAL)):
-            with self.subTest(operation=operation, error=error):
-                api = self.macos_metadata_api(acl=1234 if operation == "acl_free" else None)
-                def failed(*args):
-                    ctypes.set_errno(error)
-                    return None if operation == "acl_get_fd_np" else -1
-                getattr(api, operation).side_effect = failed
-                with mock.patch.object(ctypes, "CDLL", return_value=api):
-                    with self.assertRaises(OSError) as raised:
-                        doc._macos_has_metadata(17)
-                self.assertEqual(raised.exception.errno, error or errno.EIO)
-        with mock.patch.object(ctypes, "CDLL", return_value=object()):
-            with self.assertRaises(OSError) as raised:
-                doc._macos_has_metadata(17)
-        self.assertEqual(raised.exception.errno, errno.ENOSYS)
-
     def test_posix_plain_file_metadata_is_read_from_open_descriptor(self):
         self.path.write_bytes(b"original")
         with mock.patch.object(doc.sys, "platform", "linux"), \
@@ -292,6 +254,63 @@ class Documents(unittest.TestCase):
         self.assertTrue(stat.S_ISREG(info.st_mode))
         self.assertIsInstance(attributes.call_args.args[0], int)
         self.assertEqual(self.path.read_bytes(), b"original")
+
+    def test_macos_metadata_snapshot_reads_binary_attributes_and_acl(self):
+        acl_bytes = b"!#acl 1\nuser:uuid:allow:read\n"
+        acl_buffer = ctypes.create_string_buffer(acl_bytes)
+        api = self.macos_metadata_api(acl=1234)
+        def raw(value, buffer, size):
+            if buffer is not None:
+                ctypes.memmove(buffer, value, len(value))
+            return len(value)
+        api.flistxattr.side_effect = lambda fd, buf, size, options: raw(b"tag\0", buf, size)
+        api.fgetxattr.side_effect = lambda fd, key, buf, size, pos, options: raw(b"\0binary\xff", buf, size)
+        def text(acl, size):
+            ctypes.cast(size, ctypes.POINTER(ctypes.c_ssize_t))[0] = len(acl_bytes)
+            return ctypes.addressof(acl_buffer)
+        api.acl_to_text.side_effect = text
+        with mock.patch.object(ctypes, "CDLL", return_value=api):
+            self.assertEqual(doc._macos_metadata(17), ({b"tag": b"\0binary\xff"}, acl_bytes))
+        api.acl_free.assert_has_calls([mock.call(ctypes.addressof(acl_buffer)), mock.call(1234)])
+        self.assertEqual(api.fgetxattr.call_args.args[0:2], (17, b"tag"))
+        self.assertEqual(api.fgetxattr.call_args.args[4:], (0, 0x20))
+
+    def test_macos_metadata_snapshot_refuses_incomplete_reads_and_acl_errors(self):
+        api = self.macos_metadata_api()
+        api.flistxattr.side_effect = [4, 3]
+        with mock.patch.object(ctypes, "CDLL", return_value=api), self.assertRaises(OSError):
+            doc._macos_metadata(17)
+        api = self.macos_metadata_api(acl=1234)
+        api.acl_to_text.return_value = None
+        with mock.patch.object(ctypes, "CDLL", return_value=api), self.assertRaises(OSError):
+            doc._macos_metadata(17)
+        api.acl_free.assert_called_once_with(1234)
+
+    def test_macos_absent_acl_is_distinct_from_explicit_empty_acl_with_flags(self):
+        api = self.macos_metadata_api()
+        with mock.patch.object(ctypes, "CDLL", return_value=api):
+            self.assertEqual(doc._macos_metadata(17), ({}, None))
+        text_bytes = b"!#acl 1 no_inherit\n"
+        buffer = ctypes.create_string_buffer(text_bytes)
+        api = self.macos_metadata_api(acl=1234)
+        def text(acl, size):
+            ctypes.cast(size, ctypes.POINTER(ctypes.c_ssize_t))[0] = len(text_bytes)
+            return ctypes.addressof(buffer)
+        api.acl_to_text.side_effect = text
+        with mock.patch.object(ctypes, "CDLL", return_value=api):
+            self.assertEqual(doc._macos_metadata(17), ({}, text_bytes))
+
+    def test_macos_metadata_query_errors_are_not_treated_as_absence(self):
+        for operation in ("flistxattr", "acl_get_fd_np"):
+            for error in (errno.EACCES, errno.ENOTSUP, 0):
+                api = self.macos_metadata_api()
+                def failed(*args):
+                    ctypes.set_errno(error)
+                    return None if operation == "acl_get_fd_np" else -1
+                getattr(api, operation).side_effect = failed
+                with self.subTest(operation=operation, error=error), \
+                        mock.patch.object(ctypes, "CDLL", return_value=api), self.assertRaises(OSError):
+                    doc._macos_metadata(17)
 
     def test_posix_xattrs_acls_and_query_errors_refuse_without_mutation(self):
         self.path.write_bytes(b"original")
@@ -398,27 +417,87 @@ class Documents(unittest.TestCase):
         self.assertEqual(doc.read(self.path)[1], initial)
         self.assertEqual(list(self.root.iterdir()), [self.path])
 
-    @unittest.skipUnless(sys.platform == "darwin", "macOS native ACL and Finder tag refusal")
-    def test_macos_replacement_preserves_acl_and_finder_tags_by_refusing(self):
+    @unittest.skipUnless(sys.platform == "darwin", "macOS native metadata preservation")
+    def test_macos_replacement_preserves_acl_finder_tags_and_lastuseddate(self):
         import plistlib
         import subprocess
         initial = doc.save(self.path, self.document)
+        self.path.chmod(0o640)
         subprocess.run(["chmod", "+a", "group:staff allow read,readattr", str(self.path)], check=True)
-        before = subprocess.check_output(["ls", "-le", str(self.path)])
-        self.document["design"]["model"]["name"] = "edited"
-        with self.assertRaisesRegex(doc.DocumentError, "save a separate copy"):
-            doc.save(self.path, self.document, initial)
-        self.assertEqual(subprocess.check_output(["ls", "-le", str(self.path)]), before)
-        subprocess.run(["chmod", "-N", str(self.path)], check=True)
         tag = "com.apple.metadata:_kMDItemUserTags"
         value = plistlib.dumps(["Fairbeam\n6"], fmt=plistlib.FMT_BINARY).hex()
         subprocess.run(["xattr", "-wx", tag, value, str(self.path)], check=True)
-        before = subprocess.check_output(["xattr", "-px", tag, str(self.path)])
-        with self.assertRaisesRegex(doc.DocumentError, "save a separate copy"):
-            doc.save(self.path, self.document, initial)
-        self.assertEqual(subprocess.check_output(["xattr", "-px", tag, str(self.path)]), before)
-        self.assertEqual(doc.read(self.path)[1], initial)
+        subprocess.run(["xattr", "-wx", "com.apple.lastuseddate#PS", "01000000000000000200000000000000",
+                        str(self.path)], check=True)
+        with self.path.open("rb") as source:
+            before = doc._macos_metadata(source.fileno())
+        owner = self.path.stat()
+        self.document["design"]["model"]["name"] = "edited"
+        changed = doc.save(self.path, self.document, initial)
+        self.assertNotEqual(changed, initial)
+        self.assertEqual(doc.read(self.path)[0], self.document)
+        with self.path.open("rb") as source:
+            self.assertEqual(doc._macos_metadata(source.fileno()), before)
+        after = self.path.stat()
+        self.assertEqual((after.st_uid, after.st_gid, stat.S_IMODE(after.st_mode)),
+                         (owner.st_uid, owner.st_gid, 0o640))
         self.assertEqual(list(self.root.iterdir()), [self.path])
+
+    def test_macos_descriptor_copy_verifies_metadata_and_rejects_copy_failure(self):
+        self.path.write_bytes(b"original")
+        stage = self.root / "stage"
+        stage.write_bytes(b"")
+        metadata = ({b"tag": b"value\0"}, b"acl text")
+        api = mock.Mock(fcopyfile=mock.Mock(return_value=0))
+        with stage.open("wb") as target, mock.patch.object(ctypes, "CDLL", return_value=api), \
+                mock.patch.object(doc.os, "O_NOFOLLOW", 0, create=True), \
+                mock.patch.object(doc, "_macos_metadata", return_value=metadata):
+            expected = self.path.stat()
+            self.assertEqual(doc._macos_preserve_metadata(self.path, target.fileno(), expected), metadata)
+            self.assertEqual(api.fcopyfile.call_args.args[1:], (target.fileno(), None, 5))
+            self.assertEqual(api.fcopyfile.argtypes,
+                             (ctypes.c_int, ctypes.c_int, ctypes.c_void_p, ctypes.c_uint32))
+            self.assertEqual(api.fcopyfile.restype, ctypes.c_int)
+            api.fcopyfile.return_value = -1
+            with self.assertRaisesRegex(doc.DocumentError, "Cannot preserve"):
+                doc._macos_preserve_metadata(self.path, target.fileno(), expected)
+        self.assertEqual(self.path.read_bytes(), b"original")
+        self.assertEqual(stage.read_bytes(), b"")
+
+    def test_macos_metadata_mismatch_never_accepts_staging(self):
+        self.path.write_bytes(b"original")
+        stage = self.root / "stage"
+        stage.write_bytes(b"")
+        original = ({b"tag": b"kept"}, b"acl")
+        for changed in (({b"tag": b"lost"}, b"acl"), ({b"tag": b"kept"}, b"different ACL")):
+            with self.subTest(changed=changed), stage.open("wb") as target, \
+                    mock.patch.object(doc.os, "O_NOFOLLOW", 0, create=True), \
+                    mock.patch.object(doc, "_macos_metadata", side_effect=[original, original, changed]):
+                with self.assertRaisesRegex(doc.DocumentError, "Cannot verify"):
+                    doc._macos_preserve_metadata(self.path, target.fileno(), self.path.stat(), original)
+        self.assertEqual(self.path.read_bytes(), b"original")
+
+    @unittest.skipUnless(sys.platform == "darwin", "macOS save failure preservation")
+    def test_macos_copy_or_verification_failure_preserves_original(self):
+        initial = doc.save(self.path, self.document)
+        self.document["design"]["model"]["name"] = "edited"
+        preserve = doc._macos_preserve_metadata
+        for fail_on in (1, 2):
+            calls = 0
+            def fail(*args):
+                nonlocal calls
+                calls += 1
+                if calls == fail_on:
+                    raise doc.DocumentError("Cannot preserve metadata")
+                return preserve(*args)
+            with self.subTest(fail_on=fail_on), \
+                    mock.patch.object(doc, "_macos_preserve_metadata", side_effect=fail), \
+                    mock.patch.object(doc.os, "replace") as replace:
+                with self.assertRaisesRegex(doc.DocumentError, "Cannot preserve"):
+                    doc.save(self.path, self.document, initial)
+                replace.assert_not_called()
+            self.assertEqual(doc.read(self.path)[1], initial)
+            self.assertEqual(list(self.root.iterdir()), [self.path])
 
     @unittest.skipUnless(os.name == "nt", "Windows readonly replacement semantics")
     def test_readonly_replacement_keeps_original_without_temporary_file(self):

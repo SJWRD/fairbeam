@@ -23,6 +23,7 @@ import { bundleMetrics, indexMetrics, metricsLine, rawMetrics, type RunMetrics }
 import { activeMainResult } from "./mainTabsState";
 import { runLetters } from "./resultTabs";
 import { fmt, t } from "../i18n";
+import { documentResultFiles, nativeDocumentFor } from "../lib/nativeDocuments";
 
 /** The runs of the open design, newest first, labelled for the tree (name · time · engine). */
 export const designRuns = createRoot(() => createMemo(() => {
@@ -38,19 +39,29 @@ export const designRuns = createRoot(() => createMemo(() => {
       finished.set(j.bundle, Math.max(finished.get(j.bundle) ?? 0, j.finished * 1000));
     if (j.status === "done" && j.bundle && j.model === f.id && j.sweep?.values && j.sweep.kind !== "convergence") sweepValues.set(j.bundle, j.sweep.values);
   }
-  return runRows(index(), model, finished, sweepValues);
+  const included = documentResultFiles(f, jobs());
+  // A .fb Save As may retain the embedded model ID. Never mix its runs with another
+  // document merely because their model IDs match; use admitted refs or workspace jobs.
+  const entries = included ? index().filter(entry => included.has(entry.file)) : index();
+  return runRows(entries, model, finished, sweepValues);
 }));
 
 export const designResultNodes = () => {
   const f = designFile();
-  return f ? resultNodes(designRuns(), jobs(), f.design.model.id, runContentOf, (file) => metricsLine(runMetricsOf(file), fmt.fixed)) : [];
+  if (!f) return [];
+  const included = documentResultFiles(f, jobs());
+  const ownJobs = included ? jobs().filter(job => job.model === f.id || (job.bundle && included.has(job.bundle))) : jobs();
+  return resultNodes(designRuns(), ownJobs, f.design.model.id, runContentOf, (file) => metricsLine(runMetricsOf(file), fmt.fixed));
 };
 
 export const [sweepViewId, setSweepViewId] = createSignal<string | null>(null);
 export function openSweepView(id: string) { setSweepViewId(id); }
 
 /** Index metadata only: foreign bundles are fetched only after they are selected. */
-export const otherProjectRuns = () => index().filter(entry => entry.simulated && entry.model !== designFile()?.design.model.id);
+export const otherProjectRuns = () => {
+  const local = new Set(designRuns().map(run => run.file));
+  return index().filter(entry => entry.simulated && !local.has(entry.file));
+};
 const indexedLabels = createRoot(() => createMemo(() => projectLabels(index())));
 export const runLabel = (file: string) => {
   const local = designRuns().find(run => run.file === file);
@@ -463,7 +474,7 @@ createRoot(() => {
   // a geometry node or a pick in the 3D view; leaving the design; another design
   createEffect(on(selection, () => focusResult(null), { defer: true }));
   createEffect(on(appMode, (m) => { if (m !== "design") focusResult(null); }, { defer: true }));
-  createEffect(on(() => designFile()?.id, () => {
+  createEffect(on([() => designFile()?.id, () => designFile()?.backup_scope, () => nativeDocumentFor(designFile())?.handle], () => {
     runEpoch++;
     for (const request of allReads) request.cancel?.();
     focusResult(null);

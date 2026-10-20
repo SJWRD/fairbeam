@@ -115,6 +115,21 @@ Masaüstü uygulaması kendi çalışma ortamını kurar; yukarıdaki elle kurul
 
 ## Bilinen sınırlamalar
 
+Yeni `.fb` yükleyici kaydı, açıkça boş bırakılmış bir varsayılan da dahil olmak üzere mevcut
+uygulama seçimlerini korur ve Fairbeam'i **Birlikte aç** listesine ekler. Fairbeam ancak hem
+kullanıcı hem de birleştirilmiş sistem görünümünde varsayılan seçim veya mevcut Fairbeam komutu
+bulunmadığı doğrulanırsa otomatik seçilir. Yerinde güncelleme, komut kaydı durduğu sürece silinmiş
+varsayılan seçimi korur. Kaldırma sonrasında yeniden kurulum, her iki değer de kaybolmuşsa
+Fairbeam'i yeniden seçebilir; yedek seçim geçmişi tutulmaz.
+
+Paylaşılan Fairbeam kaydı, en son kurulan yola aittir. Kaldırma işlemi kaydı yalnızca tam ve
+tırnak içine alınmış komut hâlâ bu kurulumu gösteriyorsa siler; uzantının varsayılan değeri ile
+diğer uygulamaların kayıtları korunur. Bu davranış
+[Microsoft'un dosya türü yönergelerine](https://learn.microsoft.com/en-us/windows/win32/shell/fa-file-types)
+uyar. Yayımlanmış 0.7.8 sürümü `.fb` kaydı oluşturmuyordu. Yeni ilke, kaynak/model denetimleri ve
+yükleyici derlemesiyle doğrulanır; kurulum sonrası Birlikte aç görünürlüğü, açılış ve kurulum/kaldırma
+davranışı yayımdan önce geçici bir Windows ortamında denenmelidir.
+
 - Resmi openEMS derlemesi yalnızca CPU kullanır. Fairbeam'in kurulum ekranı ve Genel ayarlar, isteğe bağlı NVIDIA derlemesini ayrı bir yönetilen `gpu-runtime` klasörüne kurabilir; CPU ortamı kullanılabilir kalır. Seçilen ortam sonraki uygulama açılışında devreye girer; ortam ikisini de bildiriyorsa Çalıştır iletişim kutusu CPU ve GPU seçeneklerini sunar. Ayrı bir Fairbeam yükleyicisi veya CUDA araç takımı gerekmez. Harici GPU kurulumları desteklenmeye devam eder. [GPU.md](GPU.md) belgesine bakın.
 - Sembolik bağlantılar geliştirici modu veya yönetici yetkisi gerektirir. Çalıştırma sunucusu bunlara bağımlı değildir (bağlantı oluşturacağı yerde model dosyasını kopyalar); `clean-sim` komutunun bağlantıları izlemediğini kontrol eden test, gerekli yetki yoksa bu kısmı atlar.
 - Konsolsuz başlatılan çalıştırma sunucusu (bağımsız bir GUI süreci), işlerine CTRL_BREAK gönderemez; bu durumda iptal işlemi bekleme süresinden (5 s) sonra iş nesnesini sonlandırır ve openEMS düzgün durdurma işlemini gerçekleştiremeden durur. Sonuç aynıdır: paket yazılmaz ve süreç kalmaz. (Denenmemiştir: doğrulanan tüm kurulumlarda sunucu konsoldan çalıştırılmıştır.)

@@ -202,6 +202,38 @@ pub async fn check_now(app: AppHandle, show_result: bool) -> CheckResult {
                         return;
                     }
                 };
+                // The app stays editable during download. Ask about the current drafts only
+                // now, and wait for any in-flight save before stopping their server. This is
+                // a continuation, not Quit: Cancel must leave the running app untouched.
+                let approval_app = handle.clone();
+                let _permission = match tauri::async_runtime::spawn_blocking(move || {
+                    crate::approve_update(approval_app)
+                }).await {
+                    Ok(Some(permission)) => permission,
+                    _ => {
+                        progress::announce(&handle, &Phase::Failed,
+                            "update: installation deferred (unsaved-work check canceled or unavailable)");
+                        return;
+                    }
+                };
+                // Consent given before the download is not consent to cancel a run started
+                // since then. The viewer is now read-only and all pending saves have finished.
+                let confirm_app = handle.clone();
+                let ready = tauri::async_runtime::spawn_blocking(move || {
+                    confirm_app.dialog()
+                        .message(crate::i18n::text(lang, "update-ready"))
+                        .title(crate::i18n::text(lang, "update-title"))
+                        .kind(MessageDialogKind::Warning)
+                        .buttons(MessageDialogButtons::OkCancelCustom(
+                            crate::i18n::text(lang, "update-install"),
+                            crate::i18n::text(lang, "update-later"),
+                        ))
+                        .blocking_show()
+                }).await.unwrap_or(false);
+                if !ready {
+                    progress::announce(&handle, &Phase::Failed, "update: downloaded; installation postponed");
+                    return;
+                }
                 // the viewer learns of the install first: it must not read the stopped server as a
                 // failure (src/runner/store.ts)
                 progress::announce(

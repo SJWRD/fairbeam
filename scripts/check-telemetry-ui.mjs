@@ -1,13 +1,18 @@
-// Optional browser check against an existing dev server; no real usage request or simulation.
-// FAIRBEAM_USAGE_URL=http://127.0.0.1:5354 node scripts/check-telemetry-ui.mjs
+// Isolated browser check with fake native telemetry; no real usage request or simulation.
+// Set FAIRBEAM_PYTHON for the normal scenario stack, or FAIRBEAM_USAGE_URL for an existing dev server.
 import assert from "node:assert/strict";
 import puppeteer from "puppeteer-core";
-import { readFileSync } from "node:fs";
-const url = process.env.FAIRBEAM_USAGE_URL;
-if (!url) throw new Error("Set FAIRBEAM_USAGE_URL to the running dev server");
-const browser = await puppeteer.launch({ headless: true,
-  executablePath: process.env.CHROME_PATH || "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome", args: ["--no-sandbox"] });
+import { mkdirSync, readFileSync } from "node:fs";
+import { join } from "node:path";
+import { chromePath, startStack } from "./scenarios/stack.mjs";
+const screenshots = process.env.FAIRBEAM_SCREENSHOT_DIR;
+if (screenshots) mkdirSync(screenshots, { recursive: true });
+let browser, stack;
 try {
+  if (!process.env.FAIRBEAM_USAGE_URL) stack = await startStack({ log: console.log });
+  const url = process.env.FAIRBEAM_USAGE_URL || stack.url;
+  browser = await puppeteer.launch({ headless: true,
+    executablePath: process.env.CHROME_PATH || await chromePath(), args: ["--no-sandbox"] });
   for (const lang of ["en", "tr"]) {
     const text = JSON.parse(readFileSync(new URL(`../src/i18n/${lang}.json`, import.meta.url), "utf8"));
     for (const enabled of [false, true]) {
@@ -46,7 +51,7 @@ try {
         assert.equal(await page.$eval("#usp-title", el => el.closest(".dialog").scrollWidth <= el.closest(".dialog").clientWidth + 1), true);
         await page.evaluate(label => [...document.querySelectorAll(".dialog button")].find(b => b.textContent === label).click(), text["usage.prompt.fullList"]);
         assert.ok(await page.evaluate(() => window.usageTest.calls.some(c => c.command === "open_external_link" && c.args.link === "privacy")));
-        await page.screenshot({ path: `/tmp/fairbeam-consent-${lang}.png` });
+        if (screenshots) await page.screenshot({ path: join(screenshots, `fairbeam-consent-${lang}.png`) });
         await page.keyboard.press("Escape");
         await page.waitForSelector("#usp-title", { hidden: true });
         assert.equal(await page.evaluate(() => window.usageTest.status.consent), "denied");
@@ -71,7 +76,7 @@ try {
         await page.waitForFunction(() => !window.usageTest.status.active);
         assert.ok(!await page.evaluate(() => window.usageTest.calls.some(c => /telemetry_count/.test(c.command))));
         await page.$eval(".us-section", el => el.scrollIntoView({ block: "start" }));
-        await page.screenshot({ path: `/tmp/fairbeam-usage-settings-${lang}.png` });
+        if (screenshots) await page.screenshot({ path: join(screenshots, `fairbeam-usage-settings-${lang}.png`) });
       }
       if (enabled) {
         await page.evaluate(() => sessionStorage.removeItem("usage-choice"));
@@ -87,4 +92,4 @@ try {
     }
     console.log(`Usage UI ${lang}: disabled build, dismissal once, privacy link, consent, withdrawal, reset and five-field preview passed.`);
   }
-} finally { await browser.close(); }
+} finally { await browser?.close(); await stack?.stop(); }

@@ -6,6 +6,7 @@ import type { Check as DesignCheck } from "../designer/checks";
 import type { ConvergenceStudy } from "../designer/convergence";
 import type { TemplateKey } from "../designer/templates";
 import { t } from "../i18n/index.ts";
+import { serverMessage } from "../lib/serverMessages";
 
 /** The optional managed Elmer package (python/fairbeam/elmer_runtime.py). */
 export interface ElmerRuntime {
@@ -18,6 +19,7 @@ const withThreads = <T extends { threads: number }>(b: T) => ({ ...b, threads: b
 
 export interface Health {
   elmer_driven?: number;
+  research_source?: boolean;
   research?: boolean;
   ok: boolean;
   api: number;
@@ -69,6 +71,8 @@ export interface DesignFile {
   readonly: boolean;
   /** Captured with this file response; do not substitute a later health response. */
   backup_scope?: string;
+  /** Portable identity only; never grants access to a filesystem path. */
+  document_id?: string;
 }
 
 export interface PythonDesignSource {
@@ -80,6 +84,8 @@ export interface PythonDesignSource {
 
 export interface ModelEntry {
   key: string;
+  /** Display-only portable document origin; opening still requires the native grant. */
+  document?: { id: string; path: string; results_directory?: string };
   /** File modification time in Unix seconds; absent on older servers. */
   modified?: number;
   file: string;
@@ -182,7 +188,7 @@ export interface Validation {
   valid: boolean;
   model?: ModelEntry;
   build_s?: number;
-  error?: { message: string; stage: "load" | "build"; location?: ErrorLocation | null; traceback?: string };
+  error?: { message: string; stage: "load" | "build" | "timeout" | "worker"; location?: ErrorLocation | null; traceback?: string };
   /** design files: fairbeam.design_checks results (errors block a save) */
   checks?: DesignCheck[];
 }
@@ -390,7 +396,8 @@ export interface Job {
   id: string;
   /** "run" (fairbeam run) or "optimize" (fairbeam optimize) */
   kind?: "run" | "optimize" | "research";
-  research?: { backend: "periodic" | "elmer"; path: string; settings: Record<string, unknown>; snapshot_sha256: string };
+  research?: { backend: "periodic" | "elmer"; path: string; settings: Record<string, unknown>; snapshot_sha256: string;
+    source?: { model_id: string; workspace_hash: string; backup_scope: string; design_sha256: string } };
   result?: ResearchResult | null;
   optimize?: { vary: OptVary[]; goals: OptGoal[]; max_evals: number; method: string; excite?: string } | null;
   /** display name given by the user (the bundle file name is its slug, `name`) */
@@ -463,7 +470,11 @@ export class ApiError extends Error {
      * next to the human message; empty when the server gave its own message */
     public detail = "",
   ) {
-    super(message);
+    super(serverMessage(data, message));
+    const details = data.field_details;
+    if (details && typeof details === "object" && !Array.isArray(details))
+      this.fields = Object.fromEntries(Object.entries(fields).map(([key, text]) =>
+        [key, serverMessage((details as Record<string, unknown>)[key], text)]));
   }
 }
 
@@ -499,8 +510,8 @@ async function call<T>(method: "GET" | "POST" | "PUT", path: string, body?: unkn
   if (!r.ok) {
     const d = (data ?? {}) as { error?: string; fields?: Record<string, string> };
     if (path !== "/health" && r.status >= 500) failureHook?.();
-    // the server's own message is shown as it is; a bare failure gets a human sentence, and the
-    // status and path go to a Details disclosure instead of standing alone ("HTTP 500")
+    // Known codes are localized by ApiError; older/unknown responses retain the server text.
+    // Bare failures keep status and path in Details instead of standing alone ("HTTP 500").
     throw new ApiError(d.error ?? t("api.serverError"), r.status, d.fields ?? {}, (data ?? {}) as Record<string, unknown>,
       d.error ? "" : `HTTP ${r.status} · ${method} /api${path}`);
   }
@@ -514,7 +525,8 @@ export const api = {
   elmerInstall: (signal?: AbortSignal) => call<ElmerRuntime>("POST", "/research/elmer/install", {}, signal),
   researchRuns: (signal?: AbortSignal) => call<{ runs: Job[] }>("GET", "/research/runs", undefined, signal),
   researchRun: (id: string, signal?: AbortSignal) => call<Job>("GET", `/research/runs/${encodeURIComponent(id)}`, undefined, signal),
-  researchStart: (body: { backend: "periodic" | "elmer"; path: string; settings: Record<string, unknown>; design?: Design }, signal?: AbortSignal) =>
+  researchStart: (body: { backend: "periodic" | "elmer"; path: string; settings: Record<string, unknown>; design?: Design;
+    source?: { model_id: string; workspace_hash: string; backup_scope: string } }, signal?: AbortSignal) =>
     call<Job>("POST", "/research/runs", body, signal),
   researchCancel: (id: string, signal?: AbortSignal) => call<Job>("POST", `/research/runs/${encodeURIComponent(id)}/cancel`, {}, signal),
   previewExampleConversion: (body: { from: string; project?: string }, signal?: AbortSignal) =>

@@ -3,6 +3,7 @@
 // (python/fairbeam/server.py, pcb_import.py), and the layer-role logic (src/lib/pcbLayers.ts) does what the dialog
 // relies on. Run: node --experimental-strip-types scripts/check-pcb-import.mjs
 import assert from "node:assert/strict";
+import { transformWithEsbuild } from "vite";
 import { readFileSync } from "node:fs";
 import {
   admitFiles, buildOptions, designNameFromFiles, fieldValue, guessedRoles, isChosen, layerKey, noteKey, PCB_DEFAULTS, PCB_LIMITS, PCB_RANGES,
@@ -176,5 +177,29 @@ assert.equal(fieldValue("tanD", "0").value, 0, "tan d may be zero");
 assert.equal(fieldValue("margin", "0").value, 0, "the margin may be zero");
 assert.equal(fieldValue("thickness", "100").value, 100);
 for (const key of ["pcbImport.field.number", "pcbImport.field.above", "pcbImport.field.range"]) assert.ok(key in en && key in tr);
+
+
+// Execute the dialog's actual creation handler: its add-port offer belongs only to the selected design.
+const createSource = dialog.slice(dialog.indexOf("  const create = async"), dialog.indexOf("  const addPortNow"));
+assert.ok(createSource.includes("await createDesign"), "the dialog creation handler was found");
+const compiledCreate = await transformWithEsbuild(createSource, "pcb-create.ts", { loader: "ts" });
+const createFactory = new Function("deps", "const {report,name,idError,busy,pending,fieldErrors,setBusy,setError,request,createDesign,id,designFile,setPcbImportOpen,setCreated,setFieldErrors,t}=deps;" + compiledCreate.code + "return create;");
+for (const [current, ports, expected] of [
+  [{ id: "board", backup_scope: "scope-a" }, [], { created: "board.design.json" }],
+  [{ id: "original", backup_scope: "scope-a" }, [], { closed: true }],
+  [{ id: "board", backup_scope: "scope-b" }, [], { closed: true }],
+  [null, [], { closed: true }],
+  [{ id: "board", backup_scope: "scope-a" }, [{}], { closed: true }],
+]) {
+  const observed = {};
+  const create = createFactory({ report: () => ({}), name: () => "Board", idError: () => false,
+    busy: () => false, pending: () => false, fieldErrors: () => ({}), setBusy: () => {}, setError: text => { if (text) throw Error(text); },
+    request: () => ({ files: [], built: { options: {} } }), id: () => "board", designFile: () => current,
+    createDesign: async () => ({ id: "board", backup_scope: "scope-a", file: "board.design.json", design: { ports } }),
+    setPcbImportOpen: open => { observed.closed = !open; }, setCreated: file => { observed.created = file; },
+    setFieldErrors: () => {}, t: key => key });
+  await create({ preventDefault() {} });
+  assert.deepEqual(observed, expected, "only the selected PCB in the same workspace can offer Add port");
+}
 
 console.log("PCB import dialog: entry points, server limits and options, layer roles, files and options: ok");

@@ -2,6 +2,7 @@
 // and material tables, the ISO 5456-2 projection symbol and a notes block.
 
 import type { Bundle } from "../types";
+import { modelToMm } from "../lib/modelUnits.ts";
 import { roleOf, type Projection } from "./geometry.ts";
 import { fit, fitLines, textWidth, wrap } from "./metrics.ts";
 import { circle, group, line, n, polygon, rect, text } from "./svg.ts";
@@ -114,7 +115,7 @@ export function materialRows(b: Bundle): string[][] {
     const label = p.label ?? p.name;
     if (role === "metal") {
       const c = p.conductor;
-      const kind = c ? `${c.thickness !== null ? `Conducting sheet ${fmtVal(c.thickness)} mm` : "Metal"}, σ ${c.conductivity.toPrecision(3)} S/m` : p.type === "ConductingSheet" ? "Conducting sheet" : "PEC";
+      const kind = c ? `${c.thickness !== null ? `Conducting sheet ${fmtVal(c.thickness * modelToMm(b))} mm` : "Metal"}, σ ${c.conductivity.toPrecision(3)} S/m` : p.type === "ConductingSheet" ? "Conducting sheet" : "PEC";
       return [label, kind, "—", "—"];
     }
     if (p.material) {

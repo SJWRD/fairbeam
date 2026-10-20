@@ -6,6 +6,7 @@ import { efficiencyWarning, energyText, finalEnergy } from "../lib/run.ts";
 import { APP_VERSION } from "../lib/appVersion.ts";
 import { designStem } from "../lib/exportNames.ts";
 import { bandTexts } from "../lib/bands.ts";
+import { modelMmText, modelToMm } from "../lib/modelUnits.ts";
 
 const f3 = (hz: number) => (hz / 1e9).toFixed(3);
 const fx = (v: number | null | undefined, d = 2) => (v === null || v === undefined || !Number.isFinite(v) ? "—" : v.toFixed(d));
@@ -79,11 +80,12 @@ export function reproduceNote(b: Bundle, model?: ModelFileRef | null): string {
 /** The mesh in one line ("—" for a geometry preview, which is meshed when it runs). */
 export function meshText(b: Bundle): { cells: string; size: string; domain: string } {
   const m = b.mesh;
+  const toMm = modelToMm(b);
   const meshed = Array.isArray(m.cells) && m.cells.length === 3 && m.total_cells > 0;
   return {
     cells: meshed ? `${m.cells.join(" × ")} = ${m.total_cells.toLocaleString("en-US")}` : "not meshed yet (the mesh is made when the design runs)",
-    size: meshed ? `${fx(m.min_cell, 4)} – ${fx(m.max_cell, 3)} mm` : "—",
-    domain: `(${b.domain.min.map(r3).join(", ")}) to (${b.domain.max.map(r3).join(", ")}) mm`,
+    size: meshed ? `${fx(m.min_cell * toMm, 4)} – ${fx(m.max_cell * toMm, 3)} mm` : "—",
+    domain: `(${b.domain.min.map((v) => r3(v * toMm)).join(", ")}) to (${b.domain.max.map((v) => r3(v * toMm)).join(", ")}) mm`,
   };
 }
 
@@ -96,6 +98,7 @@ export interface ReportOptions {
 
 export function readmeReport(bundle: Bundle, opt: ReportOptions): string {
   const b = withoutVoids(bundle);
+  const toMm = modelToMm(b);
   const out: string[] = [];
   const push = (...l: string[]) => out.push(...l);
   push(`# ${b.name}`, "");
@@ -129,12 +132,12 @@ export function readmeReport(bundle: Bundle, opt: ReportOptions): string {
         p.primitives.length + (p.primitives.some((q) => !q.exact) ? " (approx.)" : ""),
         p.material ? String(p.material.eps_r) : "—",
         p.material?.tan_d != null ? `${p.material.tan_d}${p.material.tan_d_freq ? ` @ ${f3(p.material.tan_d_freq)} GHz` : ""}` : "—",
-        p.bbox[1].map((v, i) => Number((v - p.bbox[0][i]).toFixed(3))).join(" × "),
+        p.bbox[1].map((v, i) => r3((v - p.bbox[0][i]) * toMm)).join(" × "),
       ]),
     ),
   );
-  if (b.half_space) push("", `Infinite **${b.half_space.kind} ground plane** at z = ${b.half_space.position} mm (the ${b.half_space.axis}${b.half_space.side === "min" ? "−" : "+"} boundary; image theory). It is a boundary condition, not a part.`);
-  push("", table(["Port", "Type", "R (Ω)", "Direction", "Start (mm)", "Stop (mm)", "Excited"], b.ports.map((p) => [p.number, p.type, p.R, p.direction, p.start.join(", "), p.stop.join(", "), p.excite ? "yes" : "no"])), "");
+  if (b.half_space) push("", `Infinite **${b.half_space.kind} ground plane** at ${b.half_space.axis} = ${modelMmText(b.half_space.position, toMm)} mm (the ${b.half_space.axis}${b.half_space.side === "min" ? "−" : "+"} boundary; image theory). It is a boundary condition, not a part.`);
+  push("", table(["Port", "Type", "R (Ω)", "Direction", "Start (mm)", "Stop (mm)", "Excited"], b.ports.map((p) => [p.number, p.type, p.R, p.direction, p.start.map((v) => modelMmText(v, toMm)).join(", "), p.stop.map((v) => modelMmText(v, toMm)).join(", "), p.excite ? "yes" : "no"])), "");
 
   push("## Solver settings", "");
   const ex = b.solver.excitation;

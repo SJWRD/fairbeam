@@ -2,6 +2,7 @@
 // (dielectrics opaque white with thin outlines, metals light grey with thick outlines).
 
 import { withoutVoids } from "../lib/voidParts.ts";
+import { modelToMm } from "../lib/modelUnits.ts";
 import type { Bundle, Primitive, Vec3 } from "../types";
 import { primitiveGeometry } from "../scene/geometry.ts";
 import { affinePoint, polyPoint3, roleOf, type Role } from "./geometry.ts";
@@ -507,7 +508,7 @@ export function isoModel(bundle: Bundle): IsoModel {
       hi[i] = Math.max(hi[i], p.bbox[1][i]);
     }
     // a square patch of the (infinite) ground, centred under the structure
-    const h = (Math.max(hi[0] - lo[0], hi[1] - lo[1], 1) / 2) * 1.2;
+    const h = (Math.max(hi[0] - lo[0], hi[1] - lo[1], 1 / modelToMm(b)) / 2) * 1.2;
     const cx = (lo[0] + hi[0]) / 2;
     const cy = (lo[1] + hi[1]) / 2;
     const z = b.half_space.position;

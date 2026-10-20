@@ -75,8 +75,10 @@ jobs:
         run: npm run -s check:cst
       - if: needs.plan.outputs.full == 'true'
         run: npm run -s check:exports
-      - name: Result Touchstone download contract
-        run: node --experimental-strip-types scripts/check-result-touchstone.mjs
+      - name: Result export contracts
+        run: |
+          node --experimental-strip-types scripts/check-result-data.mjs
+          node --experimental-strip-types scripts/check-result-touchstone.mjs
       - run: npm run -s check:docs-translations
       - run: npm run -s check:docs-highlight
       - if: needs.plan.outputs.full == 'true'

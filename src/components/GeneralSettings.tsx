@@ -1,17 +1,18 @@
-import { createEffect, createSignal, For, onMount, Show } from "solid-js";
+import { createEffect, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { CircleAlert, CircleCheck, LoaderCircle, Settings, X } from "lucide-solid";
 import { applyTheme } from "../state";
 import { useModal } from "../lib/dialog";
 import { errorText } from "../lib/errorText";
+import { gpuInstallError, gpuProgress, type GpuRuntimeProgress } from "../lib/gpuRuntimeFeedback";
 import { readGeneralSettings, writeGeneralSettings, type GeneralSettings } from "../lib/generalSettings";
-import { applyAppearance, APPEARANCE_DEFAULTS } from "../lib/appearance";
+import { applyAppearance, APPEARANCE_DEFAULTS, APPEARANCE_PRESETS } from "../lib/appearance";
 import { APPEARANCE_OPTIONS, CUSTOM_COLORS } from "../lib/appearanceOptions";
 import { resetDesignerLayout } from "../designer/layoutState";
 import { resetRibbonLayout } from "../designer/DesignWorkspace";
 import { followSettingsEngine, followSettingsThreads, health } from "../runner/store";
 import { setConfirmShapes } from "../designer/draw";
 import AccountSettings from "./AccountSettings";
-import { setLanguage, t, type LanguageChoice, setDecimalChoice } from "../i18n";
+import { fmt, setLanguage, t, type LanguageChoice, setDecimalChoice } from "../i18n";
 import UsageStatsSettings from "./UsageStatsSettings";
 import "../styles/general-settings.css";
 import NumberField from "./NumberField";
@@ -34,6 +35,7 @@ type DesktopSettings = {
   gpu_choice_source?: string | null;
   gpu_choice_path?: string | null;
   gpu_runtime_installing?: boolean;
+  gpu_runtime_progress?: unknown;
   gpu_supported?: boolean;
   gpu_support_reason?: string | null;
   gpu_adapter?: string | null;
@@ -70,6 +72,27 @@ export default function GeneralSettingsDialog(props: { open: boolean; close: () 
   const [gpuAdapter, setGpuAdapter] = createSignal<string | null>(null);
   const [gpuDriver, setGpuDriver] = createSignal<string | null>(null);
   const [gpuInstalling, setGpuInstalling] = createSignal(false);
+  const [gpuInstallProgress, setGpuInstallProgress] = createSignal<GpuRuntimeProgress | null>(null);
+  let desktopRequest = 0, gpuProgressEpoch = 0, disposed = false;
+  const progressListener = (event: Event) => {
+    const progress = gpuProgress((event as CustomEvent).detail);
+    if (!progress || disposed || (!progress.step && progress.fraction === undefined &&
+      !progress.message && !progress.log && !progress.finished)) return;
+    gpuProgressEpoch++;
+    setGpuInstallProgress(progress);
+    setGpuInstalling(!progress.finished);
+  };
+  onMount(() => window.addEventListener("fairbeam:gpu-runtime-progress", progressListener));
+  onCleanup(() => {
+    disposed = true;
+    desktopRequest++;
+    window.removeEventListener("fairbeam:gpu-runtime-progress", progressListener);
+  });
+  const gpuStep = () => {
+    const step = gpuInstallProgress()?.step;
+    return step && ["download-uv", "install-python", "create-venv", "download-openems", "unpack-openems", "install-packages", "install-openems-wheels", "install-app", "verify"].includes(step)
+      ? t(`settings.gpuManaged.step.${step}`) : t("settings.gpuManaged.preparing");
+  };
   const [workspaceBusy, setWorkspaceBusy] = createSignal(false);
   const [checkingUpdates, setCheckingUpdates] = createSignal(false);
   const [updateStatus, setUpdateStatus] = createSignal<UpdateFeedback | null>(null);
@@ -111,9 +134,11 @@ export default function GeneralSettingsDialog(props: { open: boolean; close: () 
     } catch (e) { showError(t("settings.error.save", { error: errorText(e) })); }
   };
   const loadDesktop = async () => {
-    if (!native()) return;
+    if (!native() || disposed) return;
+    const request = ++desktopRequest, progressEpoch = gpuProgressEpoch;
     try {
       const data = await native()!.invoke<DesktopSettings>("get_general_settings");
+      if (disposed || request !== desktopRequest) return;
       setUpdates(data.check_updates_on_start);
       setCurrentWorkspace(data.current_workspace ?? null);
       setNextWorkspace(data.next_workspace ?? data.workspace ?? "");
@@ -123,9 +148,14 @@ export default function GeneralSettingsDialog(props: { open: boolean; close: () 
       setGpuChoiceReady(!!data.gpu_choice_ready); setGpuChoiceSource(data.gpu_choice_source ?? null); setGpuChoicePath(data.gpu_choice_path ?? null);
       setGpuRuntimeEnabled(!!data.gpu_runtime_enabled); setGpuSupported(!!data.gpu_supported);
       setGpuSupportReason(data.gpu_support_reason ?? null); setGpuAdapter(data.gpu_adapter ?? null); setGpuDriver(data.gpu_driver ?? null);
-      setGpuInstalling(!!data.gpu_runtime_installing);
+      // Hardware probes can outlive an installation event or a local start/finish. Keep
+      // the live progress in that case while accepting unrelated desktop settings.
+      if (progressEpoch === gpuProgressEpoch) {
+        setGpuInstalling(!!data.gpu_runtime_installing);
+        setGpuInstallProgress(gpuProgress(data.gpu_runtime_progress));
+      }
     }
-    catch (e) { showError(t("settings.error.loadDesktop", { error: errorText(e) })); }
+    catch (e) { if (!disposed && request === desktopRequest) showError(t("settings.error.loadDesktop", { error: errorText(e) })); }
   };
   const checkUpdates = async (v: boolean) => {
     setBusy(true); setMessage("");
@@ -174,13 +204,14 @@ export default function GeneralSettingsDialog(props: { open: boolean; close: () 
     finally { setBusy(false); }
   };
   const installGpuRuntime = async () => {
-    setGpuInstalling(true); setBusy(true); setMessage("");
+    gpuProgressEpoch++;
+    setGpuInstalling(true); setGpuInstallProgress(null); setBusy(true); setMessage("");
     try {
       await native()!.invoke("install_gpu_runtime");
       await loadDesktop();
-      showSuccess(t("settings.gpuManaged.ready"));
+      showSuccess(t("settings.gpuManaged.installed"));
     } catch (e) {
-      const code = errorText(e);
+      const { code, detail, log } = gpuInstallError(e);
       const known: Record<string, string> = {
         runtime_installing: "settings.gpuManaged.cpuInstallBusy",
         gpu_runtime_installing: "settings.gpuManaged.installBusy",
@@ -188,11 +219,15 @@ export default function GeneralSettingsDialog(props: { open: boolean; close: () 
         nvidia_smi_missing: "settings.gpuManaged.reason.nvidia_smi_missing",
         nvidia_gpu_missing: "settings.gpuManaged.reason.nvidia_gpu_missing",
         nvidia_driver_too_old: "settings.gpuManaged.reason.nvidia_driver_too_old",
+        nvidia_compute_unsupported: "settings.gpuManaged.reason.nvidia_compute_unsupported",
+        nvidia_compute_capability_unknown: "settings.gpuManaged.reason.nvidia_compute_capability_unknown",
+        gpu_runtime_unsupported: "settings.gpuManaged.reason.gpu_runtime_unsupported",
         nvidia_probe_failed: "settings.gpuManaged.reason.nvidia_probe_failed",
       };
-      showError(known[code] ? t(known[code]) : t("settings.error.gpuInstall"));
+      const summary = known[code] ? t(known[code]) : t("settings.error.gpuInstall");
+      showError([summary, !known[code] && detail, log && t("settings.gpuManaged.log", { path: log })].filter(Boolean).join("\n"));
     }
-    finally { setBusy(false); setGpuInstalling(false); }
+    finally { gpuProgressEpoch++; setBusy(false); setGpuInstalling(false); }
   };
   const chooseWorkspace = async () => {
     setWorkspaceBusy(true); setMessage("");
@@ -233,6 +268,15 @@ export default function GeneralSettingsDialog(props: { open: boolean; close: () 
       <div class="gs-body">
         <Show when={tab() === "appearance"}>
           <div class="gs-panel" id="gs-panel-appearance" role="tabpanel" aria-labelledby="gs-tab-appearance" tabindex={0}>
+            <fieldset class="gs-theme-presets">
+              <legend>{t("settings.appearance.presets")}</legend>
+              <p class="muted">{t("settings.appearance.presetsNote")}</p>
+              <div class="cluster-sm">
+                <For each={(["forest", "academic"] as const)}>{key => <button type="button" class="btn"
+                  aria-pressed={Object.entries(APPEARANCE_PRESETS[key]).every(([field, setting]) => value()[field as keyof GeneralSettings] === setting)}
+                  onClick={() => save(APPEARANCE_PRESETS[key])}>{t(`settings.appearance.preset.${key}`)}</button>}</For>
+              </div>
+            </fieldset>
         <label class="dz-field"><span class="dz-label">{t("settings.theme")}</span><select class="rp-select dz-input" value={value().theme} onChange={e => save({ theme: e.currentTarget.value as GeneralSettings["theme"] })}><option value="system">{t("settings.theme.system")}</option><option value="light">{t("settings.theme.light")}</option><option value="dark">{t("settings.theme.dark")}</option></select></label>
             <label class="dz-field"><span class="dz-label">{t("settings.appearance.uiFont")}</span><select class="rp-select dz-input" value={value().uiFont} onChange={e => save({ uiFont: e.currentTarget.value as GeneralSettings["uiFont"] })}><option value="plex">{t("settings.appearance.plexSans")}</option><option value="system">{t("settings.appearance.systemFont")}</option><option value="arial">Arial / Helvetica</option></select></label>
             <label class="dz-field"><span class="dz-label">{t("settings.appearance.monoFont")}</span><select class="rp-select dz-input" value={value().monoFont} onChange={e => save({ monoFont: e.currentTarget.value as GeneralSettings["monoFont"] })}><option value="plex">{t("settings.appearance.plexMono")}</option><option value="system">{t("settings.appearance.systemMono")}</option><option value="consolas">Consolas</option></select><span class="note">{t("settings.appearance.fontNote")}</span></label>
@@ -258,7 +302,7 @@ export default function GeneralSettingsDialog(props: { open: boolean; close: () 
         <label class="dz-field"><span class="dz-label">{t("settings.language")}</span><select class="rp-select dz-input" value={value().language} onChange={e => save({ language: e.currentTarget.value as LanguageChoice })}><option value="system">{t("settings.language.system")}</option><option value="en" lang="en">English</option><option value="tr" lang="tr">Türkçe</option></select></label>
         <label class="dz-field"><span class="dz-label">{t("settings.decimals")}</span><select class="rp-select dz-input" value={value().decimals} onChange={e => save({ decimals: e.currentTarget.value as GeneralSettings["decimals"] })}><option value="language">{t("settings.decimals.language")}</option><option value="point">{t("settings.decimals.point")}</option><option value="comma">{t("settings.decimals.comma")}</option></select><span class="note">{t("settings.decimals.note")}</span></label>
         <label class="dz-field"><span class="dz-label">{t("settings.engine")}</span><select class="rp-select dz-input" value={value().engine} onChange={e => save({ engine: e.currentTarget.value as GeneralSettings["engine"] })}><option value="cpu">CPU</option><option value="gpu">{t("settings.engine.gpu")}</option></select></label>
-        <div class="dz-field"><span class="dz-label">{t("settings.threads")} <span class="dz-unit">1–{health()?.cpu_count ?? t("settings.threads.available")}</span></span><label class="gs-check"><input type="checkbox" checked={value().threads === 0} onChange={e => save({ threads: e.currentTarget.checked ? 0 : (health()?.default_threads ?? 4) })}/> {t("settings.threads.auto")}</label><Show when={value().threads !== 0}><NumberField class="rp-input dz-input" min="1" max={health()?.cpu_count} step="1" value={value().threads} onChange={e => { const n = Number(e.currentTarget.value); if (Number.isInteger(n) && n > 0 && n <= (health()?.cpu_count ?? 1024)) save({ threads: n }); }} /></Show><span class="note">{t("settings.threads.note", { n: health()?.default_threads ?? 1, cores: health()?.physical_cores ?? health()?.cpu_count ?? 1 })}</span></div>
+        <div class="dz-field"><span class="dz-label">{t("settings.threads")} <span class="dz-unit">1–{health()?.cpu_count ?? t("settings.threads.available")}</span></span><label class="gs-check"><input type="checkbox" checked={value().threads === 0} onChange={e => save({ threads: e.currentTarget.checked ? 0 : (health()?.default_threads ?? 4) })}/> {t("settings.threads.auto")}</label><Show when={value().threads !== 0}><NumberField class="rp-input dz-input" min="1" max={health()?.cpu_count} step="1" value={value().threads} onChange={e => { const n = Number(e.currentTarget.value); if (Number.isInteger(n) && n > 0 && n <= (health()?.cpu_count ?? 1024)) save({ threads: n }); }} /></Show><span class="note">{t("settings.threads.note", { small: fmt.num(0.5, 1), medium: fmt.num(2, 0), n: health()?.default_threads ?? 1, cores: health()?.physical_cores ?? health()?.cpu_count ?? 1 })}</span></div>
         <label class="dz-field"><span class="dz-label">{t("settings.mesh")}</span><select class="rp-select dz-input" value={value().meshMode} onChange={e => save({ meshMode: e.currentTarget.value as GeneralSettings["meshMode"] })}><option value="design">{t("sim.mesh.mode.design")}</option><option value="auto">{t("sim.mesh.mode.auto")}</option></select></label>
         <label class="gs-check"><input type="checkbox" checked={value().confirmShapes} onChange={e => save({ confirmShapes: e.currentTarget.checked })}/> {t("settings.confirmShapes")}</label>
         <label class="dz-field"><span class="dz-label">{t("settings.units")}</span><select class="rp-select dz-input" value={value().units} onChange={e => save({ units: e.currentTarget.value as GeneralSettings["units"] })}><option value="standard">{t("settings.units.standard")}</option><option value="compact">{t("settings.units.compact")}</option></select></label>
@@ -319,6 +363,16 @@ export default function GeneralSettingsDialog(props: { open: boolean; close: () 
           </Show>
           <Show when={!externalIsGpu() && !gpuChoiceReady() && !gpuSupported() && gpuSupportReason()}>
             <p class="note">{gpuReason()}</p>
+          </Show>
+          <Show when={gpuInstalling()}>
+            <div class="stack-sm" role="status" aria-live="polite">
+              <span id="gpu-install-progress-label">{gpuStep()}</span>
+              <Show when={gpuInstallProgress()?.fraction !== undefined} fallback={<progress max="1" aria-labelledby="gpu-install-progress-label" />}>
+                <progress max="1" value={gpuInstallProgress()?.fraction ?? 0} aria-labelledby="gpu-install-progress-label" />
+              </Show>
+              <Show when={gpuInstallProgress()?.message}><p class="note">{gpuInstallProgress()?.message}</p></Show>
+              <Show when={gpuInstallProgress()?.log}><p class="note mono">{t("settings.gpuManaged.log", { path: gpuInstallProgress()!.log! })}</p></Show>
+            </div>
           </Show>
           <Show when={!externalIsGpu() && gpuRuntimeEnabled() && !gpuChoiceReady()}>
             <p class="note">{t("settings.gpuManaged.selectedUnavailable")}</p>

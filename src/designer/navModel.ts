@@ -10,7 +10,8 @@ import { newestResults } from "../runner/resultsIndex.ts";
 import { projectLabels } from "../lib/projectLabels.ts";
 import { studySub } from "./convergence.ts";
 import { freqText } from "../lib/format.ts";
-import { fmt, localeTag, t } from "../i18n/index.ts";
+import { fmt, t } from "../i18n/index.ts";
+import { searchText } from "../lib/searchText.ts";
 
 export type NavSection = "parameters" | "components" | "materials" | "ports" | "lumped" | "results" | "optimizations";
 export type Issue = "error" | "warning" | null;
@@ -309,9 +310,7 @@ export function runNodes(runs: readonly RunRow[], content: (file: string) => Run
 
 // ------------------------------------------------------------------ filter and flatten
 
-// lower case in the UI language (Turkish İ/I lower to i/ı)
-const lower = (s: string) => s.toLocaleLowerCase(localeTag());
-const tokens = (q: string) => lower(q).split(/\s+/).filter(Boolean);
+const tokens = (q: string) => searchText(q).split(/\s+/).filter(Boolean);
 
 /** Every word of the filter occurs in the label or the sub line (case-insensitive). */
 export function matchesFilter(query: string, ...texts: (string | undefined)[]): boolean {
@@ -319,7 +318,7 @@ export function matchesFilter(query: string, ...texts: (string | undefined)[]): 
   const plain = (s: string) => s.replace(/\u2212/g, "-");
   const words = tokens(query).map(plain);
   if (!words.length) return true;
-  const hay = plain(lower(texts.filter(Boolean).join(" ")));
+  const hay = plain(searchText(texts.filter(Boolean).join(" ")));
   // a word also matches across spaces and hyphens, so "farfield" finds "Far field" and "s11" "S-11"
   const squashed = hay.replace(/[\s-]+/g, "");
   return words.every((w) => hay.includes(w) || squashed.includes(w));

@@ -12,8 +12,15 @@ use std::path::Path;
 
 use crate::paths::{Res, Workspace};
 
-fn is_empty(dir: &Path) -> bool {
-    fs::read_dir(dir).map(|mut it| it.next().is_none()).unwrap_or(true)
+fn is_empty(dir: &Path) -> io::Result<bool> {
+    match fs::read_dir(dir) {
+        Ok(mut entries) => match entries.next() {
+            None => Ok(true),
+            Some(entry) => entry.map(|_| false),
+        },
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(true),
+        Err(error) => Err(error),
+    }
 }
 
 fn copy_tree(src: &Path, dst: &Path) -> io::Result<()> {
@@ -138,7 +145,7 @@ pub fn seed(ws: &Workspace, res: &Res) -> Result<Vec<String>, String> {
     }
     let mut done = Vec::new();
     for (src, dst) in [(&res.projects, ws.projects.clone()), (&res.models, ws.models.clone()), (&res.templates, ws.templates())] {
-        if src.is_dir() && is_empty(&dst) {
+        if src.is_dir() && is_empty(&dst).map_err(|e| format!("could not read {}: {e}", dst.display()))? {
             copy_tree(src, &dst).map_err(|e| format!("could not seed {}: {e}", dst.display()))?;
             done.push(dst.display().to_string());
         }
@@ -159,6 +166,18 @@ pub fn seed(ws: &Workspace, res: &Res) -> Result<Vec<String>, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn unreadable_directory_is_not_treated_as_empty() {
+        let root = dir("not-directory");
+        let file = root.join("models");
+        fs::write(&file, b"user file").unwrap();
+        assert!(is_empty(&file).is_err());
+        assert_eq!(fs::read(&file).unwrap(), b"user file");
+        assert!(is_empty(&root.join("missing")).unwrap());
+        assert!(!is_empty(&root).unwrap());
+        fs::remove_dir_all(root).unwrap();
+    }
 
     fn dir(name: &str) -> std::path::PathBuf {
         let d = std::env::temp_dir().join(format!("fairbeam-seed-{name}-{}", std::process::id()));

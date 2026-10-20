@@ -41,6 +41,7 @@ from pathlib import Path
 from typing import Callable
 
 from .jsonutil import finite_json
+from .modelfiles import _write_atomic
 from .procutil import WINDOWS, kill_tree, popen_group, release_group, terminate_group, windows_process_info
 from .progress import TERMINAL, ProgressParser
 from .simdata import remove_inside
@@ -236,6 +237,9 @@ class Job:
         self.cancel_requested = False
         self.lock = threading.RLock()
         self.cond = threading.Condition(self.lock)
+        # Study callbacks may save another job while holding the study lock.
+        # Never acquire job.lock here: _finish takes job.lock before that lock.
+        self._save_lock = threading.Lock()
 
     # ------------------------------------------------------------------ persistence
 
@@ -258,10 +262,12 @@ class Job:
         return round((self.finished or time.time()) - self.started, 2)
 
     def save(self):
-        self.dir.mkdir(parents=True, exist_ok=True)
-        tmp = self.dir / "job.json.tmp"
-        tmp.write_text(json.dumps(self.to_dict(), indent=2, allow_nan=False, default=str), encoding="utf-8", newline="\n")
-        os.replace(tmp, self.dir / "job.json")
+        # Keep snapshot and commit together so concurrent saves cannot commit an
+        # older snapshot last. Unique staging files also avoid collisions with a
+        # separately loaded record; Windows busy renames use the shared retry.
+        with self._save_lock:
+            _write_atomic(self.dir / "job.json",
+                          json.dumps(self.to_dict(), indent=2, allow_nan=False, default=str))
 
     @classmethod
     def load(cls, root: Path, job_dir: Path) -> "Job":
@@ -702,7 +708,8 @@ class JobManager:
             snapshot.write_bytes(research_bytes)
             job.research = {"backend": research_input["backend"], "path": research_input["path"],
                             "settings": research_input["settings"],
-                            "snapshot_sha256": hashlib.sha256(research_bytes).hexdigest()}
+                            "snapshot_sha256": hashlib.sha256(research_bytes).hexdigest(),
+                            **({"source": research_input["source"]} if "source" in research_input else {})}
             job.sim_dir = None  # research output belongs to its own job folder
         job.save()  # no queued events or record are published if serialization fails
         job.publish({"type": "status", "status": "queued"})
@@ -713,12 +720,31 @@ class JobManager:
         self._changed()
         return job
 
-    def submit_research(self, body: dict) -> Job:
+    def submit_research(self, body: dict, *, admitted_source: dict | None = None) -> Job:
         from .research import prepare
         spec = prepare(body)
         design_model = (spec.get("design") or {}).get("model", {})
         driven = spec['backend'] == 'elmer' and spec.get('settings', {}).get('analysis') == 'driven'
-        return self.submit(model=design_model['id'] if driven else f"research:{spec['backend']}", model_path="", threads=1,
+        if admitted_source is not None:
+            from . import documents, modelfiles
+            if (not driven or not isinstance(admitted_source, dict)
+                    or set(admitted_source) != {"model_id", "workspace_hash", "backup_scope", "design_sha256"}
+                    or not isinstance(admitted_source.get("backup_scope"), str)
+                    or not admitted_source["backup_scope"]
+                    or any(not isinstance(admitted_source.get(field), str) or not documents._HASH.fullmatch(admitted_source[field])
+                           for field in ("workspace_hash", "design_sha256"))):
+                raise ValueError("invalid admitted driven research source")
+            modelfiles.check_id(admitted_source["model_id"])
+            if documents.design_digest(spec.get("design")) != admitted_source["design_sha256"]:
+                raise ValueError("research admission changed the original source design")
+            # spec.design remains the original source; worker-only Elmer approximations are
+            # made on a copy. This separate identity fails closed if that ever changes.
+            spec["source"] = dict(admitted_source)
+            from .research import encode, MAX_SNAPSHOT_BYTES
+            if len(encode(spec)) > MAX_SNAPSHOT_BYTES:
+                raise ValueError("source-bound research snapshot exceeds 1 MiB")
+        model = admitted_source["model_id"] if admitted_source else design_model['id'] if driven else f"research:{spec['backend']}"
+        return self.submit(model=model, model_path="", threads=1,
                            kind="research", research_input=spec,
                            model_id=design_model.get("id"),
                            name=(f"{design_model.get('name') or design_model.get('id')} · Elmer"

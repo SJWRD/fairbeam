@@ -1,8 +1,69 @@
-# Portable Fairbeam document foundation
+# Portable Fairbeam documents
 
-This is a storage foundation for the planned `.fb` workflow, not a finished desktop feature.
-It does not register a file association, add a Save command, execute a model, or attach results
-to the current workspace. Existing design JSON and result bundles remain unchanged.
+The development desktop shell can open and save editable `.fb` documents, with result bundles
+in an adjacent folder. This work targets 0.8.0 and still needs the platform checks below before
+release. Existing design JSON and result bundles remain supported.
+
+## Desktop workflow
+
+- File > Open selects a `.fb` document or imports legacy JSON. A second launch forwards `.fb`
+  paths to the running window. Queued requests wait while a modal window is open. Unsaved
+  changes are handled before opening a queued document.
+- The first native `.fb` save opens a file picker and creates a separate `fb_` workspace from
+  the current draft. The source JSON is not overwritten. Later portable edits use the new workspace;
+  the original JSON remains independently editable. Bound document saves write the workspace
+  revision first, then the selected `.fb` file. Canceling keeps existing unsaved edits and results pending, but does not
+  mark a clean document changed. A failed write retains a retry reminder; retry uses the workspace
+  revision that was actually written.
+- Save remains available for an unchanged writable design, so newly completed runs can be added
+  without editing geometry. Completions observed in the current document's workspace mark it
+  unsaved. A successful save acknowledges the results it started with; later completions still
+  need another save. Results skipped by the storage adapter produce a persistent warning.
+- Save As creates a separate document identity and editable workspace copy. Choose a new filename:
+  replacing an existing destination through Save As is currently refused, even if the native
+  picker offered an overwrite confirmation. The model list is refreshed before selecting the
+  copy, so a simulation can start immediately with its own model and parameters.
+- Reopening a document uses its stable UUID instead of importing another workspace copy. Moving
+  the `.fb` file and its adjacent result folder together preserves relative result references.
+- Project file details in the model tree show the location and each referenced result's status.
+  A result can match the saved design, belong to an earlier design, be missing, or fail validation.
+  Matching the design does not establish mesh convergence or physical accuracy.
+- Start keeps portable workspace copies visible and identifies them by their `.fb` path. The
+  path is display/search metadata, not permission to open a file; missing or ambiguous metadata
+  falls back to the workspace filename. Deleting a workspace copy does not delete its `.fb` file.
+  Search normalizes names, paths and result-directory names to NFC, so decomposed macOS filenames
+  match typed Unicode. Display normalization never changes the path used for filesystem access.
+
+The native shell retains the selected path and revision behind an opaque handle. Browser code
+cannot submit arbitrary external paths. The private bridge is restricted to the shell's current
+server session. Browser uploads and drops import the embedded design as a workspace copy and
+do not grant access to adjacent files.
+
+The completion reminder uses a bounded per-window session journal of job identifiers, not result
+contents. It survives a renderer reload, but is not an authoritative attachment ledger and does
+not survive a full app restart. Explicit Open establishes a fresh baseline from the selected
+document; Save can still collect eligible completed runs from that document's workspace history.
+
+## Existing JSON files
+
+While a bound document is open, newly completed runs are automatically attached using its
+saved workspace snapshot. Unsaved designer edits are not silently saved. A pending failed
+design save pauses automatic publication until an explicit Save resolves it. Failed automatic
+result saves leave the workspace result available and show an error; explicit Save retries.
+
+Each saved result also has an immutable `runs/run-<result hash>-<design hash prefix>/` folder below the adjacent
+`.results` directory. It separates S-parameter JSON, far-field JSON, geometry, matching source
+design (when available), and run metadata. The original checksummed bundle remains canonical.
+`drawings`, `images`, and `optimization` folders reserve locations for separately exported
+artifacts; this does not automatically render plots or capture an optimizer study. Distinct
+result hashes get new folders, and existing files are never overwritten with different data.
+These derived folders are optional: an export error does not discard the saved document.
+
+The `.fb` format is additive. Existing `.design.json` designs and JSON result bundles still open
+through File > Open or import/drop. Legacy 0.6.x design and result schema names are still
+recognized. Importing a JSON design creates an editable workspace copy; it does not rewrite the
+source JSON file. A desktop Save can then create a separate `.fb` project. JSON export remains
+available for interchange, and importing a result-only bundle does not invent an editable design.
 
 ## Format
 
@@ -49,34 +110,53 @@ On macOS, document saves in the same parent directory share a lock identified by
 device and inode. This intentionally serializes separate documents too, avoiding differences in
 filesystem case and Unicode alias rules. New files use `renamex_np(RENAME_EXCL)` where supported,
 falling back to an exclusive hardlink only when exclusive rename is unavailable. If neither
-operation is supported, creation fails without publishing partial content. Actual volume support,
-including exFAT, requires testing on that volume; it is not implied by the macOS API's availability.
+operation is supported, creation fails without publishing partial content.
+Earlier native macOS checks on APFS passed ordinary saves, concurrent saves through case aliases,
+Unicode result-name collision checks and locked-file refusal. The metadata-copy change below
+requires a new Finder-open/save check on macOS. On the tested exFAT volume, neither exclusive
+rename nor hardlinks was supported, so creation refused without publishing partial content.
+Save on an internal APFS volume, then copy the `.fb` file and its adjacent results folder together.
+Other volumes still need their own checks.
 Other POSIX systems use an exclusive hardlink, and Windows uses a no-replace rename.
 
 The file is flushed before publication, but the parent directory is not fsynced afterward. This
 provides atomic visibility and conflict protection, not a guarantee that the rename survives
 power loss.
 
-Windows replacement copies and verifies the destination DACL, including inherited ACEs and
+Windows replacement refuses a destination with named data streams, including `Zone.Identifier`,
+or when stream enumeration fails or is unsupported. It checks before staging and again before
+publication; Save As to a new filename leaves the original file and its streams intact. This
+policy has been tested on NTFS; other Windows volumes need their own checks. Identical-byte saves
+do not replace the file and need no stream enumeration.
+
+Windows replacement also compares the destination and empty staging file's owner and primary
+group SIDs. A mismatch or unreadable identity refuses the save before writing bytes; the app
+does not change ownership or request additional privileges. This also keeps owner-relative
+access entries meaningful. Replacement then copies and verifies the destination DACL, including inherited ACEs and
 inheritance protection, on the empty staging file before writing document bytes. If the DACL
 cannot be read, applied, or preserved exactly, saving fails before replacing the destination.
 A retained deletion-capable handle removes a failed stage even when the copied DACL denies
 deletion; cleanup does not restore broader parent permissions onto document bytes. Publication
 continues to use rename/replace, without `ReplaceFileW`'s partial-failure behavior.
-The staging file must already have the same owner and group as the destination, or saving is
-refused before writing bytes. SACLs, alternate data streams, and other attributes are not copied.
+This is a policy for ordinary local document files, not complete filesystem-metadata preservation.
+The writer neither queries nor guarantees preservation of SACLs, auditing rules, mandatory labels,
+or security resource attributes, and it does not enable security privileges. Files whose security
+depends on that metadata require a separate-copy workflow; the app does not detect those policies.
+Other attributes, including encryption and compression, are not copied or guaranteed.
 
-POSIX replacement preserves ordinary mode bits and requires the empty staging file's owner/group to match
-the destination before writing bytes. It refuses replacement when the destination or stage has
-setuid/setgid/sticky mode bits, extended ACLs, listed extended attributes, or BSD file flags, or
-when those metadata queries fail.
-macOS queries the open file descriptor with `flistxattr` (including compression attributes) and
-`acl_get_fd_np`; Linux uses `os.listxattr`, which also lists POSIX ACL attributes. Metadata is never
-stripped or permissions escalated. The error directs the user to save a separate copy.
-Finder tags, quarantine attributes, and inherited stage ACLs therefore cause refusal too: even a
-downloaded document with quarantine metadata needs Save As to a new file. An identical-byte save
-does not replace the file and needs no metadata changes. Queries cover metadata exposed to the
-current user, within the existing advisory-lock and static-boundary guarantees described below.
+POSIX replacement preserves ordinary mode bits and requires the empty staging file's owner/group to
+match the destination. Special mode bits and BSD file flags remain unsupported. On macOS, the writer
+copies ACLs and extended attributes onto the empty stage using `fcopyfile(COPYFILE_ACL | COPYFILE_XATTR)`.
+Descriptor queries compare all listed attribute bytes and serialized ACLs before writing and again
+before replacement. This includes Finder's last-used date, tags, quarantine and other exposed attributes;
+failed copying or verification leaves the original intact. Linux still refuses extended metadata.
+An identical-byte save does not replace the file. These checks cover metadata exposed to the current
+user, within the advisory-lock and static-boundary guarantees below, without escalating permissions.
+
+New POSIX documents and portable result files currently use owner-only permissions (`0600`).
+They can be copied or shared, but do not automatically grant access to other local users through
+the directory's umask. Existing file permissions are preserved on replacement; this release does
+not widen them. Umask-aware creation remains a follow-up requiring native ACL and staging checks.
 
 `read(path)` returns `(document, byte_hash)` without opening results or executing Python.
 `read_result(path, document, reference)` checks membership, relative boundaries, regular files,
@@ -85,41 +165,68 @@ are refused. This is not a sandbox against a malicious local process concurrentl
 filesystem entries. A user-selected parent directory is resolved before access.
 
 Missing results do not prevent opening the embedded design. A result with a mismatched checksum
-must be reported as unavailable rather than silently loaded. The format does not include a
-result writer or garbage collector yet, and no sidecar is deleted by this module.
+is reported as unavailable rather than silently loaded. The workspace adapter captures the
+immutable input snapshot and exact completed result bytes, then copies verified bundles into
+the sidecar when saving. Older jobs without that provenance are skipped with a warning.
+Driven Elmer runs started from a saved workspace can also be attached. The server validates
+the workspace scope, saved revision, and original design before recording source identity in
+the checksummed research input. Capture verifies that original design separately from the
+experimental solver settings, plus the research result and exported bundle checksums. The
+experimental result remains experimental; attachment does not establish numerical accuracy.
+Source-less research calls retain their existing workspace history behavior and are not
+attached to `.fb` documents. Other research modes have no portable viewer bundle.
+Capture assumes exclusive output-directory ownership during the worker's write and completion;
+external writers replacing an output before its first capture are not provenance-attested.
+No sidecar garbage collector runs: unreferenced files are retained.
 
 From the repository root, with its own installed dependencies:
 
 ```sh
 npm run check:documents
 cd python
-python -m unittest discover -s tests -p test_documents.py -v
+python -m unittest discover -s tests -p 'test_document*.py' -v
+python -m unittest discover -s tests -p test_native_documents_api.py -v
+python -m unittest discover -s tests -p test_research_documents.py -v
 cd ..
 ```
 
 The shared cases in `python/tests/fixtures/document_envelopes.json` exercise both languages.
 Filesystem tests cover stale saves, simultaneous writers, Unicode, missing results, corrupted
 checksums, links, size limits, and failed writes. They require neither a solver nor network access.
-Windows cases also exercise protected and inherited destination DACLs, ACL failures before
-publication, and cleanup with a DACL that denies deletion. Numeric identity cases cover nested
+Windows cases also exercise named-stream refusal, stream-query failures, ordinary and read-only
+saves, and a stream added during staging. They verify original bytes, streams, owner/group, DACL,
+and file attributes remain intact after refusal. Other cases cover matching and mismatched
+owner/group SIDs, ownership read failures,
+protected and inherited destination DACLs, ACL failures before publication, and cleanup with a
+DACL that denies deletion. Numeric identity cases cover nested
 values, negative zero, exponents, and large integers rounded as browser JSON numbers.
 Platform-independent mocks check the macOS exclusive-rename contract, unsupported-volume refusal,
 competing creates, and parent-directory lock identities; these do not replace tests on a Mac.
 Metadata mocks cover descriptor query errors, ACLs, attributes, and ownership refusal. Native
 platform tests check Linux xattr refusal and macOS ACL/Finder-tag refusal on temporary fixtures.
 
-## Remaining integration gates
+For manual local I/O measurements without a solver or network, run
+`python scripts/benchmark-document-io.py --bundles 500 --padding-kib 4 --repeats 3 --output current.json`
+from the repository root. Repeat with the same fixture arguments and either
+`--per-reference-manifest` (a fresh validated reader per reference) or
+`--legacy-result-reader` (an isolated second result read/hash). These are separate cost baselines,
+not complete historical implementations. The default fixture is eight bundles with 8 MiB padding;
+fixtures are limited to 1,000 bundles and 256 MiB total padding. Reports count actual reader bytes,
+result hashes, design hashes, and manifest validations. Each Open must match an unmodified-reader
+control exactly, including references, statuses, and copied bytes; sidecar hashes, sizes, and
+modification times must stay unchanged. Use new report filenames and compare alternating runs;
+cache priming and verification are outside the measured operation.
 
-- Native Save/Open and OS file-open events on Windows and macOS, including an already running app.
-- Explicit access to selected files, dirty-draft confirmation, and safe result copying.
-- Stable mapping between document identity and workspace identity; avoid importing a new duplicate
-  on every double-click.
-- UI distinction between missing, changed, and historical results; never present a previous
-  design's result as a freshly computed one.
-- Round-trip desktop checks, path/rename/move checks, and installer association checks on both OSes.
-- Remaining native filesystem metadata needs an explicit policy before unrestricted overwrites:
-  Windows DACLs and owner/group identities and POSIX owner/group and ordinary mode bits are preserved.
-  POSIX extended metadata causes refusal; Windows SACLs, alternate data streams, and other metadata
-  still need a preservation policy.
+## Remaining release gates
 
-Do not advertise `.fb` desktop support or promote a release on this foundation alone.
+- Round-trip desktop checks on Windows and macOS: Save/Open/cancel, an already running app,
+  path/rename/move, dirty-draft confirmation, and installed file associations.
+- Review the result-status presentation with missing, corrupt, historical, and newly computed
+  results. Existing JSON import, export, and the openEMS workflow must remain usable.
+- Validate the bounded metadata policy on target Windows and macOS volumes. Windows preserves
+  DACLs and owner/group identities and refuses named streams or failed stream queries. macOS copies
+  and verifies exposed ACLs/xattrs; Linux refuses extended metadata. Both preserve owner/group and mode. Windows SACLs,
+  audit/security policies, encryption, compression, and other attributes are outside the verified
+  preservation contract; unrestricted metadata-preserving overwrites are not supported.
+
+Do not promote a release on storage and unit checks alone.

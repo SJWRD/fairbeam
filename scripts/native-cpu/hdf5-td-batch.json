@@ -1,0 +1,9 @@
+{
+  "base_commit": "12cd91de21548987b835ce21f10fd8421d74da78",
+  "patch_sha256": "ebe367bee34569cb6bf42beaf2610be66192ef602a45ab2dcc2ddf5541d90281",
+  "files": {
+    "Common/processfields_td.cpp": "c03fef9984ac0ca133fcd45adcbec73b17cdc5aaf0c7b4af1654ee2283f79cc1",
+    "tools/hdf5_file_writer.cpp": "f641867288c110199108b0e9a050904a94fbfc505e828656212eaccdebf5cb74",
+    "tools/hdf5_file_writer.h": "19c39632f65edfa174f0e7cf1f91122a73757b745678c2b3b382013debd736bf"
+  }
+}

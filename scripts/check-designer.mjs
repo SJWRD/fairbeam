@@ -771,4 +771,11 @@ for (const prim of [tube, ball, side, cone, ring]) {
 console.log(`check-designer: ${checks} checks, ${failures} failed (${fx.expressions.length} expressions, ${fx.cases.length} cases)`);
 // This script is part of both CI's check:designer and check:exports aggregations.
 await import('./check-result-session-state.mjs');
+// Keep these focused regressions in the normal designer gate. Isolated processes prevent
+// browser-like globals in other fixtures from affecting their Node/module checks.
+for (const name of ["geometry-cache", "results-tabs", "save-as"]) {
+  execFileSync(process.execPath, ["--experimental-strip-types", join(root, `scripts/check-${name}.mjs`)], {
+    cwd: root, stdio: "inherit", windowsHide: true,
+  });
+}
 process.exit(failures ? 1 : 0);

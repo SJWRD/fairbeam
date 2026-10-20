@@ -1,5 +1,6 @@
 import { evaluate } from "./expr.ts";
 import { t } from "../i18n/index.ts";
+import { checkTitle } from "./checkText.ts";
 import type { Design, ParameterSweepDefinition, ParameterSweepSequence } from "./types";
 
 export const MAX_SWEEP_CELLS = 500;
@@ -49,7 +50,9 @@ function planSequence(sequence: ParameterSweepSequence, independent: Map<string,
   const sweep: PlannedSequence["sweep"] = [];
   const value = (text: string) => {
     if (!text.trim()) throw new Error(t("sweep.plan.emptyValue"));
-    const n = evaluate(text, names);
+    let n: number;
+    try { n = evaluate(text, names); }
+    catch (error) { throw new Error(checkTitle({ code: "expr", message: error instanceof Error ? error.message : String(error) })); }
     if (!Number.isFinite(n)) throw new Error(t("sweep.plan.notFinite"));
     return n;
   };

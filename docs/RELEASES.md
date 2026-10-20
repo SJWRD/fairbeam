@@ -142,8 +142,9 @@ editing them, or the prefill stops working.
 
 ## Runtime components
 
-- **Windows openEMS:** the official MSVC build. It is pinned by URL and SHA-256 in
-  `runtime/pins.json`, and nothing of it is republished.
+- **Windows openEMS:** the pinned MSVC package includes the native CPU and time-domain HDF5
+  batching patches. Its URL, SHA-256 and build provenance are recorded in `runtime/pins.json`;
+  retain corresponding sources and notices with the runtime release.
 - **macOS openEMS pack:** built with `scripts/build-openems-macos-pack.py` (docs/DESKTOP.md), then
   released under its own tag. The pack contains its license texts and `NOTICE.md`, and the NOTICE is
   also a separate asset. Create it with `--latest=false` so that it never becomes the latest
@@ -176,6 +177,67 @@ editing them, or the prefill stops working.
 
 One entry per release, newest first. The installers are on the
 [release page](https://github.com/ismailakdag/fairbeam-releases/releases) of each version.
+
+### 0.8.3, 2026-10-19
+
+- Fix the desktop permission error when choosing to remove a portable `.fb` document and
+  its results folder. The native archive command now has an app-manifest entry and viewer
+  permission. In 0.8.2 the blocked action left files intact; list-only removal was unaffected.
+- Add command-registration/manifest and capability checks to prevent missing native permissions.
+- Ask before native window close or Quit discards unsaved Python editor text. Retain unapplied
+  designer Python text across Start, design switches and reopening the panel within the session.
+- Keep unapplied designer Python text attached to its document after first native Save or
+  Save As. Switching Python models also checks unsaved editor text and waits for pending saves.
+- Check unsaved work again after an update finishes downloading, before installation stops
+  the app. Cancel or Later keeps drafts intact; edits made during download are included.
+- Preserve decimal points while typing automatic mesh overrides in Simulation settings.
+- Protect shared result folders even when sibling documents use different case or Unicode
+  spellings for the same directory. Linked result folders remain protected.
+- Skip malformed or unrelated result-index and workspace metadata files without blocking
+  healthy projects. Failed index publication no longer prevents completed-run callbacks;
+  concurrent index writers use separate temporary files and Windows file retries.
+- Deliver rejected local API requests reliably when their body arrives after the headers.
+  Isolate Windows bootstrap proxy tests with exclusive, OS-assigned ports.
+- Removal remains recoverable through `Fairbeam Deleted`; this does not permanently erase files.
+
+### 0.8.2, 2026-10-19
+
+- Start shows five designs at a time, with Show more/Show less and search/filter support.
+  Example copy actions are labelled and grouped with their own example.
+- Optional project removal moves the portable `.fb` and its results folder together into
+  `Fairbeam Deleted` for recovery. It does not permanently erase files or free disk space;
+  local history and cached runs remain. Shared results, links and active runs stay protected.
+- Removal handles AppleDouble metadata siblings and Unicode/case aliases on macOS;
+  unreadable real sibling documents are identified in the error message.
+- Forest and Academic appearance presets apply coordinated interface and viewport colors.
+  Simulation settings are unchanged.
+- The Windows first-use Open With limitation documented for 0.8.0 remains unchanged.
+  Elmer and coax remain experimental; this release adds no solver accuracy claims.
+
+### 0.8.1, 2026-10-18
+
+- Fix new-design creation staying on Start after the initial native `.fb` save changes
+  the workspace identity. Creation now enters Design after its own successful save;
+  an unrelated document opened while saving still takes precedence.
+- The Windows first-use Open With limitation documented for 0.8.0 remains unchanged.
+
+### 0.8.0, 2026-10-18
+
+- Portable `.fb` documents with native Open, Save and Save As, while keeping support for
+  existing JSON designs. Saving a JSON design as `.fb` preserves the source JSON.
+- Completed runs are saved automatically beside the document in separate `runs/*-v2`
+  result directories, with checksummed packages. Unsaved design changes are not silently saved.
+- macOS document saves preserve Finder extended attributes and ACLs; Unicode-normalized
+  searches match decomposed file names and paths.
+- Updated Windows CPU runtime and Windows-only HDF5 time-domain batching. macOS keeps its
+  existing CPU runtime and GPU behavior. Elmer and coax remain experimental; this release
+  does not establish convergence or accuracy for arbitrary designs.
+- **Known Windows limitation:** on some installations Fairbeam may not appear in the initial
+  Open With picker. Choose **Open With > Choose another app > Choose an app on your PC** and
+  select `%LOCALAPPDATA%\Fairbeam\fairbeam.exe`, then choose **Always**. Cold double-click,
+  Open With and delivery to an already running app were verified after this explicit choice;
+  automatic first-install discovery remains unresolved. Opening `.fb` from within Fairbeam
+  is also available.
 
 ### 0.7.8, 2026-10-17
 

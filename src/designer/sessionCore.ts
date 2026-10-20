@@ -5,14 +5,19 @@ import type { DesignFile } from "../runner/api";
 import type { Design, Selection } from "./types";
 import type { Check } from "./checks";
 import { paramValues } from "./expr";
-import { inferLabel, mergesWithPrevious } from "./historyLabels";
+import { historyLabel, inferLabel, mergesWithPrevious } from "./historyLabels";
 import { DesignerAsyncState, newDesignerSessionId } from "./asyncState";
 
 type HistoryEntry = { text: string; label: string; at: number; target: string };
 export interface HistoryStep { index: number; label: string; at: number; target: string; current: boolean }
 export interface HistoryMark { text: string; undo: string[]; redo: string[]; history: HistoryEntry[]; position: number; file: string | undefined; metadataRevision: number; sessionId: string; documentRevision: number }
 
-export interface DesignerSessionEffects { edited?: () => void; restored?: () => void; disposed?: () => void }
+export interface DesignerSessionEffects { edited?: (previewChanged: boolean) => void; restored?: (previewChanged: boolean) => void; disposed?: () => void }
+/** Sweep plans are persisted and undoable, but neither geometry nor the design check inputs. */
+function previewContent(text: string): string {
+  const { parameter_sweep: _sweep, ...content } = JSON.parse(text);
+  return JSON.stringify(content);
+}
 /** How long a note (a success or a warning that is not sticky) stays at the top of Properties. */
 export const NOTE_MS = 6000;
 export function createDesignerSession(effects: DesignerSessionEffects = {}) {
@@ -24,6 +29,11 @@ export function createDesignerSession(effects: DesignerSessionEffects = {}) {
     const [selection, setSelection] = createSignal<Selection>({ type: "design" });
     const [loading, setLoading] = createSignal(false);
     const [saving, setSaving] = createSignal(false);
+    // A workspace write may succeed while the selected .fb file is still unsaved.
+    // Keep all existing close/run/navigation guards aware of that partial save.
+    const [persistencePending, setPersistencePending] = createSignal(false);
+    const [pendingResultsToken, setPendingResultsToken] = createSignal("[]");
+    const resultsPending = () => pendingResultsToken() !== "[]";
     /** `sticky`: a warning about a condition that lasts (a save conflict, a live Boolean that cannot be
      * recomputed): it stays until its owner clears or replaces it, when the condition is gone. */
     const [message, setMessageRaw] = createSignal<{ tone: "good" | "warn" | "critical"; text: string; sticky?: boolean } | null>(null);
@@ -89,7 +99,7 @@ export function createDesignerSession(effects: DesignerSessionEffects = {}) {
     const dirty = createMemo(() => {
       const f = file();
       // track the whole draft: any nested edit re-evaluates
-      return !!f && loaded() && draftText() !== JSON.stringify(f.design);
+      return !!f && loaded() && (persistencePending() || resultsPending() || draftText() !== JSON.stringify(f.design));
     });
 
     let lastKey = "";
@@ -164,11 +174,11 @@ export function createDesignerSession(effects: DesignerSessionEffects = {}) {
 
     function historySteps(): HistoryStep[] {
       historyRevision();
-      return history.map(({ label, at, target }, index) => ({ index, label, at, target, current: index === historyPosition }));
+      return history.map(({ label, at, target }, index) => ({ index, label: historyLabel(label), at, target, current: index === historyPosition }));
     }
     /** The label of the step Undo would undo, and of the one Redo would redo ("" when there is none). */
-    function undoLabel(): string { historyRevision(); return undoStack().length ? history[historyPosition]?.label ?? "" : ""; }
-    function redoLabel(): string { historyRevision(); return redoStack().length ? history[historyPosition + 1]?.label ?? "" : ""; }
+    function undoLabel(): string { historyRevision(); return undoStack().length ? historyLabel(history[historyPosition]?.label ?? "") : ""; }
+    function redoLabel(): string { historyRevision(); return redoStack().length ? historyLabel(history[historyPosition + 1]?.label ?? "") : ""; }
     function historyIndex(): number { historyRevision(); return historyPosition; }
     function historyDesign(index: number): Design | null {
       const entry = history[index];
@@ -199,21 +209,26 @@ export function createDesignerSession(effects: DesignerSessionEffects = {}) {
       lastAt = now;
       lastEl = active;
       setRedoStack([]);
-      asyncState.editDraft();
-      setDraft(produce((d) => {
-        fn(d);
-        // Parameter sweeps are designer metadata and do not change what the source script builds.
-        // Any other content edit detaches the imported script so reopening Python shows this Design.
-        if (linkedPythonBase !== null && pythonSourceBase(d) !== linkedPythonBase) {
-          delete d.python_source_model;
-          delete d.python_source_hash;
+      let previewChanged = true;
+      batch(() => {
+        setDraft(produce((d) => {
+          fn(d);
+          // Parameter sweeps are designer metadata and do not change what the source script builds.
+          // Any other content edit detaches the imported script so reopening Python shows this Design.
+          if (linkedPythonBase !== null && pythonSourceBase(d) !== linkedPythonBase) {
+            delete d.python_source_model;
+            delete d.python_source_hash;
+          }
+        }));
+        if (deriveHook) {
+          // the parameter values of this edit (the names memo may not have caught up yet)
+          const hook = deriveHook, values = paramValues(draft.params ?? []).names, before = JSON.parse(beforeText) as Design;
+          setDraft(produce((d) => hook(d, values, before)));
         }
-      }));
-      if (deriveHook) {
-        // the parameter values of this edit (the names memo may not have caught up yet)
-        const hook = deriveHook, values = paramValues(draft.params ?? []).names, before = JSON.parse(beforeText) as Design;
-        setDraft(produce((d) => hook(d, values, before)));
-      }
+        // Compare the actual result (including derived geometry), not the caller's history key.
+        previewChanged = previewContent(beforeText) !== previewContent(snapshot());
+        asyncState.editDraft(previewChanged);
+      });
       const target = historyTarget(key), next = { text: snapshot(), label: label ?? inferLabel(JSON.parse(beforeText) as Design, JSON.parse(snapshot()) as Design, key), at: now, target };
       if (coalesced && historyPosition === history.length - 1) history[historyPosition] = next;
       else {
@@ -227,13 +242,16 @@ export function createDesignerSession(effects: DesignerSessionEffects = {}) {
       if (disposed) return; // an observer may close its owning session synchronously
       retireSaveNote();
       retireMessage(["good", "critical"]);
-      effects.edited?.();
+      effects.edited?.(previewChanged);
     }
 
     function restore(text: string) {
       if (disposed) return;
-      asyncState.editDraft();
-      setDraft(reconcile(JSON.parse(text) as Design));
+      const previewChanged = previewContent(snapshot()) !== previewContent(text);
+      batch(() => {
+        asyncState.editDraft(previewChanged);
+        setDraft(reconcile(JSON.parse(text) as Design));
+      });
       retireSaveNote();
       lastKey = "";
       const s = selection();
@@ -246,7 +264,7 @@ export function createDesignerSession(effects: DesignerSessionEffects = {}) {
         (s.type === "port" && d.ports[s.i]) || (s.type === "resistor" && d.resistors[s.i]);
       if (!ok) setSelection({ type: "design" });
       retireMessage(["good", "critical"]);
-      effects.restored?.();
+      effects.restored?.(previewChanged);
     }
 
     /** The design and its edit history at one moment: a dialog whose edits apply live takes one when it
@@ -257,7 +275,7 @@ export function createDesignerSession(effects: DesignerSessionEffects = {}) {
       return { text: snapshot(), undo: undoStack(), redo: redoStack(), history: [...history], position: historyPosition, file: file()?.id, metadataRevision: savedMetadataRevision, sessionId, documentRevision: asyncState.ticket().document };
     }
     /** Whether the draft differs from the mark. */
-    const changedSince = (mark: HistoryMark) => snapshot() !== mark.text;
+    const changedSince = (mark: HistoryMark) => (loaded() ? draftText() : snapshot()) !== mark.text;
     /** Go back to the mark. Refuse another design or metadata superseded by a saved rename. */
     function rollbackTo(mark: HistoryMark): boolean {
       if (disposed || mark.sessionId !== sessionId || mark.documentRevision !== asyncState.ticket().document || file()?.id !== mark.file || mark.metadataRevision !== savedMetadataRevision) return false;
@@ -342,6 +360,8 @@ export function createDesignerSession(effects: DesignerSessionEffects = {}) {
       asyncState.replaceDocument();
       batch(() => {
         setFile(next);
+        setPersistencePending(false);
+        setPendingResultsToken("[]");
         // Keep JSON key order independent when replacing a different document.
         if (previous?.id !== next.id) setDraft(reconcile({} as Design));
         setDraft(reconcile(structuredClone(next.design)));
@@ -377,6 +397,8 @@ export function createDesignerSession(effects: DesignerSessionEffects = {}) {
       sessionId, asyncState, dispose, isDisposed: () => disposed,
       file, setFile: guarded(setFile), draft, setDraft: guarded(setDraft), selection, setSelection: guarded(setSelection),
       loading, setLoading: guarded(setLoading), saving, setSaving: guarded(setSaving), message, setMessage: guarded(setMessage),
+      persistencePending, setPersistencePending: guarded(setPersistencePending),
+      pendingResultsToken, setPendingResultsToken: guarded(setPendingResultsToken), resultsPending,
       serverErrors, setServerErrors: guarded(setServerErrors), conflict, setConflict: guarded(setConflict), serverChecks, setServerChecks: guarded(setServerChecks),
       loaded, snapshot, draftText, dirty, canUndo, canRedo, edit, undo, redo, historySteps, undoLabel, redoLabel, historyIndex, historyDesign, goToHistory,
       historyMark, changedSince, rollbackTo, syncSavedDesignName, revertObservedEdit,

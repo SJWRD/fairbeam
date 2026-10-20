@@ -30,7 +30,7 @@ const built = await build({
     resolveId(id) { if (id.endsWith("window-close-entry")) return "\0window-close-entry"; },
     load(id) {
       if (id !== "\0window-close-entry") return;
-      return ["designer/store", "designer/windowClose"].map((path, i) =>
+      return ["designer/store", "designer/windowClose", "lib/unsavedWork", "editor/store"].map((path, i) =>
         `export * as m${i} from ${JSON.stringify(`${root}src/${path}.ts`)};`).join("\n");
     },
   }],
@@ -92,7 +92,7 @@ globalThis.fetch = async (url, init = {}) => {
 };
 
 const code = (Array.isArray(built) ? built[0] : built).output[0].code;
-const { m0: store, m1: wc } = await import(`data:text/javascript;base64,${Buffer.from(code).toString("base64")}`);
+const { m0: store, m1: wc, m2: work, m3: editor } = await import(`data:text/javascript;base64,${Buffer.from(code).toString("base64")}`);
 
 // ------------------------------------------------------------------ the shell's side
 
@@ -105,7 +105,7 @@ const shellRequest = (kind = "window") => {
 const addPart = (name) => store.edit((d) => { d.parts.push({ name, material: "copper", primitives: [{ kind: "box", start: [0, 0, 0], stop: [1, 1, 1] }] }); });
 const partNames = () => store.draft.parts.map((p) => p.name);
 /** the dialog's Save button (CloseProject.tsx WindowCloseDialog) */
-const dialogSave = async () => { const ok = await store.saveBeforeLeaving(); if (ok) wc.decideWindowClose("close"); return ok; };
+const dialogSave = () => store.saveBeforeLeaving(() => wc.decideWindowClose("close"));
 /** the dialog's Don't save button */
 const dialogDiscard = () => { store.closeDesign(); wc.decideWindowClose("close"); };
 async function openA() {
@@ -270,4 +270,103 @@ storageBlocked = false;
   assert.equal(fresh.ask(), "cancel");
 }
 
-console.log("check-window-close: ok");
+// Update installation asks after download, keeps its continuation separate from Quit,
+// and cannot discard a draft merely because a later native confirmation might be canceled.
+store.closeDesign();
+await openA();
+{
+  addPart('during_download');
+  const r = shellRequest('update');
+  assert.equal(r.ask(), 'pending', 'edits made during download require update consent');
+  assert.equal(wc.windowClose().kind, 'update');
+  wc.decideWindowClose('cancel');
+  assert.equal(r.ask(), 'cancel');
+  assert.equal(partNames().at(-1), 'during_download');
+  assert.equal(wc.updateApproved(), null);
+}
+{
+  const r = shellRequest('update');
+  assert.equal(r.ask(), 'pending');
+  wc.approveUpdateDiscard();
+  addPart('after_update_choice');
+  assert.equal(r.ask(), 'pending', 'new edits invalidate the update discard snapshot');
+  wc.approveUpdateDiscard();
+  assert.equal(r.ask(), 'close');
+  assert.equal(wc.updateApproved(), r.id, 'approval freezes editing before native continuation');
+  assert.ok(store.dirty());
+  assert.equal(partNames().at(-1), 'after_update_choice', 'update consent retains the live draft');
+  assert.equal(shellRequest('quit').ask(), 'cancel', 'an install reservation cannot be stolen');
+  wc.finishUpdate(r.id); // Later or installer failure
+  assert.equal(wc.updateApproved(), null);
+  assert.ok(store.dirty(), 'postponed update keeps unsaved work');
+}
+{
+  const r = shellRequest('update');
+  assert.equal(r.ask(), 'pending');
+  assert.equal(r.ask('quit'), 'pending');
+  assert.equal(wc.windowClose().kind, 'quit', 'native Quit replaces pending install, not vice versa');
+  wc.finishUpdate(r.id);
+  assert.equal(wc.windowClose().kind, 'quit', 'canceling the install must not dismiss native Quit');
+  wc.decideWindowClose('cancel');
+  assert.equal(r.ask('quit'), 'cancel');
+}
+{
+  let release;
+  nextSave = new Promise(resolve => { release = resolve; });
+  const save = store.save();
+  await sleep(0);
+  const r = shellRequest('update');
+  assert.equal(r.ask(), 'pending');
+  wc.approveUpdateDiscard();
+  assert.equal(wc.updateApproved(), null, 'an in-flight save cannot be discarded for install');
+  release();
+  assert.equal(await save, true);
+  wc.decideWindowClose('close');
+  assert.equal(r.ask(), 'close');
+  wc.finishUpdate(r.id);
+}
+
+// Python source edits participate even with no designer open. Approval keeps text
+// intact until the shell actually exits, and never authorizes newer edits.
+store.closeDesign();
+editor.setFile({id:'source',file:'source.py',source:'old',hash:'h'});
+editor.setDraft('unsaved');
+assert.equal(shellRequest().ask(), 'pending', 'real editor provider blocks native exit');
+// Replace only the confirmation UI; retain the real editor state in the provider.
+let resolveChoice;
+work.registerUnsavedWork('python-code', {
+  snapshot: () => editor.dirty() ? editor.draft() : null,
+  busy: editor.saving,
+  confirm: () => new Promise(resolve => { resolveChoice = resolve; }),
+});
+work.resetUnsavedWorkApproval();
+let r = shellRequest();
+assert.equal(r.ask(), 'pending'); await sleep(0);
+resolveChoice(false); await sleep(0);
+assert.equal(r.ask(), 'cancel');
+assert.equal(editor.draft(), 'unsaved');
+r = shellRequest('quit');
+assert.equal(r.ask(), 'pending'); await sleep(0);
+resolveChoice(true); await sleep(0);
+assert.equal(r.ask(), 'close');
+assert.equal(editor.draft(), 'unsaved', 'approval must not discard before other dialogs settle');
+editor.setDraft('newer');
+assert.equal(r.ask(), 'pending', 'new edits require new approval'); await sleep(0);
+resolveChoice(true); await sleep(0);
+editor.setSaving(true);
+assert.equal(r.ask(), 'pending', 'do not stop a source save');
+editor.setSaving(false);
+assert.equal(r.ask(), 'close');
+{
+  const update = shellRequest('update');
+  assert.equal(update.ask(), 'pending', 'update consent is independent of a previous Quit');
+  await sleep(0); resolveChoice(true); await sleep(0);
+  editor.setSaving(true);
+  assert.equal(update.ask(), 'pending', 'update waits for Python save as well');
+  editor.setSaving(false);
+  assert.equal(update.ask(), 'close');
+  assert.equal(editor.draft(), 'newer');
+  wc.finishUpdate(update.id);
+  assert.equal(editor.draft(), 'newer', 'deferring install preserves Python text');
+}
+console.log("check-window-close: designer and Python unsaved work, cancellation, stale approval and in-flight save pass");

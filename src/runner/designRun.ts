@@ -11,15 +11,17 @@ import { matchesResultIndex, resultStamp } from "../lib/resultIdentity";
 import { runQuality } from "../lib/runQuality";
 import { appMode, appModeRevision, setAppMode } from "../workspace";
 import { isTerminal, type Job } from "./api";
-import { checks, conflict, dirty, file as designFile, quickPreview, save, schedulePreview } from "../designer/store";
+import { checks, file as designFile, prepareSavedDesign, quickPreview, schedulePreview } from "../designer/store";
+import type { SavedDesignTarget } from "../designer/sessionIO";
 import { bundle, clearProject, index, lastProject, loadIndex, loadProject, openCount, source, sourceOrigin } from "../state";
 import { newestResults } from "./resultsIndex";
 import { requireDesignResult, ResultFollow } from "./resultFollow";
 import { exampleEntries } from "./examples";
 import { attach, invalidatePreview, jobs, live, meshSource, models, notice, refreshModels, refreshRuns, runName, runOpen, selectModel, serverActivity, setEngine, setNotice, setRunName, setThreads, startRun } from "./store";
 
-import { designDockTab, setDesignDockTab } from "../designer/dockState";
+import { designDockTab, setDesignDockTab, showDesignDockTab } from "../designer/dockState";
 import { t } from "../i18n/index.ts";
+import { documentJobMatches, documentResultFiles, hasDocumentResultScope, nativeDocumentFor } from "../lib/nativeDocuments";
 import { meshStats } from "../designer/meshStats";
 export { designDockTab, setDesignDockTab, type DesignDockTab } from "../designer/dockState";
 export const [runDialogOpen, setRunDialogOpen] = createSignal(false);
@@ -48,6 +50,7 @@ export const designResult = createRoot(() => createMemo(() => {
   const run = storedDesignResult();
   const target = designResultLoading() ?? failedResultLoad()?.file;
   return run && (!target || target === run.file) &&
+    (documentResultFiles(designFile(), jobs())?.has(run.file) ?? true) &&
     matchesResultIndex(index().find(entry => entry.file === run.file), run.bundle) ? run : null;
 }));
 /** A replaced result stays selected while reloading or waiting for an explicit Retry. */
@@ -60,8 +63,11 @@ export const retryResultLoad = () => { const f = failedResultLoad(); if (f) void
 
 /** The live job when it is the designer's run. */
 export const designJob = (): Job | null => (live.job && live.job.id === designJobId() ? live.job : null);
-const belongsToDesign = (job: Job) => job.model === designFile()?.id ||
-  (job.research?.backend === "elmer" && job.research.settings.analysis === "driven" && job.model_id === designFile()?.design.model.id);
+const belongsToDesign = (job: Job) => {
+  const file = designFile();
+  return !!file && (hasDocumentResultScope(file) ? documentJobMatches(file, job) : job.model === file.id ||
+    (job.research?.backend === "elmer" && job.research.settings.analysis === "driven" && job.model_id === file.design.model.id));
+};
 
 /** Show a server run in the designer's dock (its Run tab follows it), whoever started it: a run
  * picked in the dock's Queue tab, or a run of the open design another client started (#7, #8). */
@@ -129,17 +135,27 @@ export async function startDesignRun(opts: { engine: string; threads: number; po
   return job;
 }
 
-/** Prepare the shared optimizer form from the latest saved designer model and values. */
-export async function prepareDesignOptimize(): Promise<string | null> {
-  const f = designFile();
-  if (!f) return t("runner.optimize.noDesign");
-  if (dirty() || conflict()) await save();
-  if (dirty() || conflict()) return t("runner.optimize.notSaved");
-  if (checks().some((c) => c.severity === "error")) return t("runner.optimize.fixErrors");
+/** Save/check without adopting another document during a picker, refresh or native Save fork. */
+export async function prepareDesignSubmission(isCurrent: () => boolean = () => true): Promise<
+  { target: SavedDesignTarget; error: null } | { target: null; error: string }
+> {
+  if (!designFile()) return { target: null, error: t("runner.optimize.noDesign") };
+  const target = await prepareSavedDesign(isCurrent);
+  if (!target?.isCurrent()) return { target: null, error: t("runner.optimize.notSaved") };
+  if (checks().some((c) => c.severity === "error")) return { target: null, error: t("runner.optimize.fixErrors") };
   await refreshModels();
-  if (!models().some((m) => m.key === f.id)) return t("runner.optimize.notAvailable");
-  selectModel(f.id, bundle());
-  return null;
+  if (!target.isCurrent()) return { target: null, error: t("runner.optimize.notSaved") };
+  if (!models().some((m) => m.key === target.file.id)) return { target: null, error: t("runner.optimize.notAvailable") };
+  // Fresh model defaults come from the saved design. A displayed result/older preview can
+  // share the model id while carrying different parameters, so it must not seed this action.
+  selectModel(target.file.id);
+  return { target, error: null };
+}
+
+/** Prepare the shared optimizer form from the latest saved designer model and values. */
+export async function prepareDesignOptimize(isCurrent: () => boolean = () => true): Promise<string | null> {
+  const prepared = await prepareDesignSubmission(isCurrent);
+  return prepared.error ?? (prepared.target?.isCurrent() ? null : t("runner.optimize.notSaved"));
 }
 
 export function attachDesignOptimize(job: Job) {
@@ -155,6 +171,7 @@ const follower = new ResultFollow();
 export async function loadDesignResult(file: string, jobId?: string, refreshIndex = false): Promise<boolean> {
   const expectedModel = designFile()?.design.model.id;
   if (!expectedModel) return false;
+  if (documentResultFiles(designFile(), jobs())?.has(file) === false) return false;
   const mine = ++resultSeq;
   resultController?.abort();
   const controller = new AbortController();
@@ -198,12 +215,13 @@ export async function loadDesignResult(file: string, jobId?: string, refreshInde
     const entry = index().find(entry => entry.file === file);
     if (resultStamp(entry) !== stamp) return false;
     if (!matchesResultIndex(entry, v.bundle)) throw new Error(t("load.runResultChanged"));
+    if (documentResultFiles(designFile(), jobs())?.has(file) === false) return false;
     requireDesignResult(v.bundle, expectedModel);
     setDesignResult({ file, bundle: v.bundle, jobId });
     // a run that did not converge keeps the dock on its Run tab: that is where the warning is
     // first shown (the result tabs carry it as a banner too), so the dock must not move away
     const stops = runQuality(v.bundle)?.verdict === "not-converged";
-    if (designDockTab() === "run" && (!designJob() || isTerminal(designJob()!.status)) && !stops) setDesignDockTab("runs");
+    if (designDockTab() === "run" && (!designJob() || isTerminal(designJob()!.status)) && !stops) showDesignDockTab("runs");
     return true;
   } catch (e) {
     if (mine !== resultSeq) return false;
@@ -231,7 +249,7 @@ export function clearDesignResult() {
   setDesignResultError(null);
   setFailedResultLoad(null);
   setDesignJobId(null);
-  setDesignDockTab("checks");
+  showDesignDockTab("checks");
   });
 }
 
@@ -271,14 +289,14 @@ createRoot(() => {
     if (mode === "design" && designFile()) { quickPreview(); schedulePreview(0); }
   }));
   // SSE completion refreshes job history; entering a design also picks up external runs.
-  createEffect(on(() => designFile()?.id, () => {
+  createEffect(on([() => designFile()?.id, () => designFile()?.backup_scope, () => nativeDocumentFor(designFile())?.handle], () => {
     const running = designJob();
     const keepJob = running && !isTerminal(running.status) ? running.id : null;
     clearDesignResult();
     follower.reset();
     if (keepJob) {
       setDesignJobId(keepJob);
-      setDesignDockTab("run");
+      showDesignDockTab("run");
     }
     if (designFile()) void refreshRuns();
   }));

@@ -51,27 +51,44 @@ const assertMatchesFresh = async (label, design, values = names) => {
 const initial = await assertMatchesFresh("initial", base);
 const polygonIndex = 1;
 const initialPolygonExpansion = initial.parts[0].primitives[polygonIndex];
+// Each bundle attaches fresh source-selection metadata to a shallow wrapper. The expensive
+// expanded coordinate arrays and bounds, not that wrapper, are the cache contract.
+const assertGeometryReused = (actual, expected, message) => {
+  assert.equal(actual.bbox, expected.bbox, `${message}: bounds reused`);
+  if (expected.points) assert.equal(actual.points, expected.points, `${message}: coordinates reused`);
+  if (expected.center) assert.equal(actual.center, expected.center, `${message}: center reused`);
+  assert.equal(actual.source, expected.source, `${message}: source shape remains correct`);
+};
 
 const irrelevant = cloneDesign({ label: "renamed", color: "#f00" }, { color: "#123" });
 const irrelevantResult = await assertMatchesFresh("irrelevant label/color/material value", irrelevant);
-assert.equal(irrelevantResult.parts[0].primitives[polygonIndex], initialPolygonExpansion,
+assertGeometryReused(irrelevantResult.parts[0].primitives[polygonIndex], initialPolygonExpansion,
   "irrelevant edit should retain the polygon expansion");
+const reordered = await assertMatchesFresh("shape reorder", cloneDesign({ primitives: [polygon, box, sheet] }));
+assert.equal(reordered.parts[0].primitives[0].points, initialPolygonExpansion.points,
+  "shape reorder retains the expensive polygon coordinates");
+assert.equal(reordered.parts[0].primitives[0].bbox, initialPolygonExpansion.bbox,
+  "shape reorder retains the polygon bounds");
+assert.equal(reordered.parts[0].primitives[0].source, 0, "new wrapper selects the reordered shape");
+assert.equal(initialPolygonExpansion.source, 1, "previous bundle selection metadata is not mutated");
 const dielectricEdit = cloneDesign({}, {}, { eps_r: 4 });
 const dielectricResult = await assertMatchesFresh("dielectric value edit", dielectricEdit);
 assert.equal(dielectricResult.parts[1].material.eps_r, 4, "dielectric value should stay fresh");
-assert.equal(dielectricResult.parts[1].primitives[0], initial.parts[1].primitives[0],
+assertGeometryReused(dielectricResult.parts[1].primitives[0], initial.parts[1].primitives[0],
   "dielectric value edit should retain unchanged geometry");
 
 const boxEdit = cloneDesign({ primitives: [{ ...box, start: ["w", 0, 1], stop: ["w + 2", 2, 3] }, polygon, sheet] });
 const boxResult = await assertMatchesFresh("same-part box edit", boxEdit);
-assert.equal(boxResult.parts[0].primitives[polygonIndex], initialPolygonExpansion,
+assertGeometryReused(boxResult.parts[0].primitives[polygonIndex], initialPolygonExpansion,
   "same-part box edit should reuse the unchanged polygon expansion");
 
 const editedPolygon = { ...polygon, elevation: "h + 1" };
 const polygonEdit = cloneDesign({ primitives: [box, editedPolygon, sheet] });
 const polygonResult = await assertMatchesFresh("polygon edit", polygonEdit);
-assert.notEqual(polygonResult.parts[0].primitives[polygonIndex], initialPolygonExpansion,
+assert.notEqual(polygonResult.parts[0].primitives[polygonIndex].bbox, initialPolygonExpansion.bbox,
   "polygon edit should replace its expansion");
+assert.notEqual(polygonResult.parts[0].primitives[polygonIndex].points, initialPolygonExpansion.points,
+  "polygon edit should replace its expanded coordinates");
 
 const transformEdit = cloneDesign({ transforms: [{ type: "move", offset: [1, 0, 0] }] });
 await assertMatchesFresh("transform edit", transformEdit);

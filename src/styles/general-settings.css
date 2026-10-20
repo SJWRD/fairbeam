@@ -38,3 +38,7 @@
 .gs-blender-row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: var(--al-gap-stack); align-items: center; }
 .gs-blender-row .dz-input { min-width: 0; }
 .gs-blender-bad { color: var(--al-warn); }
+
+.gs-theme-presets { border: 1px solid var(--al-border); padding: var(--al-space-3); margin: 0 0 var(--al-space-3); min-width: 0; }
+.gs-theme-presets .cluster-sm { flex-wrap: wrap; }
+.gs-theme-presets button[aria-pressed="true"] { border-color: var(--al-accent-text); }

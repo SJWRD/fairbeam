@@ -1,13 +1,13 @@
 import { createEffect, createSignal, For, onCleanup, Show } from "solid-js";
-import { unwrap } from "solid-js/store";
 import { api } from "../runner/api";
 import { openResearch, researchPath } from "../runner/researchState";
 import { followInDesigner } from "../runner/designRun";
 import { refreshRuns } from "../runner/store";
-import { conflict, dirty, draft, file, names, save } from "./store";
+import { defaultDesignerSession, draft, file, names, prepareSavedDesign } from "./store";
 import { tryEvaluate } from "./expr";
 import { t } from "../i18n";
 import NumberField from "../components/NumberField";
+import { hasDocumentResultScope } from "../lib/nativeDocuments";
 
 export default function ElmerAntennaRun(props: { close: () => void }) {
   const number = (v: unknown, fallback: number) => Number((tryEvaluate(v as string | number, names().names).value ?? fallback).toPrecision(12));
@@ -31,23 +31,33 @@ export default function ElmerAntennaRun(props: { close: () => void }) {
     || !Number.isInteger(Number(values().dielectric_cells)) || Number(values().dielectric_cells)<2 || Number(values().dielectric_cells)>10;
   const submit=async(e:Event)=>{
     e.preventDefault(); if(invalid() || busy() || !file())return;
-    setBusy(true);setError("");setDiagnostic(""); const identity=file()!.id;
+    setBusy(true);setError("");setDiagnostic("");
+    const request = defaultDesignerSession.asyncState.ticket();
+    const initialFile = file()!;
+    const ownsRequest = () => alive && defaultDesignerSession.asyncState.isDraftCurrent(request)
+      && file()?.id === initialFile.id && file()?.hash === initialFile.hash && file()?.backup_scope === initialFile.backup_scope;
     try{
-      if ((await api.health()).elmer_driven !== 2) throw Error(t("elmerAntenna.serverUpdate"));
-      if (!alive) return;
+      const health = await api.health();
+      if (!ownsRequest()) return;
+      if (health.elmer_driven !== 2 || (hasDocumentResultScope(file()) && !health.research_source)) throw Error(t("elmerAntenna.serverUpdate"));
       const capability = await api.researchProbe("elmer", researchPath("elmer"));
-      if (!alive) return;
+      if (!ownsRequest()) return;
       if (!capability.available) {
         setDiagnostic(capability.reason ?? "");
         throw Error(t("elmerAntenna.unavailable"));
       }
-      if(dirty() || conflict())await save();
+      const target = await prepareSavedDesign(() => alive);
       if(!alive)return;
-      if(file()?.id!==identity || dirty() || conflict())throw Error(t("run.err.notSaved"));
+      if(!target?.isCurrent())throw Error(t("run.err.notSaved"));
       const settings:Record<string,unknown>={analysis:"driven",accept_finite_feed:true,approximate_metals:true};
       for(const [key,v] of Object.entries(values()))settings[key]=Number(v)*(key.endsWith("_hz")?1e9:1);
-      const job=await api.researchStart({backend:"elmer",path:researchPath("elmer"),design:structuredClone(unwrap(draft)),settings});
-      void refreshRuns();if(alive){props.close();followInDesigner(job);}
+      const saved = target.file;
+      const source = health.research_source && saved.backup_scope
+        ? {model_id:saved.id,workspace_hash:saved.hash,backup_scope:saved.backup_scope} : undefined;
+      if (hasDocumentResultScope(saved) && !source) throw Error(t("elmerAntenna.serverUpdate"));
+      if (!target.isCurrent()) return;
+      const job=await api.researchStart({backend:"elmer",path:researchPath("elmer"),design:structuredClone(saved.design),settings,...(source ? {source} : {})});
+      void refreshRuns();if(target.isCurrent()){props.close();followInDesigner(job);}
     }catch(e){if(alive)setError((e as Error).message);}finally{if(alive)setBusy(false);}
   };
   return <form class="rd-body" onSubmit={submit} data-testid="elmer-antenna-form">

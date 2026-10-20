@@ -31,7 +31,11 @@ export default function ComparePicker() {
   let refInput: HTMLInputElement | undefined;
   // labels over the whole index, so a project reads the same here as in the header's picker
   const labels = createMemo(() => projectLabels(index()));
-  const candidates = () => index().filter((p) => p.simulated && p.file !== source());
+  const candidates = createMemo(() => new Map(index()
+    .filter((p) => p.simulated && p.file !== source()).map((p) => [p.file, p])));
+  // Index refreshes replace entry objects. Key rows by file so a refresh does not
+  // remove the focused checkbox; read its current metadata reactively below.
+  const candidateFiles = createMemo(() => [...candidates().keys()]);
   const full = () => pinned().length >= MAX_PINNED;
   onMount(restorePinned);
 
@@ -91,26 +95,27 @@ export default function ComparePicker() {
             </Show>
           </div>
           <p class="cmp-hint">{t("compare.picker.hint", { count: MAX_PINNED })}</p>
-          <Show when={candidates().length} fallback={<p class="cmp-hint">{t("compare.picker.none")}</p>}>
+          <Show when={candidateFiles().length} fallback={<p class="cmp-hint">{t("compare.picker.none")}</p>}>
             <ul class="cmp-list">
-              <For each={candidates()}>
-                {(p) => {
-                  const on = () => isPinned(p.file);
+              <For each={candidateFiles()}>
+                {(file) => {
+                  const p = () => candidates().get(file)!;
+                  const on = () => isPinned(file);
                   return (
                     <li>
-                      <label class="toggle" classList={{ disabled: !on() && full() }} title={p.file}>
+                      <label class="toggle" classList={{ disabled: !on() && full() }} title={file}>
                         <input
                           type="checkbox"
                           checked={on()}
                           disabled={!on() && full()}
-                          onChange={(e) => (e.currentTarget.checked ? pin(p.file) : unpin(p.file))}
+                          onChange={(e) => (e.currentTarget.checked ? pin(file) : unpin(file))}
                         />
                         <span class="toggle-box" aria-hidden="true" />
                         <span class="cmp-name">
-                          <span class="cmp-title">{labelOf(labels(), p)}</span>
+                          <span class="cmp-title">{labelOf(labels(), p())}</span>
                           <span class="cmp-sub mono">
-                            {p.model}
-                            <Show when={p.bands.length}> · {p.bands.map((b) => fmt.fixed(b, 3)).join(decimalComma() ? "; " : ", ")} GHz</Show>
+                            {p().model}
+                            <Show when={p().bands.length}> · {p().bands.map((b) => fmt.fixed(b, 3)).join(decimalComma() ? "; " : ", ")} GHz</Show>
                           </span>
                         </span>
                       </label>

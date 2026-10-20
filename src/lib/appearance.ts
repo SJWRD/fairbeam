@@ -3,6 +3,11 @@ import type { GeneralSettings } from "./generalSettings";
 
 export type AppearanceSettings = Pick<GeneralSettings, "theme" | "uiFont" | "monoFont" | "colorPreset" | "accent" | "chartPalette" | "chartWeight" | "viewportPalette" | "customAccent" | "traceColor" | "viewportColor" | "gridColor">;
 export const APPEARANCE_DEFAULTS: AppearanceSettings = { ...COLOR_DEFAULTS, theme: "system", uiFont: "plex", monoFont: "plex" };
+/** Complete presets also clear custom overrides so their preview and applied colors agree. */
+export const APPEARANCE_PRESETS = {
+  forest: { ...APPEARANCE_DEFAULTS, theme: "dark", colorPreset: "forest", accent: "teal", chartPalette: "accessible", viewportPalette: "slate" },
+  academic: { ...APPEARANCE_DEFAULTS, theme: "light", colorPreset: "ocean", accent: "blue", chartPalette: "accessible", viewportPalette: "paper" },
+} satisfies Record<string, AppearanceSettings>;
 const uiFonts = {
   system: 'system-ui, -apple-system, "Segoe UI", sans-serif',
   arial: 'Arial, Helvetica, sans-serif',

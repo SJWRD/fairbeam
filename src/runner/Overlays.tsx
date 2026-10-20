@@ -1,7 +1,8 @@
 import { Show } from "solid-js";
 import { CircleCheck, Eye, FolderOpen, GitCompareArrows, LoaderCircle, TriangleAlert, Undo2 } from "lucide-solid";
 import { appMode } from "../workspace";
-import { notice, openBundlePath, openResult, previewActive, previewState, restoreProject, setNotice } from "./store";
+import { models, notice, openBundlePath, openResult, previewActive, previewState, restoreProject, setNotice } from "./store";
+import { optimizationValues, reasonText } from "./optimizationText";
 import { paramSummary } from "./status";
 import { compareSweep, historyItems, pickForCompare } from "./sweep";
 import { t } from "../i18n";
@@ -64,9 +65,9 @@ export function RunNotice() {
           <div class="banner rs-banner-good" role="status">
             <CircleCheck size={14} aria-hidden="true" />
             <span>
-              {t("overlay.optFinished", { reason: o().reason })} — <span class="mono">{o().job.label ?? o().job.model}</span>
+              {t("overlay.optFinished", { reason: reasonText(o().reason) })} — <span class="mono">{o().job.label ?? o().job.model}</span>
               <Show when={o().best}>
-                <span class="muted mono"> · {t("overlay.best")} {Object.entries(o().best!).map(([k, v]) => `${k}=${v}`).join(", ")}</span>
+                <span class="muted mono"> · {t("overlay.best")} {optimizationValues(o().best!, models().find(model => model.key === o().job.model)?.params)}</span>
               </Show>
             </span>
             <Show when={o().bestFile}>

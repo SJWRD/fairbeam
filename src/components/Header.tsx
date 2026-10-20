@@ -12,7 +12,8 @@ import ExamplePicker from "./ExamplePicker";
 import FeedbackLink from "./FeedbackLink";
 import { DEMO } from "../env";
 import { appMode, setAppMode } from "../workspace";
-import { dirty as designDirty, draft as designDraft, file as designFile } from "../designer/store";
+import { dirty as designDirty, draft as designDraft, file as designFile, openNativeDocument } from "../designer/store";
+import { nativeDocumentFor, nativeDocumentsAvailable } from "../lib/nativeDocuments";
 import GeneralSettingsDialog from "./GeneralSettings";
 import { canSaveAs, openSaveAs } from "../designer/SaveAsDialog";
 import { SHORTCUTS } from "../designer/shortcuts";
@@ -133,9 +134,11 @@ export default function Header() {
   // when Design is current but disabled (no design open).
   // A compiled user project is still a viewer file when it has geometry but no results.
   // Reselecting this screen must never turn an open file into a gallery selection.
-  const userProject = () => appMode() === "results" && !!bundle() && !isExampleSource(source(), sourceOrigin());
+  const userProject = () => !!bundle() && !bundle()?.preview && !isExampleSource(source(), sourceOrigin());
   const viewerScreen = () => userProject() ? (bundle()?.results ? "results" : "geometry") : "examples";
   const tabStop = () => (appMode() === "design" && !designFile() ? "home" : appMode());
+  const designPath = () => nativeDocumentFor(designFile())?.path ?? designFile()?.file ?? "";
+  const designFilename = () => designPath().split(/[\\/]/).pop() ?? "";
 
   return (
     <>
@@ -153,16 +156,16 @@ export default function Header() {
           <button class="seg-btn" aria-current={appMode() === "home" ? "page" : undefined} tabindex={tabStop() === "home" ? 0 : -1} onClick={() => setAppMode("home")}>{t("header.screen.start")}</button>
           <button class="seg-btn" aria-current={appMode() === "design" ? "page" : undefined} tabindex={tabStop() === "design" ? 0 : -1} disabled={!designFile()} title={designFile() ? t("header.screen.designTitle") : t("header.screen.designDisabled")}
             onClick={() => setAppMode("design")}>{t("header.screen.design")}</button>
-          <button class="seg-btn" aria-current={appMode() === "results" ? "page" : undefined} tabindex={tabStop() === "results" ? 0 : -1} onClick={() => { if (!userProject()) void openExamples(); }}
+          <button class="seg-btn" aria-current={appMode() === "results" ? "page" : undefined} tabindex={tabStop() === "results" ? 0 : -1} onClick={() => { if (userProject()) setAppMode("results"); else void openExamples(); }}
             title={t(`header.screen.${viewerScreen()}Title`)}>{t(`header.screen.${viewerScreen()}`)}</button>
         </nav>
       </Show>
 
       <Show when={appMode() === "design" && designFile()}>
-        <div class="design-title" title={designFile()!.file}>
+        <div class="design-title" title={designPath()}>
           <span class="design-title-name">{designDraft.model?.name}</span>
           <Show when={designDirty()}><span class="code-dot" aria-label={t("header.unsaved")} /></Show>
-          <span class="mono muted">{designFile()!.file}</span>
+          <span class="mono muted">{designFilename()}</span>
         </div>
       </Show>
 
@@ -201,7 +204,7 @@ export default function Header() {
         <input
           ref={fileInput}
           type="file"
-          accept=".json,application/json"
+          accept=".fb,.json,application/json"
           hidden
           onChange={(e) => {
             const f = e.currentTarget.files?.[0];
@@ -241,7 +244,7 @@ export default function Header() {
           <Show when={moreOpen()}>
             <div id="header-more-menu" class="menu header-more-menu" role="menu" aria-label={t("header.more.menu")}
               ref={moreMenu} style={{ top: `${morePosition().top}px`, left: `${morePosition().left}px` }} onKeyDown={onMoreKeyDown}>
-              <button class="menu-item" type="button" role="menuitem" aria-label={t("header.open.aria")} title={t("header.open.title")} onClick={() => runMoreAction(() => fileInput.click())}>
+              <button class="menu-item" type="button" role="menuitem" aria-label={t("header.open.aria")} title={t("header.open.title")} onClick={() => runMoreAction(() => { if (nativeDocumentsAvailable()) void openNativeDocument(); else fileInput.click(); })}>
                 <Upload size={14} aria-hidden="true" /> {t("header.open.label")}
               </button>
               <Show when={!DEMO}>

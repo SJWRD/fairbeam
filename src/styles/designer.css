@@ -176,8 +176,9 @@ textarea.dz-autogrow { resize: none; overflow-y: auto; min-height: 0; max-height
 .home-ex-group { display: grid; gap: var(--al-space-1); }
 .home-ex-group + .home-ex-group { margin-top: var(--al-space-2); }
 .home-examples .home-item-name { white-space: normal; overflow-wrap: anywhere; }
-.home-examples .home-row { align-items: flex-start; }
-.home-examples .home-row > .home-copy { margin-top: var(--al-space-1); padding-inline: 0; }
+.home-examples .home-example-row { align-items: stretch; flex-direction: column; border-inline-start: 2px solid var(--al-border); padding-inline-start: var(--al-space-2); gap: var(--al-space-1); }
+.home-examples .home-example-row > .home-copy { align-self: flex-start; opacity: 1; margin-inline-start: var(--al-space-2); }
+.home-list-pagination { margin-block: var(--al-space-3); flex-wrap: wrap; }
 .home-item {
   display: grid; gap: 1px; width: 100%; padding: var(--al-space-2) var(--al-space-3); border: 1px solid transparent; border-radius: var(--al-radius);
   background: transparent; color: var(--al-text); text-align: left; cursor: pointer;
@@ -186,6 +187,7 @@ textarea.dz-autogrow { resize: none; overflow-y: auto; min-height: 0; max-height
 .home-item:focus-visible { outline: 2px solid var(--al-focus); outline-offset: -2px; }
 .home-item-name { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .home-item-sub { display: inline-flex; align-items: center; gap: 4px; font-size: var(--al-text-xs); color: var(--al-text-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.home-project-location { display: block; min-width: 0; }
 /* a design that does not load: listed, not openable, with the reason (it may wrap) */
 .home-item-bad { cursor: default; }
 .home-item-bad:hover { background: transparent; border-color: transparent; }
@@ -300,6 +302,11 @@ textarea.dz-autogrow { resize: none; overflow-y: auto; min-height: 0; max-height
 .dw-file { font-size: var(--al-text-xs); }
 .dw-title > * { min-width: 0; max-width: 100%; overflow-wrap: anywhere; }
 .dw-left .dz-tree { border-right: 0; }
+.fb-document-info { padding: var(--al-space-2) var(--al-space-3); border-bottom: 1px solid var(--al-border); font-size: var(--al-text-xs); overflow-wrap: anywhere; }
+.fb-document-info summary { cursor: pointer; padding-block: var(--al-space-1); }
+.fb-document-info > div { max-height: 32vh; overflow: auto; padding-block: var(--al-space-2); }
+.fb-document-info p { margin: 0; }
+.fb-document-info ul { padding-inline-start: var(--al-space-4); margin: 0; }
 .dw-right .dz-msg { margin: var(--al-space-2) var(--al-space-3) 0; }
 .dz-recovery { margin: var(--al-space-2) var(--al-space-3) 0; font-size: var(--al-text-sm); }
 .dz-recovery > summary { padding: var(--al-space-2) 0; cursor: pointer; color: var(--al-text); }
@@ -352,3 +359,6 @@ textarea.dz-autogrow { resize: none; overflow-y: auto; min-height: 0; max-height
 .dz-port-summary { margin: 0; font-weight: 500; }
 .dz-port-choices { display: grid; gap: 4px; border: 0; padding: 0; margin: 0; }
 .dz-port-choices label { display: flex; gap: 6px; align-items: baseline; }
+
+.home-remove-files { display: flex; gap: var(--al-space-2); align-items: flex-start; }
+.home-remove-files small { display: block; overflow-wrap: anywhere; margin-block-start: var(--al-space-1); }

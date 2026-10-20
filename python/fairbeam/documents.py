@@ -6,6 +6,8 @@ accuracy or convergence. Writers use optimistic concurrency and a shared OS advi
 """
 from __future__ import annotations
 
+import copy
+from collections.abc import Mapping
 import errno
 import hashlib
 import json
@@ -150,11 +152,20 @@ def _read_bytes(path: Path, limit: int) -> bytes:
     _regular(path)
     flags = os.O_RDONLY | getattr(os, "O_BINARY", 0) | getattr(os, "O_NOFOLLOW", 0)
     with os.fdopen(os.open(path, flags), "rb") as stream:
-        if not stat.S_ISREG(os.fstat(stream.fileno()).st_mode):
+        info = os.fstat(stream.fileno())
+        if not stat.S_ISREG(info.st_mode):
             raise DocumentError("Expected a regular file")
-        data = stream.read(limit + 1)
+        if info.st_size < 0:
+            raise DocumentError("File has an invalid size")
+        if info.st_size > limit:
+            raise DocumentError("File exceeds its size limit")
+        # A MAX_RESULT-sized read can allocate/probe a large buffer even for a tiny
+        # file. Bound it by this opened descriptor, with one byte to detect growth.
+        data = stream.read(info.st_size + 1)
     if len(data) > limit:
         raise DocumentError("File exceeds its size limit")
+    if len(data) != info.st_size:
+        raise DocumentError("File changed size while it was being read")
     return data
 
 
@@ -191,6 +202,43 @@ def read(path: Path) -> tuple[dict, str]:
     path = _path(path)
     data = _read_bytes(path, MAX_DOCUMENT)
     return _parse(data), digest(data)
+
+
+def _windows_require_unnamed_stream(path: Path) -> None:
+    """Refuse replacement when named data streams cannot be ruled out."""
+    import ctypes
+    from ctypes import wintypes
+
+    class StreamData(ctypes.Structure):
+        _fields_ = (("size", ctypes.c_longlong), ("name", wintypes.WCHAR * 296))
+
+    api = ctypes.WinDLL("kernel32", use_last_error=True)
+    api.FindFirstStreamW.argtypes = (wintypes.LPCWSTR, ctypes.c_int,
+                                    ctypes.POINTER(StreamData), wintypes.DWORD)
+    api.FindFirstStreamW.restype = wintypes.HANDLE
+    api.FindNextStreamW.argtypes = (wintypes.HANDLE, ctypes.POINTER(StreamData))
+    api.FindNextStreamW.restype = wintypes.BOOL
+    api.FindClose.argtypes = (wintypes.HANDLE,)
+    api.FindClose.restype = wintypes.BOOL
+    query_error = "Cannot inspect document data streams; use Save As with a new filename"
+    data = StreamData()
+    handle = api.FindFirstStreamW(str(path), 0, ctypes.byref(data), 0)
+    if handle == ctypes.c_void_p(-1).value:
+        # This is an existing regular document, which has an unnamed data stream.
+        # Unsupported enumeration and every other error fail closed.
+        raise DocumentError(query_error) from ctypes.WinError(ctypes.get_last_error())
+    try:
+        while True:
+            if data.name != "::$DATA":
+                raise DocumentError("Document has named data streams; use Save As with a new filename")
+            if not api.FindNextStreamW(handle, ctypes.byref(data)):
+                error = ctypes.get_last_error()
+                if error == 38:  # ERROR_HANDLE_EOF: enumeration completed.
+                    break
+                raise DocumentError(query_error) from ctypes.WinError(error)
+    finally:
+        if not api.FindClose(handle):
+            raise DocumentError(query_error) from ctypes.WinError(ctypes.get_last_error())
 
 
 def _windows_read_security(path: Path, information: int) -> bytes:
@@ -335,41 +383,95 @@ def _windows_discard_staging(fd: int) -> None:
         raise ctypes.WinError(ctypes.get_last_error())
 
 
-def _macos_has_metadata(fd: int) -> bool:
-    """Query descriptor metadata directly: COPYFILE_CHECK can hide query errors."""
+def _macos_metadata(fd: int) -> tuple[dict[bytes, bytes], bytes | None]:
+    """Snapshot every descriptor xattr and the complete Darwin ACL, failing closed."""
+    import ctypes
+
+    api = ctypes.CDLL(None, use_errno=True)
+    listing, getting = api.flistxattr, api.fgetxattr
+    listing.argtypes = (ctypes.c_int, ctypes.c_void_p, ctypes.c_size_t, ctypes.c_int)
+    listing.restype = ctypes.c_ssize_t
+    getting.argtypes = (ctypes.c_int, ctypes.c_char_p, ctypes.c_void_p,
+                       ctypes.c_size_t, ctypes.c_uint32, ctypes.c_int)
+    getting.restype = ctypes.c_ssize_t
+    api.acl_get_fd_np.argtypes = (ctypes.c_int, ctypes.c_int)
+    api.acl_get_fd_np.restype = ctypes.c_void_p
+    api.acl_to_text.argtypes = (ctypes.c_void_p, ctypes.POINTER(ctypes.c_ssize_t))
+    api.acl_to_text.restype = ctypes.c_void_p
+    api.acl_free.argtypes = (ctypes.c_void_p,)
+    api.acl_free.restype = ctypes.c_int
+
+    def read(call):
+        size = call(None, 0)
+        if not 0 <= size <= 16 * 1024 * 1024:
+            raise OSError(ctypes.get_errno() or errno.EIO, "Cannot read document metadata")
+        buffer = ctypes.create_string_buffer(max(1, size))
+        if call(buffer, size) != size:
+            raise OSError(errno.EIO, "Document metadata changed while reading")
+        return buffer.raw[:size]
+
+    names = read(lambda buf, size: listing(fd, buf, size, 0x20))
+    if names and not names.endswith(b"\0"):
+        raise OSError(errno.EIO, "Invalid document attribute list")
+    keys = names[:-1].split(b"\0") if names else []
+    if len(set(keys)) != len(keys) or any(not key for key in keys):
+        raise OSError(errno.EIO, "Invalid document attribute list")
+    attrs = {key: read(lambda buf, size: getting(fd, key, buf, size, 0, 0x20)) for key in keys}
+    ctypes.set_errno(0)
+    acl = api.acl_get_fd_np(fd, 0x100)
+    if not acl:
+        if ctypes.get_errno() == errno.ENOENT:
+            return attrs, None
+        raise OSError(ctypes.get_errno() or errno.EIO, "Cannot read document ACL")
+    text = None
+    try:
+        size = ctypes.c_ssize_t()
+        text = api.acl_to_text(acl, ctypes.byref(size))
+        if not text or not 0 <= size.value <= 16 * 1024 * 1024:
+            raise OSError(ctypes.get_errno() or errno.EIO, "Cannot serialize document ACL")
+        return attrs, ctypes.string_at(text, size.value)
+    finally:
+        text_error = api.acl_free(text) if text else 0
+        acl_error = api.acl_free(acl)
+        if text_error or acl_error:
+            raise OSError(ctypes.get_errno() or errno.EIO, "Cannot release document ACL")
+
+
+def _macos_preserve_metadata(source: Path, destination_fd: int, expected, snapshot=None):
+    """Copy metadata on empty staging, or recheck it before publishing saved bytes."""
     import ctypes
 
     try:
-        api = ctypes.CDLL(None, use_errno=True)
-        attributes, acl_get, acl_free = api.flistxattr, api.acl_get_fd_np, api.acl_free
-    except AttributeError as exc:
-        raise OSError(errno.ENOSYS, "Metadata queries are unavailable") from exc
-    attributes.argtypes = (ctypes.c_int, ctypes.c_void_p, ctypes.c_size_t, ctypes.c_int)
-    attributes.restype = ctypes.c_ssize_t
-    acl_get.argtypes = (ctypes.c_int, ctypes.c_int)
-    acl_get.restype = ctypes.c_void_p
-    acl_free.argtypes = (ctypes.c_void_p,)
-    acl_free.restype = ctypes.c_int
-    ctypes.set_errno(0)
-    size = attributes(fd, None, 0, 0x0020)  # XATTR_SHOWCOMPRESSION includes compression metadata.
-    if size < 0:
-        error = ctypes.get_errno() or errno.EIO
-        raise OSError(error, os.strerror(error))
-    if size:
-        return True
-    ctypes.set_errno(0)
-    acl = acl_get(fd, 0x00000100)  # ACL_TYPE_EXTENDED
-    if acl:
-        if acl_free(acl) != 0:
-            error = ctypes.get_errno() or errno.EIO
-            raise OSError(error, os.strerror(error))
-        return True  # Even an empty explicit ACL can carry inheritance flags.
-    error = ctypes.get_errno()
-    # Darwin's filesec_get_property reports ENOENT for an absent ACL. Querying
-    # a valid open descriptor avoids confusing this with a missing pathname.
-    if error == errno.ENOENT:
-        return False
-    raise OSError(error or errno.EIO, os.strerror(error or errno.EIO))
+        _regular(source)
+        source_fd = os.open(source, os.O_RDONLY | os.O_NOFOLLOW)
+        try:
+            original = os.fstat(source_fd)
+            staging = os.fstat(destination_fd)
+            if (not stat.S_ISREG(original.st_mode) or not stat.S_ISREG(staging.st_mode)
+                    or (original.st_dev, original.st_ino) != (expected.st_dev, expected.st_ino)):
+                raise DocumentError("Document changed while preserving metadata")
+            identity = lambda info: (info.st_uid, info.st_gid, stat.S_IMODE(info.st_mode),
+                                     getattr(info, "st_flags", 0))
+            if identity(original) != identity(expected) or identity(staging) != identity(expected):
+                raise DocumentError("Cannot preserve document owner, group and permissions")
+            current = _macos_metadata(source_fd)
+            if snapshot is None:
+                api = ctypes.CDLL(None, use_errno=True)
+                api.fcopyfile.argtypes = (ctypes.c_int, ctypes.c_int, ctypes.c_void_p, ctypes.c_uint32)
+                api.fcopyfile.restype = ctypes.c_int
+                # COPYFILE_ACL | COPYFILE_XATTR; never copy data, times, or ownership.
+                if api.fcopyfile(source_fd, destination_fd, None, 0x1 | 0x4) != 0:
+                    raise OSError(ctypes.get_errno() or errno.EIO, "Cannot copy document metadata")
+                snapshot = current
+            if (current != snapshot or _macos_metadata(source_fd) != snapshot
+                    or _macos_metadata(destination_fd) != snapshot
+                    or identity(os.fstat(destination_fd)) != identity(expected)):
+                raise DocumentError("Cannot verify preserved document ACLs and extended attributes")
+            return snapshot
+        finally:
+            os.close(source_fd)
+    except (OSError, AttributeError) as exc:
+        raise DocumentError("Cannot preserve document metadata; save a separate copy") from exc
 
 
 def _posix_plain_metadata(path: Path):
@@ -385,7 +487,11 @@ def _posix_plain_metadata(path: Path):
                 raise DocumentError("Cannot preserve document special mode bits; save a separate copy")
             if getattr(info, "st_flags", 0):
                 raise DocumentError("Cannot preserve document file flags; save a separate copy")
-            extended = _macos_has_metadata(fd) if sys.platform == "darwin" else bool(os.listxattr(fd))
+            if sys.platform == "darwin":
+                _macos_metadata(fd)  # These are copied and verified on staging before replacement.
+                extended = False
+            else:
+                extended = bool(os.listxattr(fd))
             if extended:
                 raise DocumentError("Cannot preserve document ACLs or extended attributes; save a separate copy")
             return info
@@ -446,7 +552,10 @@ def _publish_new(temporary: Path, destination: Path) -> None:
         os.link(temporary, destination)
     except OSError as exc:
         if exc.errno in unsupported:
-            raise DocumentError("Filesystem cannot atomically create a document without replacement") from exc
+            raise DocumentError(
+                "This drive does not support the atomic file creation required by Fairbeam. "
+                "Save on an internal disk, then copy the .fb file and its adjacent results folder together."
+            ) from exc
         raise
 
 
@@ -467,6 +576,8 @@ def save(path: Path, document: dict, base_hash: str | None = None) -> str:
             raise DocumentConflict("Document changed on disk; reopen or save a separate copy")
         if previous == data:
             return digest(data)
+        if previous is not None and os.name == "nt":
+            _windows_require_unnamed_stream(path)
         dacl = _windows_read_dacl(path) if previous is not None and os.name == "nt" else None
         owner_group = _windows_read_owner_group(path) if dacl is not None else None
         posix_metadata = _posix_plain_metadata(path) if previous is not None and os.name != "nt" else None
@@ -485,11 +596,20 @@ def save(path: Path, document: dict, base_hash: str | None = None) -> str:
                         _windows_apply_dacl(temporary, dacl)
                     if posix_metadata is not None:
                         _posix_prepare_staging(temporary, posix_metadata)
+                    macos_metadata = None
+                    if posix_metadata is not None and sys.platform == "darwin":
+                        macos_metadata = _macos_preserve_metadata(path, stream.fileno(), posix_metadata)
                     stream.write(data)
                     stream.flush()
+                    if macos_metadata is not None:
+                        _macos_preserve_metadata(path, stream.fileno(), posix_metadata, macos_metadata)
                     os.fsync(stream.fileno())
                     if previous is not None:
-                        _retry_busy(lambda: os.replace(temporary, path))
+                        def replace():
+                            if os.name == "nt":
+                                _windows_require_unnamed_stream(path)
+                            os.replace(temporary, path)
+                        _retry_busy(replace)
                     else:
                         try:
                             _publish_new(temporary, path)
@@ -504,24 +624,74 @@ def save(path: Path, document: dict, base_hash: str | None = None) -> str:
     return digest(data)
 
 
+class _ResultReader:
+    """One owned manifest snapshot; every result still gets fresh filesystem checks."""
+
+    _FIELDS = ("file", "sha256", "design_sha256")
+    _FIELD_SET = frozenset(_FIELDS)
+
+    def __init__(self, path: Path, document: dict):
+        path = _path(path)
+        try:
+            snapshot = copy.deepcopy(document)
+        except (TypeError, ValueError, RecursionError) as exc:
+            raise DocumentError("Document could not be snapshotted") from exc
+        validate(snapshot)
+        self._folder = path.parent / snapshot["results_directory"]
+        self._references = tuple(tuple(ref[field] for field in self._FIELDS)
+                                 for ref in snapshot["results"])
+        self._allowed = frozenset(self._references)
+        self._document_id = snapshot["id"]
+        self._model_id = snapshot["design"]["model"]["id"]
+        self._design_sha256 = design_digest(snapshot["design"])
+
+    @property
+    def document_id(self) -> str:
+        return self._document_id
+
+    @property
+    def model_id(self) -> str:
+        return self._model_id
+
+    @property
+    def design_sha256(self) -> str:
+        return self._design_sha256
+
+    def references(self):
+        # Yield fresh dictionaries without exposing the owned immutable triples.
+        return (dict(zip(self._FIELDS, ref)) for ref in self._references)
+
+    def read(self, reference: dict) -> tuple[bytes, dict]:
+        if not isinstance(reference, Mapping):
+            raise DocumentError("Result does not belong to this document")
+        reference = dict(reference)
+        if reference.keys() != self._FIELD_SET:
+            raise DocumentError("Result does not belong to this document")
+        key = tuple(reference[field] for field in self._FIELDS)
+        if any(not isinstance(value, str) for value in key) or key not in self._allowed:
+            raise DocumentError("Result does not belong to this document")
+        name, checksum, _ = key
+        info = self._folder.lstat()
+        if _linked(info) or not stat.S_ISDIR(info.st_mode):
+            raise DocumentError("Results directory must be a real directory, not a link")
+        data = _read_bytes(self._folder / name, MAX_RESULT)
+        if digest(data) != checksum:
+            raise DocumentError("Result checksum does not match the document")
+        try:
+            result = json.loads(data.decode("utf-8-sig"), object_pairs_hook=_unique_object)
+        except (ValueError, UnicodeError, RecursionError) as exc:
+            raise DocumentError("Result is not valid JSON") from exc
+        if not isinstance(result, dict) or result.get("schema") != "fairbeam.project/1":
+            raise DocumentError("Unsupported result schema")
+        _json_bytes(result)
+        return data, result
+
+
+def _read_result_content(path: Path, document: dict, reference: dict) -> tuple[bytes, dict]:
+    """Return the exact byte snapshot and parsed result that passed every read check."""
+    return _ResultReader(path, document).read(reference)
+
+
 def read_result(path: Path, document: dict, reference: dict) -> dict:
     """Read one referenced result after boundary and checksum checks; missing is recoverable."""
-    path = _path(path)
-    validate(document)
-    if reference not in document["results"]:
-        raise DocumentError("Result does not belong to this document")
-    folder = path.parent / document["results_directory"]
-    info = folder.lstat()
-    if _linked(info) or not stat.S_ISDIR(info.st_mode):
-        raise DocumentError("Results directory must be a real directory, not a link")
-    data = _read_bytes(folder / reference["file"], MAX_RESULT)
-    if digest(data) != reference["sha256"]:
-        raise DocumentError("Result checksum does not match the document")
-    try:
-        result = json.loads(data.decode("utf-8-sig"), object_pairs_hook=_unique_object)
-    except (ValueError, UnicodeError, RecursionError) as exc:
-        raise DocumentError("Result is not valid JSON") from exc
-    if not isinstance(result, dict) or result.get("schema") != "fairbeam.project/1":
-        raise DocumentError("Unsupported result schema")
-    _json_bytes(result)
-    return result
+    return _read_result_content(path, document, reference)[1]

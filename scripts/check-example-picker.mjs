@@ -43,8 +43,8 @@ check(picker0.includes("exampleGroups(examples(), (c) => t(`examples.group.${c}`
   "the picker and Start group the examples with the same helper");
 check(home0.includes("<span class=\"home-item-sub\">{[p.detail, p.results ? \"\" : t(\"home.examples.geometryOnly\")].filter(Boolean).join(\" · \")}</span>"),
   "Start shows the picker's detail line (band, cells)");
-check(/class="icon-btn icon-btn-sm home-copy"[^>]*aria-label=\{t\("home\.examples\.openAsNewAria", \{ name: p\.label \}\)\} title=\{copyReason\(\) \?\? t\("home\.examples\.copyTitle"\)\}/.test(home0),
-  "Start's copy action is an icon button with a label and the reason it is off");
+check(/class="btn btn-ghost btn-sm home-copy"[^>]*aria-label=\{t\("home\.examples\.openAsNewAria", \{ name: p\.label \}\)\} title=\{copyReason\(\) \?\? t\("home\.examples\.copyTitle"\)\}/.test(home0),
+  "Start's copy action has a visible label, accessible name and unavailable reason");
 check(/fallback=\{\s*<p class="muted" role="status">\{t\(DEMO \|\| isDesktopShell\(\) \? "home\.examples\.empty" : "home\.examples\.emptyServer"\)\}<\/p>/.test(home0),
   "an empty workspace says what happened instead of an empty card");
 const css0 = read("src/styles/designer.css");

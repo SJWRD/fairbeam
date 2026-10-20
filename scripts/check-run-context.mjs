@@ -162,7 +162,8 @@ ok(() => assert.equal(dragging, false, 'leaving the window hides the hint'));
 
 // App wires the helper (no inline catch-all dragover) and routes bundles vs reference data
 const app = src('src/App.tsx');
-ok(() => assert.match(app, /fileDropHandlers\(setDragging, \(f\) => \(\/\\\.json\$\/i\.test\(f\.name\) \? openUserProject\(f\) : importReferenceFile\(f\)\)\)/));
+ok(() => assert.match(app, /fileDropHandlers\(setDragging, \(file\) => void openDroppedFile\(file\)\)/));
+ok(() => assert.match(src('src/runner/dropFile.ts'), /await openUserProject\(file\)/));
 ok(() => assert.match(app, /onDragOver=\{drop\.onDragOver\}/));
 ok(() => assert.match(app, /onDrop=\{drop\.onDrop\}/));
 

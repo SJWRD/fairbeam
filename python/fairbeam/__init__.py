@@ -2,6 +2,12 @@
 
 import os as _os
 import sys as _sys
+import json as _json
+
+
+def _openems_install_root():
+    return (_os.environ.get("OPENEMS_INSTALL_PATH") or _os.environ.get("CSXCAD_INSTALL_PATH")
+            or r"C:\opt\openEMS")
 
 
 def _windows_dll_dirs():
@@ -11,8 +17,7 @@ def _windows_dll_dirs():
     for; the wheels themselves honour both), else the conventional C:\\opt\\openEMS."""
     if _sys.platform != "win32":
         return
-    root = (_os.environ.get("OPENEMS_INSTALL_PATH") or _os.environ.get("CSXCAD_INSTALL_PATH")
-            or r"C:\opt\openEMS")
+    root = _openems_install_root()
     for d in (root, _os.path.join(root, "bin")):
         if _os.path.isdir(d):
             try:
@@ -25,7 +30,8 @@ _windows_dll_dirs()
 
 # The native CPU patches of the macOS openEMS pack (scripts/native-cpu, docs/CPU-OPTIMIZATION.md) are
 # switched on by these variables, which libopenEMS reads when it loads: set them before openEMS is
-# imported. A library without the patches ignores them. Default on for macOS only; the
+# imported. A library without the patches ignores them. Default on for macOS and the explicitly
+# qualified Windows CPU pack only; the
 # environment variable FAIRBEAM_NATIVE_CPU=0 turns the default off, and a value the user already
 # set for one of the three variables is never replaced.
 _NATIVE_CPU_ENV = (
@@ -35,23 +41,55 @@ _NATIVE_CPU_ENV = (
 )
 
 
+def _qualified_windows_cpu_marker() -> dict | None:
+    """The installer verifies the archive; this marker scopes defaults to its qualified build.
+
+    This is a capability declaration, not independent binary-integrity verification.
+    Unmarked upstream, GPU and external installations retain their existing behavior.
+    """
+    try:
+        with open(_os.path.join(_openems_install_root(), "openems-pack.json"), "rb") as stream:
+            raw = stream.read(65537)
+        if len(raw) > 65536:
+            return None
+        marker = _json.loads(raw)
+        qualified = (isinstance(marker, dict)
+                and marker.get("marker") == "fairbeam openEMS pack v1"
+                and marker.get("platform") == "windows-x64"
+                and marker.get("native_cpu") is True
+                and marker.get("openems_commit") == "12cd91de21548987b835ce21f10fd8421d74da78")
+        return marker if qualified else None
+    except (OSError, ValueError, UnicodeError, RecursionError):
+        return None
+
+
+def _qualified_windows_cpu_pack() -> bool:
+    return _qualified_windows_cpu_marker() is not None
+
+
 def native_cpu_default() -> bool:
-    """True when this process turns the native CPU patches on by default (macOS, unless opted out)."""
-    return _sys.platform == "darwin" and _os.environ.get("FAIRBEAM_NATIVE_CPU", "").strip().lower() not in (
-        "0", "off", "false", "no")
+    """Whether this platform/build requests the qualified CPU patches unless opted out."""
+    if _os.environ.get("FAIRBEAM_NATIVE_CPU", "").strip().lower() in ("0", "off", "false", "no"):
+        return False
+    return _sys.platform == "darwin" or (_sys.platform == "win32" and _qualified_windows_cpu_pack())
 
 
 def _native_cpu_defaults():
     if native_cpu_default():
         for name, value in _NATIVE_CPU_ENV:
             _os.environ.setdefault(name, value)
+        # Independently qualified I/O optimization: old CPU packs and macOS retain their
+        # existing behavior. Respect an explicit value, including "0".
+        marker = _qualified_windows_cpu_marker() if _sys.platform == "win32" else None
+        if marker is not None and marker.get("native_hdf5_td_batch") is True:
+            _os.environ.setdefault("OPENEMS_EXPERIMENTAL_HDF5_TD_BATCH", "1")
 
 
 def native_cpu_note() -> str | None:
     """The run-log line that says the patches are requested (None when they are not). openEMS itself
     prints one line per patch it actually applied; a build without the patches prints none."""
     if all(_os.environ.get(name) == value for name, value in _NATIVE_CPU_ENV):
-        source = "macOS default" if native_cpu_default() else "environment"
+        source = ("macOS default" if _sys.platform == "darwin" else "qualified Windows pack default") if native_cpu_default() else "environment"
         return (f"native CPU patches requested ({source}; FAIRBEAM_NATIVE_CPU=0 turns the default off); "
                 "the openEMS lines 'Experimental CPU ...' below show what this build applied")
     return None

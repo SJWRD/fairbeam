@@ -18,6 +18,8 @@ build also rejects changed code examples or heading structure. Missing translati
 English body with a Turkish note; the completeness check requires every published page to be
 translated. To check a locally served site in Chrome, run `npm run check:docs-language` with
 `FAIRBEAM_DOCS_URL` pointing to it; `FAIRBEAM_SCREENSHOT_DIR` optionally saves the screenshots.
+See [focused check prerequisites](CHECKS.md) for Node checks, isolated browser checks and
+the separately opted-in Elmer integration.
 
 ## Using Fairbeam
 
@@ -54,7 +56,7 @@ translated. To check a locally served site in Chrome, run `npm run check:docs-la
 | [Experimental periodic CPU study](../scripts/experimental-periodic/README.md) | Opt-in native source patch and reproducible zero-phase unit-cell research gates; not production Floquet support |
 | [Lumped resistor in openEMS](openems-lumped-resistor.md) | How the lumped resistor behaves, and why the Wilkinson residual is not a resistor error |
 | [Bundle schema](BUNDLE.md) | `fairbeam.project/1`, field by field |
-| [Portable document foundation](FB-DOCUMENT.md) | Planned `.fb` storage contract and tests; native opening and saving are not integrated yet |
+| [Portable Fairbeam documents](FB-DOCUMENT.md) | Development `.fb` Open/Save workflow, adjacent results, storage checks and remaining platform release gates |
 | [Architecture](ARCHITECTURE.md) | Data flow, run server, project layout, roadmap |
 | [Design](DESIGN.md) | Visual design rules, tokens, layout primitives, keyboard map |
 | [Turkish UI glossary](i18n-glossary.md) | The Turkish/English terms of the interface and the alternatives considered for each term |
