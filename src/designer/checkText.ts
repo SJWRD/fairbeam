@@ -157,3 +157,12 @@ export function sentenceCase(text: string): string {
 export function checkTitle(c: { code?: string; message: string }): string {
   return sentenceCase(checkMessage(c));
 }
+
+/** Parameter parsing stays locale-independent; translate names, expressions and import diagnostics
+ * only where they are shown, so changing language also updates an already-open preview. */
+export function parameterErrorTitle(message: string): string {
+  const translated = translate("checks.sub.structure.why.", message, "structure")
+    ?? translate("checks.msg.parameter-import.", message, "parameter-import")
+    ?? checkMessage({ code: "expr", message });
+  return sentenceCase(translated);
+}

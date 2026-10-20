@@ -71,6 +71,10 @@ class DocumentWorkspaceTests(unittest.TestCase):
             result = self.bridge.save(self.path, opened['file']['id'], opened['file']['hash'],
                                       opened['document']['revision'], self.document['id'])
         self.assertTrue(any('Organized result export' in w for w in result['warnings']))
+        self.assertEqual(len(result['warnings']), len(result['warning_details']))
+        self.assertIn({'code': 'warning.export_unavailable', 'args': {'detail': 'disk full'}}, result['warning_details'])
+        encoded = json.loads(json.dumps(result))
+        self.assertTrue(all(isinstance(w, str) for w in encoded['warnings']), 'older native shells still receive strings')
         self.assertEqual(len(doc.read(self.path)[0]['results']), 1)
 
     def setUp(self):

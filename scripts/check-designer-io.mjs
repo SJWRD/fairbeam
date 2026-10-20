@@ -28,6 +28,24 @@ function fixture(owner,extra={}){
  return{core,io,log,nextGet:()=>get=deferred(),nextPut:()=>put=deferred()};
 }
 const a=fixture('A'),b=fixture('B');
+// Post-save preview failures are advisory; the committed hash owns the next save (#223).
+for (const stage of ['timeout', 'worker']) {
+ const x=fixture(`validation-${stage}`);
+ x.core.edit(d=>d.model.description='saved without preview');
+ const put=x.nextPut(),saving=x.io.save();
+ put.resolve({hash:`committed-${stage}`,validation:{valid:false,error:{stage,message:'Preview unavailable'}}});
+ assert.equal(await saving,true);assert.equal(x.core.file().hash,`committed-${stage}`);
+ assert.equal(x.core.dirty(),false);assert.equal(x.core.conflict(),null);
+ assert.equal(x.core.file().design.model.description,'saved without preview');
+ assert.match(x.core.message().text,/Saved.*validation could not finish/);
+ assert.equal(x.core.message().tone,'warn');
+ assert.equal(x.log.some(e=>e[0]==='model'),false);
+ x.core.edit(d=>d.model.description='next edit');
+ const next=x.nextPut(),retry=x.io.save();
+ assert.equal(x.log.findLast(e=>e[0]==='put')[3],`committed-${stage}`);
+ next.resolve(response('next-saved'));assert.equal(await retry,true);assert.equal(x.core.dirty(),false);
+ x.io.dispose();x.core.dispose();
+}
 // Same filename/hash does not share save state, errors, backup or request ownership.
 let da=a.nextPut(),db=b.nextPut();a.core.edit(d=>d.model.description='A');b.core.edit(d=>d.model.description='B');
 let pa=a.io.save(),pb=b.io.save();assert.equal(a.core.saving(),true);assert.equal(b.core.saving(),true);

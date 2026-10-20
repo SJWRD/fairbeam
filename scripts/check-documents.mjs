@@ -83,7 +83,10 @@ for (const [storedForm, queryForm] of [['NFD','NFC'], ['NFC','NFD']]) {
     }
   }
 }
-assert.equal(visibleProjects([{key:'plain',model:{name:'ölçüm'}}],'olcum','name',false,new Set()).length,0,'canonical normalization does not discard meaningful accents');
-checks++;
+const accentedEntry = {key:'plain',model:{name:'ölçüm'},document:{id:'doc',path:'/İzmir/ölçüm.fb'}};
+const accentedOriginal = JSON.stringify(accentedEntry);
+assert.equal(visibleProjects([accentedEntry],'olcum','name',false,new Set())[0],accentedEntry,'accent-insensitive search matches ordinary keyboard spelling');
+assert.equal(JSON.stringify(accentedEntry),accentedOriginal,'search folding never rewrites names or document paths');
+checks += 2;
 console.log(`Document envelope and project labels: ${checks} checks passed`);
 await import('./check-document-autosave.mjs');

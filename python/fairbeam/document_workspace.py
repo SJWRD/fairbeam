@@ -17,6 +17,7 @@ import uuid
 
 from . import documents as doc, modelfiles
 from ._filelocks import model_lock
+from .messages import Message, descriptor
 
 STATE_SCHEMA = "fairbeam.document-workspace/1"
 RUN_SCHEMA = "fairbeam.document-run/1"
@@ -343,7 +344,7 @@ class DocumentWorkspace:
                 statuses.append(self._status(reference, current, name))
             except (OSError, ValueError, AttributeError, TypeError) as exc:
                 statuses.append(self._status(reference, current, error=exc))
-                warnings.append(f"Result {reference['file']} is unavailable: {exc}")
+                warnings.append(Message("warning.result_unavailable", f"Result {reference['file']} is unavailable: {exc}", file=reference["file"], detail=str(exc)))
             records.append(record)
         return records, statuses, warnings
 
@@ -352,7 +353,7 @@ class DocumentWorkspace:
                statuses: list[dict], warnings: list[str]) -> dict:
         return {"file": {**file, "document_id": document["id"]}, "document": {"id": document["id"], "path": str(path),
                 "revision": revision, "results_directory": document["results_directory"]},
-                "results": statuses, "warnings": warnings}
+                "results": statuses, "warnings": warnings, "warning_details": [descriptor(w) for w in warnings]}
 
     def open(self, path: Path) -> dict:
         path = doc._path(path)
@@ -475,7 +476,7 @@ class DocumentWorkspace:
                     raise doc.DocumentError("Invalid completed-run checksum")
                 records.append(record)
             except (OSError, ValueError, KeyError, TypeError) as exc:
-                warnings.append(f"A completed result's provenance is unavailable: {exc}")
+                warnings.append(Message("warning.provenance_unavailable", f"A completed result's provenance is unavailable: {exc}", detail=str(exc)))
         return records, warnings
 
     def _cached_bytes(self, record: dict) -> bytes:
@@ -548,7 +549,7 @@ class DocumentWorkspace:
             existing_references = {(r["file"], r["sha256"], r["design_sha256"]) for r in records}
             completed, warnings = self._completed(model_id)
             if existing_identity is not None:
-                warnings.append("A separate document copy was saved. Existing document result references require explicitly opening the original; only recorded completed results were considered")
+                warnings.append(Message("warning.separate_copy", "A separate document copy was saved. Existing document result references require explicitly opening the original; only recorded completed results were considered"))
             recorded_jobs = {record.get("job_id") for record in completed}
             untracked = sum(1 for job in jobs if job.get("model") == model_id and job.get("status") == "done"
                             and job.get("bundle") and (job.get("kind") != "research"
@@ -556,7 +557,7 @@ class DocumentWorkspace:
                                     (_research_source(model_id, job.get("research")) or {}).get("backup_scope") == self.backup_scope))
                             and job.get("id") not in recorded_jobs)
             if untracked:
-                warnings.append(f"{untracked} completed result(s) were not attached because their source design was not recorded")
+                warnings.append(Message("warning.untracked_results", f"{untracked} completed result(s) were not attached because their source design was not recorded", count=untracked))
             # References already in the document retain their filenames and original source
             # hash, including missing files. Newly captured outputs get immutable names.
             known = {(r["sha256"], r["design_sha256"]) for r in records}
@@ -592,10 +593,10 @@ class DocumentWorkspace:
                     # its bytes cannot be attributed to this recorded source. Existing missing
                     # references remain recoverable and are not silently dropped.
                     if not existing_reference:
-                        warnings.append(f"Result {reference['file']} was not attached: {exc}")
+                        warnings.append(Message("warning.result_not_attached", f"Result {reference['file']} was not attached: {exc}", file=reference["file"], detail=str(exc)))
                         continue
                     statuses.append(self._status(reference, current, error=exc))
-                    warnings.append(f"Result {reference['file']} is unavailable: {exc}")
+                    warnings.append(Message("warning.result_unavailable", f"Result {reference['file']} is unavailable: {exc}", file=reference["file"], detail=str(exc)))
                 references.append(reference)
                 kept_records.append(record)
             document["results"] = references
@@ -646,11 +647,11 @@ class DocumentWorkspace:
                     export_sections(path.parent / document["results_directory"], raw,
                                     reference, document["design"], _directory, _immutable)
                 except (OSError, ValueError, KeyError, TypeError) as exc:
-                    warnings.append(f"Organized result export is unavailable: {exc}")
+                    warnings.append(Message("warning.export_unavailable", f"Organized result export is unavailable: {exc}", detail=str(exc)))
             try:
                 self._write_state(state)
             except Exception as exc:
-                warnings.append(f"The document was saved; workspace metadata needs recovery: {type(exc).__name__}")
+                warnings.append(Message("warning.workspace_recovery", f"The document was saved; workspace metadata needs recovery: {type(exc).__name__}", detail=type(exc).__name__))
             if save_as and source_state:
                 # The edits now have their own saved copy and workspace key. Reopening
                 # the original may restore its last portable revision without discarding
@@ -659,5 +660,5 @@ class DocumentWorkspace:
                 try:
                     self._write_state(source_state)
                 except Exception as exc:
-                    warnings.append(f"The copy was saved; the original workspace needs recovery: {type(exc).__name__}")
+                    warnings.append(Message("warning.original_recovery", f"The copy was saved; the original workspace needs recovery: {type(exc).__name__}", detail=type(exc).__name__))
             return self._reply(file, path, document, revision, statuses, warnings)

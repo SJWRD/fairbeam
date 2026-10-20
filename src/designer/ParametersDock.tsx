@@ -2,7 +2,7 @@ import { createEffect, createSignal, For, on, Show } from "solid-js";
 import { Copy, Download, Plus, Tag, Trash2, TriangleAlert, Upload, X } from "lucide-solid";
 import { ExprField } from "./DesignPane";
 import { type Check, parseLimit } from "./checks";
-import { checkMessage } from "./checkText";
+import { checkMessage, parameterErrorTitle } from "./checkText";
 import { paramKeyError } from "./expr";
 import { shown as fmt } from "./displayNumber.ts";
 import { addParam, checks, draft, duplicateParam, edit, fieldId, focusPath, issues, names, paramKeyProblem, removeParam, renameParam, selection, setSelection } from "./store";
@@ -57,9 +57,9 @@ function TransferDialog(props: { close: () => void }) {
         <button class="icon-btn" onClick={props.close} aria-label={t("common.close")}><X size={16} /></button>
       </div>
       <div class="pt-body"><input ref={chooser} type="file" accept=".csv,.json,text/csv,application/json" onChange={(e) => { void load(e.currentTarget.files?.[0]); }} />
-        <Show when={error()}><p class="dz-bad" role="alert">{error()}</p></Show>
+        <Show when={error()}><p class="dz-bad" role="alert">{parameterErrorTitle(error())}</p></Show>
         <Show when={rows()}><p class="muted">{t("params.import.summary", { added: added(), changed: changed(), errors: preview().filter((r) => r.kind === "error").length })}</p>
-          <ul class="pt-preview"><For each={preview()}>{(r) => <li classList={{ "dz-bad": r.kind === "error" }}><b>{r.key || t("params.import.row", { row: r.row })}</b> — {t(`params.import.kind.${r.kind}`)}{r.message ? `: ${r.message}` : ""}</li>}</For></ul>
+          <ul class="pt-preview"><For each={preview()}>{(r) => <li classList={{ "dz-bad": r.kind === "error" }}><b>{r.key || t("params.import.row", { row: r.row })}</b> — {t(`params.import.kind.${r.kind}`)}{r.message ? `: ${parameterErrorTitle(r.message)}` : ""}</li>}</For></ul>
         </Show>
       </div>
       <div class="dialog-foot">
@@ -178,7 +178,7 @@ export default function ParametersDock() {
             const typed = keyText();
             if (typed !== null) return typed.trim() === p.key ? null : paramKeyProblem(i(), typed.trim());
             const bad = paramKeyError(p.key);
-            return bad ? `${bad[0].toUpperCase()}${bad.slice(1)}.`
+            return bad ? `${parameterErrorTitle(bad)}.`
               : draft.params.some((q, j) => j !== i() && q.key === p.key) ? t("params.keyTwice") : issues()[path("key")]?.message;
           };
           const limit = (key: "min" | "max", v: number | undefined) => set((q) => {

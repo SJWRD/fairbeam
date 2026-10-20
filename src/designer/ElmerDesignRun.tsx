@@ -1,9 +1,8 @@
 import { createMemo, createSignal, For, onCleanup, Show } from "solid-js";
-import { unwrap } from "solid-js/store";
 import { api } from "../runner/api";
 import { openResearch, researchPath } from "../runner/researchState";
 import { refreshRuns } from "../runner/store";
-import { conflict, dirty, draft, file, names, save } from "./store";
+import { draft, file, names, prepareSavedDesign } from "./store";
 import { elmerEnclosure } from "./elmerDomain";
 import { t } from "../i18n";
 import NumberField from "../components/NumberField";
@@ -30,16 +29,15 @@ export default function ElmerDesignRun(props: { close: () => void; useOpenEMS: (
     event.preventDefault();
     if (busy() || invalid() || !file()) return;
     setBusy(true); setError("");
-    const identity = file()!.id;
     try {
-      if (dirty() || conflict()) await save();
+      const savedTarget = await prepareSavedDesign(() => alive);
       if (!alive) return;
-      if (file()?.id !== identity || dirty() || conflict()) throw new Error(t("run.err.notSaved"));
+      if (!savedTarget?.isCurrent()) throw new Error(t("run.err.notSaved"));
       const job = await api.researchStart({ backend: "elmer", path: path().trim(),
-        design: structuredClone(unwrap(draft)), settings: { closed_pec: true,
+        design: structuredClone(savedTarget.file.design), settings: { closed_pec: true,
           domain_mm: domain().map(Number), max_cell_mm: Number(cell()), target_hz: Number(target()) * 1e9 } });
       void refreshRuns();
-      if (alive) { props.close(); openResearch(job.id, "elmer", true); }
+      if (savedTarget.isCurrent()) { props.close(); openResearch(job.id, "elmer", true); }
     } catch (e) { if (alive) setError((e as Error).message); }
     finally { if (alive) setBusy(false); }
   };

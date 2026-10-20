@@ -128,3 +128,6 @@ console.log("appearance migration, fallback, independent font application and re
   assert.match(css, /\.gs-dialog > \.gs-body\s*\{[^}]*min-height:\s*0/, "the body can shrink below its content and scroll");
   console.log("settings dialog layout: the tab row keeps its height and the body scrolls");
 }
+
+// Runtime installer feedback and local splash command permission contracts.
+await import("./check-runtime-feedback.mjs");

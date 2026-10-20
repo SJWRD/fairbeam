@@ -51,4 +51,13 @@ assert.equal(steps().length,1);c.registerPostEditObserver(()=>c.dispose());c.edi
 assert.equal(c.isDisposed(),true);assert.equal(c.file(),null);assert.equal(steps().length,0,'external reactive history consumers see disposal');disposeConsumer();
 const closing=createDesignerSession();closing.takeFile(saved());closing.registerDocumentChangeObserver(()=>closing.dispose());closing.takeFile(saved());
 assert.equal(closing.isDisposed(),true);assert.equal(closing.file(),null);assert.deepEqual(JSON.parse(closing.snapshot()),{},'document observer disposal cannot reload a closed session');
+const liveDialog=createDesignerSession();assert.equal(liveDialog.changedSince(liveDialog.historyMark()),false,'an unloaded unchanged session keeps its snapshot semantics');
+liveDialog.takeFile(saved());const dialogMark=liveDialog.historyMark();
+let disposeDialog;const dialogChanged=createRoot(dispose=>{disposeDialog=dispose;return createMemo(()=>liveDialog.changedSince(dialogMark));});
+assert.equal(dialogChanged(),false);
+liveDialog.edit(d=>d.simulation.f_max=3.3,'fmax');assert.equal(dialogChanged(),true,'a live dialog notices edits without being remounted');
+liveDialog.undo();assert.equal(dialogChanged(),false,'Undo restores the Cancel state');
+liveDialog.redo();assert.equal(dialogChanged(),true,'Redo restores the Discard state');
+assert.equal(liveDialog.rollbackTo(dialogMark),true);assert.equal(dialogChanged(),false,'explicit Discard restores the opening state');
+disposeDialog();liveDialog.dispose();
 console.log('Designer sessions: independent draft/status/history/coalescing/observers/marks/rename/Python/async ownership/disposal pass');

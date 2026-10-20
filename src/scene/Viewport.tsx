@@ -17,6 +17,8 @@ import { cssVar } from "../lib/cssvar";
 import { downloadFailedMessage, saveDownloadUrl } from "../lib/download";
 import { downloadToast } from "../lib/toast";
 import { dims, freqText, num } from "../lib/format";
+import { modelToMm } from "../lib/modelUnits";
+import { niceLength, viewportCoordinates, viewportMeasurement, viewportScaleBar } from "./viewportReadouts";
 import { fmt, t } from "../i18n";
 import type { Bundle, Part } from "../types";
 import {
@@ -86,12 +88,6 @@ function colors(): SceneColors {
 /** field colour map (Turbo) for the directivity surface and the surface current */
 function fieldStops(): THREE.Color[] {
   return [0, 1, 2, 3, 4, 5, 6, 7, 8].map((i) => new THREE.Color(cssVar(`--al-field-${i}`)));
-}
-
-function niceLength(x: number): number {
-  const p = Math.pow(10, Math.floor(Math.log10(x)));
-  const m = x / p;
-  return (m >= 5 ? 5 : m >= 2 ? 2 : 1) * p;
 }
 
 /** The nearest hit, but a metal face wins over a dielectric face at the same depth: a patch or
@@ -254,7 +250,7 @@ export default function Viewport() {
         line.renderOrder = 20;
         const element = document.createElement("div");
         element.className = "vp-point-marker";
-        element.textContent = `${fmt.fixed(measurePoints(a.point, b.point).distance, 3)} mm`;
+        element.textContent = viewportMeasurement(measurePoints(a.point, b.point).distance, modelToMm(bundle()));
         const tag = new CSS2DObject(element);
         tag.position.set(...a.point.map((v, i) => (v + b.point[i]) / 2) as [number, number, number]);
         pointMarkers.add(line, tag);
@@ -374,12 +370,10 @@ export default function Viewport() {
     function updateScaleBar() {
       const dist = camera.position.distanceTo(controls.target);
       const worldPerPx = (2 * dist * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2))) / size.h;
-      const len = niceLength(worldPerPx * 110);
-      const px = Math.round((len / worldPerPx) * 2) / 2;
+      const next = viewportScaleBar(worldPerPx, modelToMm(bundle()));
       const prev = scaleBar();
       // only when it changes: this runs every frame while orbiting
-      const text = `${fmt.num(len, 6)} mm`;
-      if (!prev || prev.px !== px || prev.label !== text) setScaleBar({ px, label: text });
+      if (!prev || prev.px !== next.px || prev.label !== next.label) setScaleBar(next);
     }
 
     function resize() {
@@ -1083,7 +1077,7 @@ export default function Viewport() {
       if (!b || !p) return "";
       const kind = p.type === "Material" ? t("viewport.part.dielectric", { eps: p.material ? fmt.num(p.material.eps_r, 4) : "?" }) : "PEC";
       const hidden = hiddenParts[p.name] ? t("viewport.part.hidden") : "";
-      return t("viewport.part.describe", { name: p.label ?? p.name, kind, dims: dims(p.bbox), hidden, n: i + 1, total: b.parts.length });
+      return t("viewport.part.describe", { name: p.label ?? p.name, kind, dims: dims(p.bbox, modelToMm(b)), hidden, n: i + 1, total: b.parts.length });
     }
     const onKey = (e: KeyboardEvent) => {
       if (e.defaultPrevented || e.target !== host || e.metaKey || e.ctrlKey || e.altKey || drawTool()) return;
@@ -1476,8 +1470,8 @@ export default function Viewport() {
             const local = () => (!wcsIsGlobal() && appMode() === "design" ? worldToWcs([c().x, c().y, c().z]) : null);
             return (
               <span class="readout">
-                <Show when={local()} fallback={<>x {num(c().x, 2)} · y {num(c().y, 2)} · z {num(c().z, 2)} mm</>}>
-                  {(l) => <>u {num(l()[0], 2)} · v {num(l()[1], 2)} · w {num(l()[2], 2)} mm</>}
+                <Show when={local()} fallback={viewportCoordinates([c().x, c().y, c().z], modelToMm(bundle()))}>
+                  {(l) => viewportCoordinates(l(), modelToMm(bundle()), true)}
                 </Show>
               </span>
             );
@@ -1503,7 +1497,7 @@ export default function Viewport() {
         >
           <div class="vp-tip-name">{tipPart()!.label ?? tipPart()!.name}</div>
           <div class="vp-tip-row">{tipPart()!.type === "Material" ? t("viewport.tip.dielectric", { eps: tipPart()!.material ? fmt.num(tipPart()!.material!.eps_r, 4) : "?" }) : "PEC"}</div>
-          <div class="vp-tip-row mono">{dims(tipPart()!.bbox)}</div>
+          <div class="vp-tip-row mono">{dims(tipPart()!.bbox, modelToMm(bundle()))}</div>
           <Show when={tipPart()!.primitives.length > 1}>
             <div class="vp-tip-row">{t("viewport.tip.primitives", { count: tipPart()!.primitives.length })}</div>
           </Show>

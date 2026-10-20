@@ -18,6 +18,7 @@
     "allow-native-document-open",
     "allow-native-document-save",
     "allow-native-document-next-open",
+    "allow-native-document-dismiss-pending",
     "allow-native-document-restore",
     "allow-native-document-archive",
     "allow-get-general-settings",

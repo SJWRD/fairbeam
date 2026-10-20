@@ -1,6 +1,6 @@
 import { loadFile, loadProject, setLoadError } from "../state";
 import { appModeRevision, setAppMode } from "../workspace";
-import { invalidatePreview, models } from "./store";
+import { invalidatePreview, models, previewIsCurrent } from "./store";
 import { schemaFamily } from "../lib/legacy";
 import { DESIGN_ID_RE, RESERVED_DESIGN_ID_RE, suggestDesignId } from "../lib/designId";
 import { t } from "../i18n";
@@ -74,4 +74,12 @@ export async function openUserProject(file: string | File): Promise<boolean> {
   const opened = await (typeof file === "string" ? loadProject(file, current) : loadFile(file, current));
   if (opened && current()) setAppMode("results");
   return opened;
+}
+
+/** Retry belongs to this screen and model selection. Later navigation, a new model or
+ * a competing file load must win even before its own preview/bundle has arrived. */
+export function retryUserProject(file: string): Promise<boolean> {
+  const revision = appModeRevision();
+  const preview = invalidatePreview();
+  return loadProject(file, () => appModeRevision() === revision && previewIsCurrent(preview));
 }

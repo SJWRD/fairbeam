@@ -42,7 +42,9 @@ The start screen opens when the run server is reachable. It has three parts:
   to **Rename** its display name or **Show in File Explorer** in the desktop app. Renaming keeps
   its file, ID and existing results, and offers **Undo** on Start; save an open design's edits first.
   The bin icon deletes a design after a confirmation;
-  the file moves to the model history folder, so it can be restored. A design file that does not
+  the file moves to the model history folder. Saved design versions and deleted workspace designs
+  currently require [manual recovery](#recovering-saved-or-deleted-workspace-designs); there is no
+  in-app design version browser or Recently deleted view. A design file that does not
   open (damaged, or made by a newer Fairbeam) stays in the list, grayed, with the reason.
   For a portable `.fb` project in the desktop app, the confirmation also offers to remove the
   `.fb` and its results folder from their current location. This option is **off by default**.
@@ -1160,13 +1162,56 @@ simulated: the evaluations table lists it as **Skipped** with the reason (for ex
 "'patch' overhangs 'substrate' by 1.2 mm (x+)"), it costs at least the failed-evaluation penalty,
 and the search goes on. Sweeps run every point as it is.
 
+## Recovering saved or deleted workspace designs
+
+There is currently no in-app browser or restore action for the disk history of `.design.json`
+designs. The Code editor's version history and `/api/models/<id>/history` endpoint cover Python
+`.py` models only. They do not list these design backups.
+
+Find the workspace used for that design (a custom workspace may be somewhere else):
+
+| Storage | Design backups |
+| --- | --- |
+| Desktop default on Windows | `%USERPROFILE%\Documents\Fairbeam\model-history\<workspace-model-id>\` |
+| Desktop default on macOS | `~/Documents/Fairbeam/model-history/<workspace-model-id>/` |
+| Source checkout defaults | `<checkout>/.sim/model-history/<workspace-model-id>/` |
+| Custom run server | `model-history/<workspace-model-id>/` beside the configured jobs directory |
+
+`<workspace-model-id>` is the saved workspace filename without `.design.json`, not its display
+name. A portable document's cached design often uses an `fb_<UUID>` workspace ID. Saved versions
+are `<timestamp>.design.json` (with a numbered suffix for saves in the same second); removed
+workspace designs are `deleted-<timestamp>.design.json`. Windows Explorer may hide the filename
+extension and macOS Finder hides `.sim` by default; use **Go to Folder** to enter its full path.
+
+To recover one without overwriting a newer design:
+
+1. Save any open work and quit Fairbeam before inspecting its workspace files.
+2. Copy the selected `.design.json` backup to a separate folder, keeping the backup intact.
+   Give the copy a recognizable filename, such as `Recovered patch.design.json`.
+3. Start Fairbeam and choose **Open project…** to import that JSON copy as a design. Check its
+   geometry, parameters and name, then save it to a new `.fb` location with **Save As**.
+
+This recovers the saved design, not an earlier `.fb` revision or its result files. Do not replace
+an `fb_*.design.json` cache by hand: its portable document and workspace metadata may represent a
+newer revision. Importing the backup creates a separate recoverable design instead.
+
+If you checked **Also remove the .fb file and results**, the portable project is in the recovery
+location shown after removal: `Fairbeam Deleted/<unique-folder>/` beside its original location.
+With Fairbeam closed, copy both the `.fb` and its adjacent results folder together to an empty
+folder, preserving their names, then reopen the copied `.fb`. Never overwrite an existing project
+or copy only the `.fb` when you need its recorded results. This portable-project recovery is
+separate from the workspace design backups above.
+
 ## Files
 
 - **Where**: designs are saved in the run server's models folder, next to the Python models.
   Repository checkout: `python/models/`. Desktop app: `models/` in the workspace, `~/Documents/Fairbeam`
   on macOS and `%USERPROFILE%\Documents\Fairbeam` on Windows.
-- **Saving**: every save keeps the previous version in `model-history/`. If the file changed on disk
-  since it was opened, the designer says so; saving again overwrites it with your version.
+- **Saving**: a changed workspace design save keeps its previous version under
+  `model-history/<workspace-model-id>/` (the most recent 50 saved versions; deleted copies are not
+  pruned). These disk versions are separate from the current session's modeling Undo/Redo history
+  and the browser's **Restore draft** recovery. If a file changed on disk, review the conflict and
+  explicitly choose how to keep your work. See [manual recovery](#recovering-saved-or-deleted-workspace-designs).
 - **Format**: `fairbeam.design/1`, one JSON object, documented at the top of
   `python/fairbeam/design.py` (all shape kinds, waveguide ports, transforms, cuts and components).
   A complete, valid example, a probe-fed patch:
