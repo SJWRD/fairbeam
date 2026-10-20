@@ -36,6 +36,7 @@ import { localeTag, t } from "../i18n/index.ts";
 import { archiveNativeProject, pickNativeDocument, persistNativeDocument, rememberNativeDocument, restoreNativeDocumentBinding, observeNativeDocumentResults, nativeResultsPendingToken, resetNativeDocumentResults, nativeDocumentFor, nativeDocumentsAvailable, hasDocumentResultScope } from "../lib/nativeDocuments";
 import { createDocumentResultAutosave } from "../lib/documentResultAutosave";
 import { showToast } from "../lib/toast";
+import { focusSimSettings } from "./simSettingsState";
 
 export const defaultDesignerSession = createDesignerSession({
   edited: (previewChanged) => { if (previewChanged) { quickPreview(); schedulePreview(); } },
@@ -931,6 +932,9 @@ export function focusPath(path: string, options: { frame?: boolean; focus?: bool
     }
   }
   if (options.focus === false) return;
+  // The modal owns these paths. Its lazy chunk may not have mounted in the next frame;
+  // queue the request instead of focusing an inspector behind its loading scrim.
+  if (s.type === "simulation") { focusSimSettings(path); return; }
   const target = path === "mesh" ? "mesh.cells_per_wavelength" : path;
   const pointPath = target.match(/^parts\[\d+\]\.primitives\[\d+\]\.points\[(\d+)\](?:\[|$)/);
   if (pointPath) window.dispatchEvent(new CustomEvent("fairbeam:reveal-point", { detail: { path: target, index: Number(pointPath[1]) } }));

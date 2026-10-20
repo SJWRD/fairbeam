@@ -27,16 +27,7 @@ export { designDockTab, setDesignDockTab, type DesignDockTab } from "../designer
 export const [runDialogOpen, setRunDialogOpen] = createSignal(false);
 export const [optimizeDialogOpen, setOptimizeDialogOpen] = createSignal(false);
 export const [sweepDialogOpen, setSweepDialogOpen] = createSignal(false);
-/** the designer's Simulation settings dialog (src/designer/SimSettingsDialog.tsx) */
-export const [simSettingsOpen, setSimSettingsOpen] = createSignal(false);
-/** the section the dialog scrolls to when it opens ("freq", "bounds", "mesh", "monitors", "solver"; "currents",
- * "efficiency" and "fieldplanes" add that monitor when there is none and focus its field) */
-export const [simSettingsSection, setSimSettingsSection] = createSignal("freq");
-/** Open the Simulation settings at a section from a direct Simulation ribbon entry point. */
-export function openSimSettings(section = "freq") {
-  setSimSettingsSection(section);
-  setSimSettingsOpen(true);
-}
+export { simSettingsOpen, setSimSettingsOpen, simSettingsSection, setSimSettingsSection, openSimSettings } from "../designer/simSettingsState";
 /** the job the designer started (the live job may later be another one, from the Run panel) */
 export const [designJobId, setDesignJobId] = createSignal<string | null>(null);
 /** the finished run's bundle, shown in the dock's result tabs */

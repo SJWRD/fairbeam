@@ -331,8 +331,9 @@ function setMinimized(value: boolean) {
 function chooseTab(t: RibbonTab) {
   setRibbonTab(t);
   try { localStorage.setItem("fairbeam.ribbonTab", t); } catch { /* private mode */ }
-  // a geometry tab takes the 3D pattern or currents off the 3D view (resultFocus.ts)
-  leaveResultsFor(t);
+  // A minimized tab changes only the stored selection: no geometry controls are shown yet.
+  // Preserve the displayed result until the user chooses a visible geometry tab.
+  if (!ribbonMinimized()) leaveResultsFor(t);
 }
 export function resetRibbonLayout() { setMinimized(false); chooseTab("home"); }
 /** Simulation › Ports › Lumped: show the Simulation tab and add a lumped port, selected in Properties (the PCB import's
