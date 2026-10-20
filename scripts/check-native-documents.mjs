@@ -25,7 +25,7 @@ result={status:'canceled'};
 assert.deepEqual(await native.persistNativeDocument(original,'workspace-newer',false),{canceled:true});
 assert.equal(native.nativeDocumentFor(original).handle,'native-grant','cancel does not retire the existing grant');
 result=()=>Promise.reject({code:'document_busy',status:409,error:'English native diagnostic'});
-await assert.rejects(native.persistNativeDocument(original,'workspace-newer',false),/^Error: This document is already being saved\. Wait for that save to finish\.$/);
+await assert.rejects(native.persistNativeDocument(original,'workspace-newer',false),/^Error: This project file is already being saved\. Wait for that save to finish\.$/);
 result=()=>Promise.reject({code:'document_target_exists',status:409,error:'English native diagnostic'});
 await assert.rejects(native.persistNativeDocument(original,'workspace-newer',true),/Replacing an existing project is not supported\. Choose a new filename/);
 assert.equal(native.nativeDocumentFor(original).handle,'native-grant','rejected Save As retains the old grant');
