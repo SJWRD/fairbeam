@@ -1066,20 +1066,30 @@ class _Lint:
 
     def _endpoint_contact(self, parts, voids, pec, point, tol, path):
         """Terminal contact for port warnings and overlays, BEFORE thin-metal conversion or meshing."""
-        names, primitives = [], []
+        names = []
+        primitives = []
         for part in parts:
             if not part["metal"]:
                 continue
-            hits = [{"part": part["name"], "index": i, "path": p.get("where")}
-                    for i, p in enumerate(part["prims"])
-                    if self._holds(p, point, tol) and not self._carved(p, point, voids)]
-            if hits:
+            contacts = []
+            for i, primitive in enumerate(part["prims"]):
+                if not self._holds(primitive, point, tol):
+                    continue
+                if self._carved(primitive, point, voids):
+                    continue
+                contacts.append({"part": part["name"], "index": i, "path": primitive.get("where"),})
+            if contacts:
                 names.append(part["name"])
-                primitives.extend(hits)
+                primitives.extend(contacts)
         boundary = any(abs(point[axis] - position) <= tol for axis, position in pec)
+        if self.partial:
+            status = "unknown"
+        elif names or boundary:
+            status = "touching"
+        else:
+            status = "floating"
         result = {"path": path, "point": point, "parts": names, "boundary": boundary,
-                  "status": "unknown" if self.partial else "touching" if names or boundary else "floating",
-                  "primitives": primitives}
+            "status": status, "primitives": primitives,}
         if self.endpoint_contacts is not None:
             self.endpoint_contacts.append(result)
         return result
