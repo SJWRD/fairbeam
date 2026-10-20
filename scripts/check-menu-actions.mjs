@@ -92,7 +92,7 @@ assert.doesNotMatch(about, /@[a-z0-9-]+\.[a-z]/i, "no e-mail address in About");
 // website's guide, the fairbeam-releases repository (installers, issue forms) and the source repository
 assert.match(shell, /\("help-docs", tx\("help-docs"\)\)/);
 assert.match(shell, /\("help-issues", tx\("help-issues"\)\)/);
-assert.match(shellText, /\("help-docs", "Getting Started Guide", "Başlangıç Kılavuzu"\)/i);
+assert.match(shellText, /\("help-docs", "Getting Started Guide", "Başlarken Kılavuzu"\)/);
 assert.match(shellText, /\("help-issues", "Report a Problem…", "Sorun Bildir…"\)/i);
 // the menus follow the viewer's language: set_language saves it and rebuilds them
 assert.match(shell, /fn set_language\(app: AppHandle, lang: String\)[\s\S]*?app\.set_menu\(app_menu\(&app\)/);
