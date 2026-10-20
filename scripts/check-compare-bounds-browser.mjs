@@ -13,14 +13,49 @@ const settle=()=>page.evaluate(()=>new Promise(r=>requestAnimationFrame(()=>requ
 async function bounds(lang,width,size){
  const boxes=await page.evaluate(()=>{
   const pop=document.querySelector('.cmp-pop'),dock=document.querySelector('.cmp').closest('.dock');
-  return {pop:pop.getBoundingClientRect().toJSON(),dock:dock.getBoundingClientRect().toJSON(),height:innerHeight,focusInside:pop.contains(document.activeElement),scroll:pop.scrollWidth,client:pop.clientWidth};
+  const active=document.activeElement;
+  return {pop:pop.getBoundingClientRect().toJSON(),dock:dock.getBoundingClientRect().toJSON(),height:innerHeight,focusInside:pop.contains(active),active:{tag:active?.tagName,id:active?.id,class:active?.className,file:active?.closest('label')?.title},scroll:pop.scrollWidth,client:pop.clientWidth};
  });
+ results.push({lang,width,size,...boxes});
  assert.ok(boxes.pop.left>=Math.max(0,boxes.dock.left)+7,`${lang}/${width}/${size}: left ${boxes.pop.left}`);
  assert.ok(boxes.pop.right<=Math.min(width,boxes.dock.right)-7,`${lang}/${width}/${size}: right ${boxes.pop.right}`);
  assert.ok(boxes.pop.width<=340.5&&boxes.pop.top>=7&&boxes.pop.bottom<=boxes.height+1);
  assert.ok(boxes.scroll<=boxes.client+1);assert.ok(boxes.focusInside,'focus remains inside open comparison');
  const issues=await page.evaluate(auditInPage,'.cmp-pop');assert.deepEqual(issues,[]);
- results.push({lang,width,size,...boxes,issues});return boxes;
+ results.at(-1).issues=issues;return boxes;
+}
+async function refreshedRows(lang){
+ const checks=await page.$$('.cmp-list input[type=checkbox]');
+ assert.ok(checks.length>1,'fixture has multiple comparison projects');
+ const held=checks[1];await held.focus();
+ const file=await held.evaluate(e=>e.closest('label').title);
+ const retained=async(label)=>{
+  assert.equal(await held.evaluate(e=>e.isConnected&&document.activeElement===e),true,`${lang}: ${label} retains the same focused project control`);
+  assert.equal(await held.evaluate(e=>e.closest('label').title),file);
+ };
+ // Use the real refresh path, which creates fresh index objects even for unchanged files.
+ await page.evaluate(async()=>{await(await import('/src/state.ts')).loadIndex();});await settle();
+ await retained('index refresh');
+ await page.evaluate(async file=>{
+  const m=await import('/src/state.ts');
+  m.setIndex(m.index().map(p=>p.file===file?{...p,model:'refreshed-model',bands:[1.234]}:{...p}));
+ },file);await settle();
+ await retained('metadata update');
+ assert.match(await held.evaluate(e=>e.closest('label').querySelector('.cmp-sub').textContent),/refreshed-model/);
+ const band=await page.evaluate(async()=>(await import('/src/i18n/index.ts')).fmt.fixed(1.234,3));
+ assert.ok((await held.evaluate(e=>e.closest('label').textContent)).includes(band),'updated band metadata is rendered');
+ const before=await held.evaluate(e=>e.checked);
+ await page.keyboard.press('Space');
+ assert.equal(await held.evaluate(e=>e.checked),!before);
+ assert.equal(await page.evaluate(async file=>(await import('/src/compare/store.ts')).isPinned(file),file),!before,'Space toggles the retained project');
+ await page.keyboard.press('Space');
+ assert.equal(await held.evaluate(e=>e.checked),before);
+ // A refresh must not pull focus back after the user has moved to another control.
+ await page.focus('.cmp > button');
+ await page.evaluate(async()=>{await(await import('/src/state.ts')).loadIndex();});await settle();
+ assert.equal(await page.evaluate(()=>document.activeElement===document.querySelector('.cmp > button')),true,'refresh does not steal focus');
+ await held.focus();await retained('restored metadata');
+ console.log(`${lang}: index refresh retains checkbox identity/focus, updates metadata and preserves Space ownership without stealing focus`);
 }
 try{
  browser=await puppeteer.launch({headless:true,executablePath:await chromePath(),args:['--no-sandbox','--enable-unsafe-swiftshader','--use-angle=swiftshader']});
@@ -36,7 +71,7 @@ try{
    await page.setViewport({width:c.width,height:c.height??1000});await settle();
    if(c.key)for(const side of ['left','right']){await s.clickSel(`.panel-resize-${side}`);await page.keyboard.press(c.key);}await settle();
    await page.focus('.cmp > button');await page.keyboard.press('Enter');await s.wait('.cmp-pop');await settle();
-   await bounds(lang,c.width,c.size);assert.equal(await page.evaluate(()=>window.__cmpObservers),1);const calls=await page.evaluate(()=>window.__cmpResizeCalls);
+   await bounds(lang,c.width,c.size);if(c.size==='default')await refreshedRows(lang);assert.equal(await page.evaluate(()=>window.__cmpObservers),1);const calls=await page.evaluate(()=>window.__cmpResizeCalls);
    const check=await page.$('.cmp-pop input[type=checkbox]');await check.focus();const before=await check.evaluate(e=>e.checked);await page.keyboard.press('Space');assert.equal(await check.evaluate(e=>e.checked),!before);await page.keyboard.press('Space');assert.equal(await check.evaluate(e=>e.checked),before);
    await page.screenshot({path:join(out,`${lang}-${c.width}-${c.size}.png`)});
    // Resize while open: the observer must keep the same dialog and its keyboard focus in bounds.
