@@ -345,11 +345,13 @@ export default function Viewport() {
     }
 
     let contactMaterials: THREE.MeshStandardMaterial[] = [];
+    let updateContactMarkers: (() => void) | undefined;
     function render() {
       const pulseContacts = contactMaterials.length > 0 && hostVisible && !document.hidden
         && !motionQuery.matches && centerView() !== "drawing" && !rendered?.active;
       const contactIntensity = pulseContacts ? 0.125 + 0.125 * Math.cos(performance.now() * 2 * Math.PI / 2500) : 0.05;
       for (const material of contactMaterials) material.emissiveIntensity = contactIntensity;
+      updateContactMarkers?.();
       renderer.setScissorTest(false);
       renderer.setViewport(0, 0, size.w, size.h);
       // ports are drawn in screen pixels: rescale them for this view (a few meshes, no geometry rebuild)
@@ -561,6 +563,7 @@ export default function Viewport() {
       const isElement = selection().type === "resistor";
       const glyphRadius = portMarkerRadius(sceneRadius(b).radius, b.mesh.x);
       const group = new THREE.Group();
+      const updates: (() => void)[] = [];
       for (const row of rows) {
         // Elements show every endpoint; ports mark only confirmed missing contact.
         if (!isElement && row.status !== "floating") continue;
@@ -574,19 +577,22 @@ export default function Viewport() {
         marker.position.set(...row.point); marker.renderOrder = 1000; marker.raycast = () => {};
         marker.scale.setScalar(glyphRadius * (isElement ? 0.55 : 1.05));
         // Fixed world size: zoom scales the ring with the model; only facing and opacity change.
-        marker.onBeforeRender = () => {
+        updates.push(() => {
           const worldPerPixel = 2 * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2))
             * camera.position.distanceTo(marker.position) / Math.max(host.clientHeight, 1);
           marker.quaternion.copy(camera.quaternion);
-          // Fade at close zoom; keep rendering at zero opacity so zooming in restores the ring.
+          // Skip fully faded rings; update before rendering so hidden rings can reappear.
           const projectedRadius = glyphRadius * 1.15 / worldPerPixel;
           marker.material.opacity = THREE.MathUtils.clamp((projectedRadius - 14) / 4, 0, 1);
+          marker.visible = marker.material.opacity > 0;
           marker.updateMatrixWorld();
-        };
+        });
         group.add(marker);
       }
+      updateContactMarkers = () => { for (const update of updates) update(); };
       scene.add(group); requestRender();
       onCleanup(() => {
+        updateContactMarkers = undefined;
         group.traverse((object) => {
           if (object instanceof THREE.LineLoop) { object.geometry.dispose(); (object.material as THREE.Material).dispose(); }
         });
