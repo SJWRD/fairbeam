@@ -61,7 +61,8 @@ Results are checked against analytical references ([validation](docs/VALIDATION.
 
 ## Status
 
-The current desktop release is available from the [downloads page](https://fairbeam.org/#download). The Python pipeline, the designer and the desktop app work
+Fairbeam is in active development (0.x releases). The current desktop release is available from
+the [downloads page](https://fairbeam.org/#download). The Python pipeline, the designer and the desktop app work
 end to end on macOS (Apple silicon) and on Windows 11. The project file format is versioned, and
 breaking changes bump its version. The fabrication outputs
 have not yet been checked by a fab. Known gaps and plans are in
@@ -119,6 +120,13 @@ npm run dev       # the viewer and designer on http://127.0.0.1:5310
   [CONTRIBUTING.md](CONTRIBUTING.md) first.
 - Fairbeam is developed with AI coding assistance. How that works, and the rules for AI-assisted
   contributions, are in the [AI policy](AI_POLICY.md).
+
+## Citing Fairbeam
+
+If Fairbeam contributes to published work, please cite it. The **Cite this repository** button on
+GitHub gives APA and BibTeX entries from [CITATION.cff](CITATION.cff). Source releases are archived
+on [Zenodo](https://zenodo.org), which gives each version a DOI; cite the version you used. Please
+also cite [openEMS](https://openems.de), which computes the fields.
 
 ## Credits
 
