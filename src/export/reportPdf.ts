@@ -17,7 +17,7 @@ import { svgPagesToPdf, type PdfFonts } from "../drawing/pdfdoc.ts";
 import { engineText, meshText, reproduceCommand, reproduceNote, simulated, type ModelFileRef } from "./report.ts";
 import { APP_VERSION, bundleWriter } from "../lib/appVersion.ts";
 import { bandTexts } from "../lib/bands.ts";
-import { modelToMm } from "../lib/modelUnits.ts";
+import { modelMmText, modelToMm } from "../lib/modelUnits.ts";
 
 const W = 210;
 const H = 297;
@@ -336,10 +336,10 @@ export function reportPages(bundle: Bundle, opt: ReportOptions): string[] {
     ]),
     [1.5, 0.9, 0.8, 0.5, 1.3, 1.4], ["l", "l", "r", "r", "l", "r"],
   );
-  if (b.half_space) d.para(`Infinite ${b.half_space.kind} ground plane at ${b.half_space.axis} = ${b.half_space.position * toMm} mm (boundary condition; image theory).`, FS_S);
+  if (b.half_space) d.para(`Infinite ${b.half_space.kind} ground plane at ${b.half_space.axis} = ${modelMmText(b.half_space.position, toMm)} mm (boundary condition; image theory).`, FS_S);
   d.table(
     ["Port", "Type", "R (Ω)", "Direction", "Start (mm)", "Stop (mm)", "Excited"],
-    b.ports.map((p) => [String(p.number), p.type, String(p.R), p.direction, p.start.map((v) => v * toMm).join(", "), p.stop.map((v) => v * toMm).join(", "), p.excite ? "yes" : "no"]),
+    b.ports.map((p) => [String(p.number), p.type, String(p.R), p.direction, p.start.map((v) => modelMmText(v, toMm)).join(", "), p.stop.map((v) => modelMmText(v, toMm)).join(", "), p.excite ? "yes" : "no"]),
     [0.5, 0.8, 0.6, 0.8, 1.3, 1.3, 0.7], ["r", "l", "r", "l", "r", "r", "l"],
   );
   d.h2("Solver, mesh and run");

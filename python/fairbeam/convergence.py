@@ -579,7 +579,9 @@ class ServerStudies:
             conv = add_member(study, member)
             with self._admission_lock:
                 stopped = study.get("stop_requested") or study["id"] in self._stop_requested
-            if stopped:
+            # Stop prevents another density, but a run already terminal before its
+            # hook can still establish a converged, exhausted or failed verdict.
+            if stopped and not conv["done"]:
                 self._mark_stopped(study)
             elif not conv["done"] and not self.manager._stopping:
                 try:
