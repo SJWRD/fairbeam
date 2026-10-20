@@ -1,9 +1,14 @@
-// Real native Design -> queue -> S11/far-field UI smoke. Requires a local Elmer installation.
+// Real solver integration through the browser's Design -> queue -> S11/far-field UI.
+// This is not a native desktop/ACL check. Requires an optional local Elmer installation.
+// Explicit opt-in: node scripts/check-elmer-antenna-ui.mjs --run-solver (see docs/CHECKS.md).
 import assert from 'node:assert/strict';
 import {mkdir,cp} from 'node:fs/promises';
 import puppeteer from 'puppeteer-core';
 import {startStack,chromePath} from './scenarios/stack.mjs';
 import {Session} from './scenarios/harness.mjs';
+if (!process.argv.includes('--run-solver')) {
+ throw new Error('This integration check runs real Elmer simulations. Set up the optional solver, FAIRBEAM_PYTHON and FAIRBEAM_ELMER_ROOT, then pass --run-solver. See docs/CHECKS.md; no tests have run.');
+}
 const stack=await startStack({log:console.log});
 const evidence=process.env.FAIRBEAM_EVIDENCE || '.impeccable/review/elmer-driven-run';
 let browser,jobId;

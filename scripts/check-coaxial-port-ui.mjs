@@ -32,9 +32,15 @@ try {
  await s.click('ribbon.tab.home',{sel:'.rb-tab'});await s.click('common.close',{sel:'.rb-btn',exact:true});await s.wait('.home');await (await s.wait('.home-item',`Coax UI ${lang}`)).click();await s.wait('.rb');await s.waitFor(async id=>(await import('/src/designer/store.ts')).file()?.id===id,id);
  assert.deepEqual(await s.store((_,m)=>JSON.parse(JSON.stringify(m.s.draft.ports[0]))),expected);
  });
- await s.step('CST export gives explicit unsupported coax warning',async()=>{
+ await s.step('CST export includes coax waveguide port and reference-plane warning',async()=>{
  await s.waitFor(async()=>!!(await import('/src/state.ts')).bundle()?.ports.some(p=>p.type==='coaxial'),null);
- await s.clickSel('.header-cst');await s.wait('.context-export-menu');await s.clickSel('[data-export-action="geometry"]');await s.wait('.export-dialog');await (await s.field(await s.T('export.format'))).select('cst');await s.wait('.export-warnings');assert.ok((await s.text('.export-warnings')).includes(await s.T('export.coaxialPortWarning',{port:1})));
+ await s.clickSel('.header-cst');await s.wait('.context-export-menu');await s.clickSel('[data-export-action="geometry"]');await s.wait('.export-dialog');await (await s.field(await s.T('export.format'))).select('cst');
+ // Numeric-parameter notes and port caveats use separate warning groups. Find the actual
+ // translated port caveat, not the first (possibly unrelated) warning group.
+ await s.wait('.export-warnings',await s.T('export.coaxialPortWarning',{port:1}));
+ const macro=await s.text('.export-dialog pre.code');
+ assert.ok(macro.includes('define waveguide port: 1')&&macro.includes('.NumberOfModes ""1""'),'the coax port is exported as one waveguide mode');
+ assert.ok(macro.includes('.ReferencePlaneDistance'),'the macro includes its reference plane');
  await s.click('common.close',{within:'.export-dialog',attr:'aria-label'});await s.gone('.export-dialog');
  });
  assert.equal(s.results.filter(r=>!r.ok).length,0,JSON.stringify(s.results));console.log(`coax browser ${lang}: 4 steps passed`);await page.close();

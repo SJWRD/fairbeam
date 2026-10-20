@@ -1,19 +1,29 @@
 #!/usr/bin/env node
-// Run against a locally served build: FAIRBEAM_DOCS_URL=http://127.0.0.1:5345 npm run check:docs-language
+// Build with npm run build:site, then serve site-dist/ and set FAIRBEAM_DOCS_URL to that URL.
+// This checks the built documentation site, not the app's Vite development server.
 // Optional screenshots: FAIRBEAM_SCREENSHOT_DIR=/tmp/fairbeam-docs-tr
 import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import puppeteer from "puppeteer-core";
+import { chromePath } from "./scenarios/stack.mjs";
 
-const base = process.env.FAIRBEAM_DOCS_URL ?? "http://127.0.0.1:5345";
+const base = process.env.FAIRBEAM_DOCS_URL?.replace(/\/$/, "");
+if (!base) throw new Error("Build the site with npm run build:site, serve site-dist/, then set FAIRBEAM_DOCS_URL to its local URL (see docs/CHECKS.md).");
+try {
+  const response = await fetch(`${base}/docs/tr/getting-started.html`, { signal: AbortSignal.timeout(5000) });
+  if (!response.ok || !(await response.text()).includes('class="doc-body"')) throw new Error("built documentation page not found");
+} catch (error) {
+  throw new Error(`FAIRBEAM_DOCS_URL must serve the built site-dist/ documentation: ${error.message}`);
+}
 const screenshots = process.env.FAIRBEAM_SCREENSHOT_DIR;
 if (screenshots) mkdirSync(screenshots, { recursive: true });
 const profile = mkdtempSync(join(tmpdir(), "fairbeam-docs-browser-"));
-const browser = await puppeteer.launch({ userDataDir: profile, executablePath: process.env.CHROME_PATH ?? "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome", headless: true,
-  args: ["--no-sandbox", "--disable-dev-shm-usage"] });
+let browser;
 try {
+  browser = await puppeteer.launch({ userDataDir: profile, executablePath: process.env.CHROME_PATH || await chromePath(), headless: true,
+    args: ["--no-sandbox", "--disable-dev-shm-usage"] });
   const page = await browser.newPage();
   const errors = [];
   page.on("pageerror", (error) => errors.push(error.message));
@@ -82,4 +92,4 @@ try {
   assert.equal(new URL(blocked.url()).pathname, "/docs/cli.html");
   assert.equal(await blocked.$eval("html", (node) => node.lang), "en");
   console.log("check-docs-language: 3 pages × 2 widths × 2 themes; language switch, anchors, saved settings, no-JS and unavailable storage OK");
-} finally { await browser.close(); rmSync(profile, { recursive: true, force: true }); }
+} finally { await browser?.close(); rmSync(profile, { recursive: true, force: true }); }
