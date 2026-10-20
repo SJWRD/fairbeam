@@ -93,7 +93,8 @@ export function startupDiagnostics(page, { directory, stack } = {}) {
     evidence.processes = await attempt('stack logs', () => (stack?.diagnostics?.() ?? []).map(child => ({
       ...child, output: safeText(child.output),
     })));
-    await writeFile(join(directory, 'startup.json'), JSON.stringify(evidence, null, 2));
+    await writeFile(join(directory, 'startup.json'), JSON.stringify(evidence,
+      (_key, value) => typeof value === 'string' ? safeText(value) : value, 2));
     return directory;
   };
   return { capture, dispose };

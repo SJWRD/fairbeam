@@ -14,7 +14,10 @@ class FixturePage extends EventEmitter {
   async evaluate(fn) {
     if (fn.name === 'auditInPage') return [];
     // Only startup capture asks for a DOM snapshot in this fixture.
-    return { readyState: 'complete', text: 'Fixture', html: '<main>Fixture</main>', regions: {} };
+    return {
+      readyState: 'complete', title: 'token=title-secret', text: 'Fixture', html: '<main>Fixture</main>',
+      regions: { '.loading': [{ visible: true, text: 'http://user:password@127.0.0.1/error?token=region-secret token=text-secret' }] },
+    };
   }
   async screenshot({ path }) {
     if (this.screenshotError) throw this.screenshotError;
@@ -56,7 +59,9 @@ export async function scenarioAttemptDiagnosticsSelfTest() {
     const record = JSON.parse(await readFile(join(directories[0], 'startup.json'), 'utf8'));
     assert.equal(record.non2xx[0].url, 'http://127.0.0.1/api/preview');
     assert.equal(record.non2xx[0].status, 422);
-    assert.doesNotMatch(JSON.stringify(record) + firstBytes, /user:password|url-secret|request-secret|problem-secret/);
+    assert.equal(record.dom.readyState, 'complete');
+    assert.equal(record.dom.regions['.loading'][0].visible, true);
+    assert.doesNotMatch(JSON.stringify(record) + firstBytes, /user:password|url-secret|request-secret|problem-secret|title-secret|region-secret|text-secret/);
     assert.doesNotMatch(await readFile(first.steps[0].screenshot.replace(/\.png$/, '.json'), 'utf8'), /problem-secret/);
 
     await withScenarioAttemptDiagnostics(page, {
