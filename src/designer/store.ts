@@ -4,7 +4,7 @@
 // against absurd states (instant ones from checks.ts, the rest from the server with each preview).
 import { batch, createEffect, createMemo, createRoot, createSignal, on } from "solid-js";
 import { reconcile, unwrap } from "solid-js/store";
-import { api, type PcbFile, type PcbOptions } from "../runner/api";
+import { api, type EndpointContact, type PcbFile, type PcbOptions } from "../runner/api";
 import { applyModelEntry, draftPreview, forgetPreviewFailure, restoreProject, invalidatePreview, previewActive, previewFailure, previewIsCurrent, previewState, health, jobs, jobsScope, modelKey, models, refreshModels, runDesignPreview, selectModel, serverState, setUnsavedDesignCheck, showEmptyDesign, showQuickPreview } from "../runner/store";
 import { loadIndex, openCount, setCenterView, setHiddenParts, setOpeningView } from "../state";
 import { openUserProject } from "../runner/openProject";
@@ -187,6 +187,16 @@ export function quickPreview() {
 // ------------------------------------------------------------------ preview
 
 let timer: ReturnType<typeof setTimeout> | undefined;
+const [contactPreview, setContactPreview] = createSignal<{
+  ticket: ReturnType<typeof asyncState.ticket>;
+  contacts: EndpointContact[];
+} | null>(null);
+
+/** Contact feedback is valid only for the document and draft that produced the server preview. */
+export function endpointContacts(): EndpointContact[] {
+  const result = contactPreview();
+  return result && asyncState.isPreviewCurrent(result.ticket) ? result.contacts : [];
+}
 
 /** The Checks entry for a preview the server gave no verdict on (offline, a network failure, a
  * server error): without it the list would show only the browser-side checks, an all-clear the
@@ -203,6 +213,7 @@ export function previewUnavailableCheck(reason: string): Check {
 
 function stopPreview() {
   clearTimeout(timer);
+  setContactPreview(null);
   asyncState.invalidatePreview();
   return invalidatePreview();
 }
@@ -224,6 +235,7 @@ export function schedulePreview(delay = 250) {
     batch(() => {
       setServerErrors(r.fields);
       setServerChecks(r.unavailable ? [previewUnavailableCheck(r.unavailable)] : r.checks);
+      setContactPreview(r.contacts ? { ticket, contacts: r.contacts } : null);
     });
     setChecksTicket(r.unavailable ? null : ticket);
   }, delay);

@@ -135,7 +135,8 @@ def _read_json(path) -> dict:
     return json.loads(Path(path).read_text(encoding="utf-8"))
 
 
-def design_checks(design: dict, overrides: dict, bundle: dict | None, build_error: BaseException | None = None) -> list:
+def design_checks(design: dict, overrides: dict, bundle: dict | None, build_error: BaseException | None = None,
+                  *, endpoint_contacts: list | None = None) -> list:
     """fairbeam.design_checks.lint for a design (never raises), plus a ``build`` error when the
     design does not build and no check already points at that field."""
     from .design import DesignError
@@ -148,10 +149,12 @@ def design_checks(design: dict, overrides: dict, bundle: dict | None, build_erro
         except (TypeError, ValueError):
             pass
     try:
-        checks = lint(design, values, bundle)
+        checks = lint(design, values, bundle, endpoint_contacts=endpoint_contacts)
     except Exception:  # noqa: BLE001 - a bug in a check must not break the preview
         traceback.print_exc(file=sys.stderr)
         checks = []
+        if endpoint_contacts is not None:
+            endpoint_contacts.clear()
     if build_error is not None:
         where = build_error.where if isinstance(build_error, DesignError) else ""
         detail = build_error.detail if isinstance(build_error, DesignError) else f"{type(build_error).__name__}: {build_error}"
@@ -190,7 +193,17 @@ def build_preview(model_path: str | None, overrides: dict, design: dict | None =
     bundle = sim.to_bundle(module.MODEL, params, name=label)
     bundle["preview"] = True
     json.dumps(bundle, allow_nan=False)  # fail here, not in the server, on NaN/inf
-    return {"bundle": bundle, "build_s": round(time.time() - t0, 3)}
+    result = {"bundle": bundle, "build_s": round(time.time() - t0, 3)}
+    if design is not None:
+        # Preserve the rendered order, including wires expanded into several native shapes.
+        sources = getattr(sim, "_contact_primitives", {})
+        physical = {part["name"] for part in bundle["parts"]}
+        result["primitive_sources"] = {name: [] for name in physical}
+        for primitive in sim.csx.GetAllPrimitives():
+            name = primitive.GetProperty().GetName()
+            if name in physical:
+                result["primitive_sources"][name].append(sources.get(primitive.GetID()))
+    return result
 
 
 def handle(req: dict) -> dict:
@@ -211,14 +224,25 @@ def handle(req: dict) -> dict:
                 result = build_preview(None, req.get("overrides") or {}, design=req["design"])
             except BaseException as e:  # noqa: BLE001
                 resp = _error_response(e, req)
-                resp["checks"] = design_checks(req["design"], req.get("overrides") or {}, None, e)
+                contacts = []
+                resp["checks"] = design_checks(req["design"], req.get("overrides") or {}, None, e, endpoint_contacts=contacts)
+                resp["endpoint_contacts"] = contacts
                 if resp["kind"] == "model":
                     # a crash inside the build that a check explains is the check's error (422), not a 500
                     explained = [c for c in resp["checks"] if c.get("severity") == "error" and c.get("code") != "build"]
                     if explained:
-                        return {**_checks_response(explained[0], resp["checks"]), "traceback": resp.get("traceback")}
+                        return {**_checks_response(explained[0], resp["checks"]), "traceback": resp.get("traceback"),
+                                "endpoint_contacts": contacts}
                 return resp
-            result["checks"] = design_checks(req["design"], req.get("overrides") or {}, result["bundle"])
+            contacts = []
+            result["checks"] = design_checks(req["design"], req.get("overrides") or {}, result["bundle"], endpoint_contacts=contacts)
+            sources = result.pop("primitive_sources", {})
+            for contact in contacts:
+                hits = {(p["part"], p["index"]) for p in contact["primitives"]}
+                contact["meshes"] = [{"part": name, "index": i} for name, primitives in sources.items()
+                                     for i, source in enumerate(primitives)
+                                     if source and (source["part"], source["index"]) in hits]
+            result["endpoint_contacts"] = contacts
             return {"ok": True, "result": result}
         if op == "describe":
             return {"ok": True, "result": describe_models(req["models_dir"])}
