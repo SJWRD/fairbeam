@@ -243,8 +243,10 @@ class Job:
 
     # ------------------------------------------------------------------ persistence
 
-    def to_dict(self, events: bool = False) -> dict:
-        d = {k: getattr(self, k) for k in self.PUBLIC}
+    def to_dict(self, events: bool = False, *, include_results: bool = True) -> dict:
+        # Polling lists need status/provenance metadata, not every historic research
+        # result's arrays. Persistence and explicit details retain the full default.
+        d = {k: getattr(self, k) for k in self.PUBLIC if include_results or k != "result"}
         for k in ("created", "started", "finished"):
             d[k + "_iso"] = now_iso(d[k]) if d[k] else None
         d["duration_s"] = self.duration()
@@ -559,10 +561,10 @@ class JobManager:
         with self.lock:
             return sum(1 for j in self.jobs.values() if j.status == "queued")
 
-    def list(self) -> list[dict]:
+    def list(self, *, include_results: bool = True) -> list[dict]:
         with self.lock:
             jobs = sorted(self.jobs.values(), key=lambda j: j.created, reverse=True)
-            return [j.to_dict() for j in jobs]
+            return [j.to_dict(include_results=include_results) for j in jobs]
 
     def get(self, job_id: str) -> Job | None:
         return self.jobs.get(job_id)

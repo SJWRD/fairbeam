@@ -60,6 +60,13 @@ list again, and the results index when a run ended. A run that keeps the server 
 simulation** to **Queue simulation** and says which run is in front; the designer follows a run of the
 open design that another client started, and its status bar shows the server's other runs.
 
+The app requests `/api/runs?summary=1` for these updates and while a sweep is active.
+The research history uses `/api/research/runs?summary=1`. Both summaries keep the job
+metadata and omit the `result` field, so each poll does not download every previous research
+result's arrays. Selecting a research run fetches its full, integrity-checked result from
+`/api/research/runs/{id}`. Requests to either list without `summary=1` keep the full response
+for existing API clients; saved job history is unchanged.
+
 - **Recent runs**: a waiting row has **Remove from queue** (×), the running row **Stop** (■); **Clear
   queue** takes every waiting run out (`POST /api/queue/clear`), the running one goes on.
 - **Designer**: the dock's **Queue** tab lists every queued or running run of the server (also other

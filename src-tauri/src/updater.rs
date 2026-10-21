@@ -241,7 +241,10 @@ pub async fn check_now(app: AppHandle, show_result: bool) -> CheckResult {
                     &Phase::Installing { version: &version },
                     &format!("update: installing {version}"),
                 );
-                crate::stop_server(&handle);
+                if let Err(error) = crate::stop_server(&handle) {
+                    fail(&handle, lang, &error, false);
+                    return;
+                }
                 match install(&handle, lang, &update, &bytes) {
                     Ok(()) => {
                         progress::announce(
