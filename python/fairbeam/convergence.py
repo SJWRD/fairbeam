@@ -218,6 +218,8 @@ def metrics(bundle: dict, *, network_criteria: dict | None = None) -> dict:
     if ex is None or fr is None:
         return out
     f, s11, z = ex
+    if any(p.get("excite") and p.get("type") in ("microstrip","cpw") for p in bundle.get("ports",[])):
+        out["planar_response"] = dict(frequency=f.tolist(),s11_re=s11.real.tolist(),s11_im=s11.imag.tolist())
     db = 20 * np.log10(np.maximum(np.abs(s11), 1e-9))
     # the minimum of the band (or the global one) on the grid, refined between its neighbours
     k = int(np.argmin(np.abs(f - fr["f"])))
@@ -257,6 +259,13 @@ def compare(a: dict, b: dict, tol: dict) -> dict:
     step = {"df_pct": r(df, 4), "ds11_db": r(ds, 4), "ddmax_db": r(dd, 4), "dzin_ohm": r(dz, 3),
             "ok": ok, "comparable": comparable, "quality": quality,
             "converged": comparable and all(quality.values()) and bool(ok["f"] and ok["s11"] and ok["dmax"] is not False)}
+    if "planar_response" in a or "planar_response" in b:
+        from .planar import compare_responses
+        try:
+            step["planar_response"] = compare_responses(a["planar_response"],b["planar_response"])
+        except (KeyError,ValueError) as error:
+            step["planar_response"] = dict(passed=False,error=str(error))
+        step["converged"] &= step["planar_response"]["passed"]
     if "network" in a or "network" in b:
         from .study import compare_network
         step["network"] = compare_network(a.get("network"), b.get("network"))
@@ -280,7 +289,8 @@ def evaluate(members: list[dict], planned: list[float], tol: dict | None = None)
             break
         st = {"from": a["density"], "to": b["density"], **compare(a["metrics"], b["metrics"], tol)}
         steps.append(st)
-        if st["converged"]:
+        planar = "planar_response" in a["metrics"] or "planar_response" in b["metrics"]
+        if st["converged"] and (not planar or i >= 2):
             converged_at = a["density"]
             break
     last = members[-1] if members else None

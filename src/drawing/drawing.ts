@@ -845,6 +845,10 @@ function collectNotes(ctx: Ctx): string[] {
       notes.push(`P${p.number}: coaxial TEM port, along ${p.direction}, axial length ${Number(len.toFixed(4))} mm${p.excite ? ", excited" : ""}.`);
       continue;
     }
+    if (p.type === "microstrip" || p.type === "cpw") {
+      notes.push(`P${p.number}: ${p.type} transmission-line port, real reference ${p.R} Ω, propagation along ${p.direction}, physical termination ${p.termination ?? "open"}, measurement offset ${p.actual_measurement_shift ?? p.measurement_shift} mm from start.`);
+      continue;
+    }
     if (p.type === "waveguide") {
       notes.push(`P${p.number}: ${p.mode ?? "TE"} waveguide port, ${Number((p.a ?? 0).toFixed(4))} × ${Number((p.b ?? 0).toFixed(4))} mm, along ${p.direction}, reference impedance Z_TE (${Number(p.R.toFixed(1))} Ω at the band centre)${p.excite ? ", excited" : ""}.`);
       continue;

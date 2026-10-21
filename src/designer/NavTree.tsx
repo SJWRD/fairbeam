@@ -303,7 +303,7 @@ export function NavTree() {
       })), { issue: worst("materials") }),
       sec("ports", t("tree.ports"), d.ports.map((p, i) => ({
         id: `port:${i}`, label: `Port ${p.number}`, icon: "port", issue: worst(`ports[${i}]`), action: select({ type: "port", i }),
-        sub: p.type === "coaxial" ? `TEM · ${p.direction}` : p.type === "waveguide" ? `${p.mode ?? "TE10"} · ${p.direction}` : `${typeof p.R === "number" ? fmt.num(p.R, 3) : p.R} Ω · ${p.direction}`,
+        sub: p.type === "microstrip" || p.type === "cpw" ? `${t(p.type === "cpw" ? "props.port.cpw" : "props.port.microstrip")} · ${p.reference_ohm ?? 50} Ω · ${p.direction}` : p.type === "coaxial" ? `TEM · ${p.direction}` : p.type === "waveguide" ? `${p.mode ?? "TE10"} · ${p.direction}` : `${typeof p.R === "number" ? fmt.num(p.R, 3) : p.R} Ω · ${p.direction}`,
       })), { issue: worst("ports") }),
       sec("lumped", t("tree.lumped"), d.resistors.map((r, i) => ({
         id: `res-el:${i}`, label: r.name || `R${i + 1}`, sub: lumpedLabel(r), icon: "resistor", issue: worst(`resistors[${i}]`), action: select({ type: "resistor", i }),

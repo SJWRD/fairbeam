@@ -59,10 +59,13 @@ export const PACKAGE_GROUPS: { id: PackageGroup; label: string; hint: string }[]
   { id: "image", label: "3D view", hint: "PNG of the current 3D view" },
 ];
 
-/** Whether the package's CST macro leaves the ports out: a grouped port cannot be written as independent discrete ports. */
-export const cstGeometryOnly = (b: Bundle) => b.ports.some((p) => p.group);
+/** A geometry-only macro must not replace grouped or native planar feed semantics. */
+export const cstGeometryOnly = (b: Bundle) => b.ports.some((p) => p.group || p.type === "microstrip" || p.type === "cpw");
 
 const CST_GROUPED_NOTE = "ports and lumped elements are not included, because grouped ports cannot be written as independent CST discrete ports";
+const CST_PLANAR_NOTE = "ports and lumped elements are not included, because native planar ports require an explicit modal-feed definition; no substitute port is exported";
+const cstGeometryNote = (b: Bundle) => [b.ports.some((p) => p.group) ? CST_GROUPED_NOTE : "",
+  b.ports.some((p) => p.type === "microstrip" || p.type === "cpw") ? CST_PLANAR_NOTE : ""].filter(Boolean).join("; ");
 
 /** Why the design has no fabrication export (not a printed board), or null when it has one. */
 export function fabUnavailable(b: Bundle): string | null {
@@ -170,14 +173,15 @@ export function packageFiles(b: Bundle, include: Record<PackageGroup, boolean>, 
     for (const r of ref.reference.raw) add(`comparison/reference/${r.name.replace(/[\\/]/g, "_")}`, "The imported reference file, unchanged", r.text);
   }
   if (include.cst) {
-    // the macro writes independent discrete ports only and refuses grouped ports (src/export/cst.ts): a design with a
-    // grouped port gets the geometry macro without ports (and without the lumped elements that option also leaves out)
+    // Preserve the project and geometry without silently changing an unsupported
+    // feed into a discrete source. The omission is stated in the macro and index.
     const geometryOnly = cstGeometryOnly(b);
+    const omission = cstGeometryNote(b);
     const macro = cstMacro(b, geometryOnly ? { ...DEFAULT_CST_OPTIONS, includePorts: false } : DEFAULT_CST_OPTIONS, { macroBase: safeId(b.model.id) });
     add(
       `cst/${safeId(b.model.id)}.bas`,
-      geometryOnly ? `CST-compatible VBA macro, geometry only: ${CST_GROUPED_NOTE}` : "CST-compatible VBA macro (default options)",
-      geometryOnly ? macro.text.replace(/\r\nOption Explicit\r\n/, `\r\n' ${CST_GROUPED_NOTE}\r\n'\r\nOption Explicit\r\n`) : macro.text,
+      geometryOnly ? `CST-compatible VBA macro, geometry only: ${omission}` : "CST-compatible VBA macro (default options)",
+      geometryOnly ? macro.text.replace(/\r\nOption Explicit\r\n/, `\r\n' ${omission}\r\n'\r\nOption Explicit\r\n`) : macro.text,
     );
     for (const f of macro.files) add(`cst/${f.name}`, "Polyhedron for the CST macro (ASCII STL, imported by the macro; keep it next to the .bas)", f.data);
   }

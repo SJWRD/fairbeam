@@ -52,6 +52,10 @@ const older = note("info", "macro", "the macro sets no units; millimetres are us
 eq(noteText(older, "en"), older.message, "a bilingual note in English");
 eq(noteText(older, "tr"), older.message_tr, "a bilingual note in Turkish");
 eq(noteText(info, "tr"), info.message, "an English-only note stays English");
+const planarPort = JSON.parse(read("src/i18n/en.json"))["home.importCst.planarPortRefused"];
+const planarPortTr = JSON.parse(read("src/i18n/tr.json"))["home.importCst.planarPortRefused"];
+eq(noteText(note("refused", "ports", `not imported: ${planarPort}`), "tr"), planarPortTr, "planar port refusal is translated with its report prefix");
+eq(noteText(note("refused", "ports", `not imported: ${planarPort}`), "en"), `not imported: ${planarPort}`, "English port refusal is retained");
 eq(noteText({ ...older, message_tr: "" }, "tr"), older.message, "an empty Turkish text falls back to English");
 eq(mergeNotes([older])[0].message_tr, older.message_tr, "merging keeps the Turkish text");
 eq(gapCounts([older]).total, 0, "an info note is no gap of the import");

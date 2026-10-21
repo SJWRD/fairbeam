@@ -169,4 +169,14 @@ ok(server.includes('r"/api/convergence"') && server.includes('r"/api/convergence
   eq(verdictDetail(unverified), t("conv.verdict.notVerified"), "local-mesh failure cannot display a successful verdict");
 }
 
+{
+  const planar=structuredClone(study);
+  planar.convergence.reason="exhausted";planar.convergence.converged=false;
+  const step=planar.convergence.steps.at(-1);
+  step.quality={energy:true,local_mesh:true};step.ok={f:true,s11:true,dmax:true};step.comparable=true;
+  step.planar_response={passed:false,complex_rmse:.04,floor_db_rmse:0,limits:{complex_rmse:.02,floor_db_rmse:.5,db_floor:-30}};
+  ok(verdictDetail(planar).includes("RMSE"),"a complex-curve failure is visible even with unchanged resonance");
+  step.planar_response={passed:false,error:"grids differ"};
+  ok(verdictDetail(planar).includes(t("conv.why.planarUnavailable",{from:String(step.from),to:String(step.to)})),"missing response evidence has an explicit verdict");
+}
 console.log(`convergence: ${checks} checks passed`);

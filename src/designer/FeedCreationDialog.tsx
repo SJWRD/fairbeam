@@ -14,11 +14,14 @@ export default function FeedCreationDialog() {
   onCleanup(() => setFeedCreation(null));
   return <Show when={feedCreation()} keyed>{(kind) => <FeedForm kind={kind} />}</Show>;
 }
-function FeedForm(props: { kind: "lumped" | "waveguide" | "coaxial" | "element" }) {
+function FeedForm(props: { kind: DesignPort["type"] | "element" }) {
   let box: HTMLFormElement | undefined;
   const close = () => setFeedCreation(null);
   useModal(() => box, close, () => box?.querySelector("select"));
   const [type, setType] = createSignal(props.kind);
+  const planar = () => type() === "microstrip" || type() === "cpw";
+  const [excitationDirection,setExcitationDirection] = createSignal<Axis>("x");
+  const [gap,setGap] = createSignal("0.5");
   const [start, setStart] = createSignal<Vec3>(props.kind === "waveguide" ? [-11.43, -5.08, 0] : [0, 0, 0]);
   const [stop, setStop] = createSignal<Vec3>(props.kind === "waveguide" ? [11.43, 5.08, 1] : [0, 0, 1]);
   const [direction, setDirection] = createSignal<Axis>("z");
@@ -29,7 +32,7 @@ function FeedForm(props: { kind: "lumped" | "waveguide" | "coaxial" | "element" 
   const [conductor, setConductor] = createSignal(draft.materials.find((m) => m.kind === "metal" && m.conductivity == null)?.name ?? "");
   const [dielectric, setDielectric] = createSignal("");
   const [feedShift, setFeedShift] = createSignal("0"), [measurementShift, setMeasurementShift] = createSignal("0.5");
-  const [termination, setTermination] = createSignal<"open" | "short">("open");
+  const [termination, setTermination] = createSignal<"open" | "short" | "pml">("open");
   const [reference, setReference] = createSignal(false);
   const [referenceReal, setReferenceReal] = createSignal("20"), [referenceImag, setReferenceImag] = createSignal("-150");
   const [excite, setExcite] = createSignal(true);
@@ -54,6 +57,9 @@ function FeedForm(props: { kind: "lumped" | "waveguide" | "coaxial" | "element" 
     while (taken.has(`LE${number}`)) number++;
     if (type() === "element") return { ...spatial, name: `LE${number}`, topology: topology(),
       ...(R().trim() ? { R: R() } : {}), ...(L().trim() ? { L: L() } : {}), ...(C().trim() ? { C: C() } : {}) };
+    if (planar()) return {...spatial,type:type() as "microstrip"|"cpw",number:Math.max(0,...draft.ports.map((p)=>p.number))+1,
+      excite:excite(),conductor:conductor(),excitation_direction:excitationDirection(),feed_shift:feedShift(),
+      measurement_shift:measurementShift(),reference_ohm:R(),termination:termination(),...(type()==="cpw"?{gap:gap()}:{})};
     return { ...spatial, type: type() as "lumped" | "waveguide" | "coaxial", number: Math.max(0, ...draft.ports.map((p) => p.number)) + 1,
       excite: excite(), ...(type() === "coaxial" ? { mode: "TEM", r_i: ri(), r_o: ro(), r_os: ros(), conductor: conductor(), dielectric: dielectric() || null, feed_shift: feedShift(), measurement_shift: measurementShift(), termination: termination() } : type() === "waveguide" ? { mode: mode(), a: a(), b: b() } : { R: R(), ...(reference() ? { reference_impedance: { real: referenceReal(), imag: referenceImag() } } : {}) }) };
   });
@@ -68,7 +74,15 @@ function FeedForm(props: { kind: "lumped" | "waveguide" | "coaxial" | "element" 
   return <div class="scrim"><form autocomplete="off" class="dialog dz-feed-dialog" role="dialog" aria-modal="true" aria-labelledby="feed-title" ref={box} tabindex={-1} onSubmit={(e) => { e.preventDefault(); if (!errors().length) createFeed(value()); }}>
     <div class="dialog-head"><h2 id="feed-title">{t("feed.create")}</h2><button type="button" class="icon-btn" aria-label={t("common.close")} onClick={close}><X size={18} /></button></div>
     <div class="dialog-body dz-form">
-      <label class="dz-field"><span class="dz-label">{t("props.port.type")}</span><select class="rp-input" value={type()} onChange={(e) => setType(e.currentTarget.value as typeof props.kind)}><option value="lumped">{t("props.port.lumped")}</option><option value="waveguide">{t("props.port.waveguide")}</option><option value="coaxial">{t("props.port.coaxial")}</option><option value="element">{t("feed.element")}</option></select></label>
+      <label class="dz-field"><span class="dz-label">{t("props.port.type")}</span><select class="rp-input" value={type()} onChange={(e) => setType(e.currentTarget.value as typeof props.kind)}><option value="lumped">{t("props.port.lumped")}</option><option value="waveguide">{t("props.port.waveguide")}</option><option value="coaxial">{t("props.port.coaxial")}</option><option value="microstrip">{t("props.port.microstrip")}</option><option value="cpw">{t("props.port.cpw")}</option><option value="element">{t("feed.element")}</option></select></label>
+      <Show when={planar()}>
+        <label class="dz-field"><span class="dz-label">{t("props.port.excitationDirection")}</span><select class="rp-input" value={excitationDirection()} onChange={(e)=>setExcitationDirection(e.currentTarget.value as Axis)}><For each={["x","y","z"]}>{(axis)=><option>{axis}</option>}</For></select></label>
+        <label class="dz-field"><span class="dz-label">{t("props.port.planarConductor")}</span><select class="rp-input" value={conductor()} onChange={(e)=>setConductor(e.currentTarget.value)}><option value="">{t("props.port.chooseConductor")}</option><For each={draft.materials.filter((m)=>m.kind==="metal")}>{(m)=><option value={m.name}>{m.name}</option>}</For></select></label>
+        <Show when={type()==="cpw"}>{field(t("props.port.cpwGap"),gap,setGap,"mm")}</Show>
+        {field(t("props.port.feedShift"),feedShift,setFeedShift,"mm")}{field(t("props.port.measurementShift"),measurementShift,setMeasurementShift,"mm")}{field(t("props.port.realReference"),R,setR,"Ω")}
+        <label class="dz-field"><span class="dz-label">{t("props.port.termination")}</span><select class="rp-input" value={termination()} onChange={(e)=>setTermination(e.currentTarget.value as "open"|"short"|"pml")}><option value="open">{t("props.port.open")}</option><option value="short">{t("props.port.short")}</option><option value="pml">{t("props.port.pmlTermination")}</option></select></label>
+        <p class="note">{t("props.port.notePlanar")}</p>
+      </Show>
       <p class="note">{t("feed.coordinates")}</p>
       {vector(t("props.start"), start, setStart, "start")}{vector(t("props.stop"), stop, setStop, "stop")}
       <label class="dz-field"><span class="dz-label">{t("props.direction")}</span><select class="rp-input" value={direction()} onChange={(e) => setDirection(e.currentTarget.value as Axis)}><For each={["x", "y", "z"]}>{(axis) => <option>{axis}</option>}</For></select></label>

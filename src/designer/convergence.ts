@@ -120,6 +120,8 @@ export interface ConvergenceStep {
    * (absent in a study written before this field: comparable) */
   comparable?: boolean;
   quality?: { energy: boolean; local_mesh: boolean };
+  planar_response?: { passed: boolean; error?: string; complex_rmse?: number; floor_db_rmse?: number;
+    limits?: { complex_rmse: number; floor_db_rmse: number; db_floor: number } };
   converged: boolean;
 }
 export interface ConvergenceStudy {
@@ -233,6 +235,17 @@ export function verdictDetail(study: ConvergenceStudy): string {
   if (step.comparable === false) return t("conv.verdict.notComparableLast", { from: fmt.num(step.from, 3), to: fmt.num(step.to, 3) });
   const at = { from: fmt.num(step.from, 3), to: fmt.num(step.to, 3) };
   const why: string[] = [];
+  if (step.planar_response && study.members.length < 3) why.push(t("conv.why.planarLevels"));
+  if (step.planar_response?.passed === false) {
+    const p = step.planar_response;
+    if (p.error || !p.limits) why.push(t("conv.why.planarUnavailable",at));
+    else {
+      if (p.complex_rmse != null && p.complex_rmse > p.limits.complex_rmse)
+        why.push(t("conv.why.planarComplex",{...at,value:fmt.num(p.complex_rmse,4),limit:fmt.num(p.limits.complex_rmse,4)}));
+      if (p.floor_db_rmse != null && p.floor_db_rmse > p.limits.floor_db_rmse)
+        why.push(t("conv.why.planarMagnitude",{...at,value:fmt.num(p.floor_db_rmse,3),limit:fmt.num(p.limits.floor_db_rmse,3)}));
+    }
+  }
   if (!step.ok.f && step.df_pct != null)
     why.push(t("conv.why.f", { ...at, value: fmt.num(Math.abs(step.df_pct), 2), limit: fmt.num(c.tolerances.f_pct, 4) }));
   if (!step.ok.s11 && step.ds11_db != null)

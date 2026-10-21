@@ -732,6 +732,21 @@ export function quickBundle(d: Design, names: Record<string, number>, previous: 
       const a = p.start.map((e) => evaluate(e, names)) as V3, c = p.stop.map((e) => evaluate(e, names)) as V3;
       grow([a.map((x, k) => Math.min(x, c[k])) as V3, a.map((x, k) => Math.max(x, c[k])) as V3]);
       const common = { number: p.number, direction: p.direction, start: a, stop: c, excite: p.excite !== false };
+      if (p.type === "microstrip" || p.type === "cpw") {
+        const e = "xyz".indexOf(p.excitation_direction ?? ""), stop = [...c] as V3;
+        if (p.type === "microstrip") stop[e] = a[e];
+        const bounds: [V3, V3] = [a.map((v,j) => Math.min(v,stop[j])) as V3, a.map((v,j) => Math.max(v,stop[j])) as V3];
+        const conductor = mats.get(p.conductor ?? "");
+        parts.push({ name: `Planar port ${p.number} strip`, type: conductor?.conductivity ? "ConductingSheet" : "Metal",
+          color: conductor?.color, ...(resolveOpacity(undefined, conductor) !== undefined ? { opacity: resolveOpacity(undefined, conductor) } : {}),
+          ...(conductor?.conductivity ? { conductivity: evaluate(conductor.conductivity,names), thickness: evaluate(conductor.thickness ?? .035,names) } : {}),
+          primitives: [{kind:"box",start:a,stop,priority:5,bbox:bounds}],bbox:bounds } as Part);
+        const R = evaluate(p.reference_ohm ?? 50,names);
+        return {...common,type:p.type,R,reference_ohm:R,conductor:p.conductor,
+          excitation_direction:p.excitation_direction,termination:p.termination ?? "open",
+          feed_shift:evaluate(p.feed_shift ?? 0,names),measurement_shift:evaluate(p.measurement_shift ?? "",names),
+          ...(p.type === "cpw" ? {gap:evaluate(p.gap ?? "",names)} : {})} as Port;
+      }
       if (p.type === "coaxial") {
         const ri = evaluate(p.r_i ?? "", names), ro = evaluate(p.r_o ?? "", names), ros = evaluate(p.r_os ?? "", names);
         const dielectric = d.materials.find((m) => m.name === p.dielectric);

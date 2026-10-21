@@ -249,7 +249,24 @@ export function validateBundle(raw: unknown): Validation {
         && typeof p.conductor === "string" && !!p.conductor && (p.dielectric == null || typeof p.dielectric === "string")
         && !("group" in p) && !("reference_impedance" in p) && !("Feed_R" in p) && !("feed_R" in p);
     };
-    b.ports = all.filter((p) => isObj(p) && isVec3(p.start) && isVec3(p.stop) && isNum(p.R) && ["x", "y", "z"].includes(p.direction as string) && validCoax(p));
+    const validPlanar = (p: Obj) => {
+      if (p.type !== "microstrip" && p.type !== "cpw") return true;
+      if (!isVec3(p.start) || !isVec3(p.stop)) return false;
+      const a = p.start as number[], b = p.stop as number[];
+      const k = "xyz".indexOf(p.direction as string), e = "xyz".indexOf(p.excitation_direction as string);
+      if (k < 0 || e < 0 || k === e) return false;
+      const n = 3-k-e, length = Math.abs(b[k]-a[k]), feed = p.feed_shift ?? 0;
+      return length > 0 && isNum(feed) && 0 <= feed && feed < length
+        && isNum(p.measurement_shift) && 0 < p.measurement_shift && p.measurement_shift < length
+        && (p.excite === false || feed < p.measurement_shift)
+        && isNum(p.reference_ohm) && p.reference_ohm > 0 && p.R === p.reference_ohm
+        && ["open","short","pml"].includes(String(p.termination ?? "open"))
+        && typeof p.conductor === "string" && !!p.conductor
+        && !("group" in p) && !("reference_impedance" in p)
+        && (p.type === "microstrip" ? a[e] !== b[e] && a[n] !== b[n]
+          : a[e] !== b[e] && a[n] === b[n] && isNum(p.gap) && p.gap > 0);
+    };
+    b.ports = all.filter((p) => isObj(p) && isVec3(p.start) && isVec3(p.stop) && isNum(p.R) && ["x", "y", "z"].includes(p.direction as string) && validCoax(p) && validPlanar(p));
     if ((b.ports as unknown[]).length < all.length) warnings.push(msg("validate.ports", { n: all.length - (b.ports as unknown[]).length }));
     (b.ports as Obj[]).forEach((p, i) => { if (!isNum(p.number)) p.number = i + 1; });
   }

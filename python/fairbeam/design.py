@@ -224,7 +224,7 @@ DISC_MAX_SEGMENTS = 512
 TRANSFORMS = ("move", "translate", "mirror", "rotate", "scale")
 AXES = ("x", "y", "z")
 CUT_SHAPES = ("rect", "circle", "polygon")
-PORT_TYPES = ("lumped", "waveguide", "coaxial")
+PORT_TYPES = ("lumped", "waveguide", "coaxial", "microstrip", "cpw")
 WG_MODE = re.compile(r"TE(\d)(\d)")
 # upper bounds on what transforms may expand to (a typo like 1000 copies must not hang the preview)
 MAX_COPIES = 1000
@@ -606,7 +606,12 @@ def check_design(d: dict) -> None:
         w = f"ports[{i}]"
         check_port_group(po, w)
         if po.get("type", "lumped") not in PORT_TYPES:
-            raise DesignError("a port is 'lumped', 'waveguide' or 'coaxial'", f"{w}.type")
+            raise DesignError("a port is lumped, waveguide, coaxial, microstrip or cpw", f"{w}.type")
+        if po.get("type") in ("microstrip", "cpw"):
+            for key in ("conductor", "excitation_direction", "measurement_shift"):
+                _need(po, key, w)
+            if po["type"] == "cpw":
+                _need(po, "gap", w)
         if po.get("type") == "coaxial":
             for key in ("r_i", "r_o", "r_os", "measurement_shift", "conductor"):
                 _need(po, key, w)
@@ -2856,9 +2861,19 @@ def build(d: dict, values: dict):
     for i, po in enumerate(d.get("ports", [])):
         w = f"ports[{i}]"
         a, c = vec(po.get("start"), f"{w}.start"), vec(po.get("stop"), f"{w}.stop")
-        if po.get("type") not in ("waveguide", "coaxial"):
+        if po.get("type") not in ("waveguide", "coaxial", "microstrip", "cpw"):
             a, c = snap_to_sheets(a, c, AXES.index(po["direction"]), sheets)
-        if po.get("type") == "coaxial":
+        if po.get("type") in ("microstrip", "cpw"):
+            from .planar import resolved_planar
+            try:
+                pp = resolved_planar(po, d.get("materials", []), num)
+                material = next(m for m in d["materials"] if m["name"] == pp["conductor"])
+                sim.planar_port(pp["type"], pp["number"], a, c, pp["direction"], pp["excitation_direction"],
+                    **{key: pp[key] for key in ("conductor", "conductivity", "thickness", "gap", "feed_shift", "measurement_shift", "termination", "reference_ohm", "excite") if key in pp},
+                    **{key: material[key] for key in ("color", "opacity") if key in material})
+            except ValueError as error:
+                raise DesignError(str(error), w) from error
+        elif po.get("type") == "coaxial":
             from .coax import resolved_coax
             try:
                 cp = resolved_coax(po, d.get("materials", []), num)
@@ -2944,11 +2959,12 @@ def build(d: dict, values: dict):
         for i, po in enumerate(d.get("ports", [])):
             for w, member in port_feeds(po, f"ports[{i}]"):
                 a, c = vec(member.get("start"), f"{w}.start"), vec(member.get("stop"), f"{w}.stop")
-                if po.get("type") not in ("waveguide", "coaxial"):
+                if po.get("type") not in ("waveguide", "coaxial", "microstrip", "cpw"):
                     a, c = snap_to_sheets(a, c, AXES.index(member["direction"]), sheets)
                 # a coaxial port's centerline needs no transverse line: its annulus is checked when
                 # the native probes are built; only its ends along the axis must sit on lines
-                checked = [AXES.index(po["direction"])] if po.get("type") == "coaxial" else range(3)
+                checked = ([AXES.index(po["direction"])] if po.get("type") == "coaxial" else
+                           [] if po.get("type") in ("microstrip", "cpw") else range(3))
                 for label, point in (("start", a), ("stop", c)):
                     for ax in checked:
                         if min(abs(v - point[ax]) for v in manual_lines[ax]) > 1e-6:
@@ -3056,6 +3072,7 @@ def build(d: dict, values: dict):
             report["settings"]["mode"] = "design"
             report["notes"] = notes
     sim.set_focus(lo.tolist(), hi.tolist())
+    sim.finalize_planar_ports()
     if any(p.get("type") == "coaxial" for p in d.get("ports", [])):
         sim.finalize_coaxial_ports()
     if s.get("max_timesteps") in (None, "auto"):
@@ -3623,6 +3640,19 @@ def to_python(d: dict) -> str:
                     emit_primitive(f"{var}.AddLinPoly(np.array({pts}).T, {normal!r}, {elev}, {length}, priority={prio})")
     for po in d.get("ports", []):
         exc = "" if po.get("excite", True) else ", excite=False"
+        if po.get("type") in ("microstrip", "cpw"):
+            material = next(m for m in d.get("materials", []) if m["name"] == po.get("conductor"))
+            fields = [f"{key}={e(po.get(key, default))}" for key, default in
+                      (("feed_shift",0), ("measurement_shift",None), ("reference_ohm",50))]
+            if po["type"] == "cpw":
+                fields.append(f"gap={e(po['gap'])}")
+            if material.get("conductivity") is not None:
+                fields += [f"conductivity={e(material['conductivity'])}", f"thickness={e(material.get('thickness',.035))}"]
+            fields += [f"{key}={material[key]!r}" for key in ("color","opacity") if key in material]
+            out.append(f"    sim.planar_port({po['type']!r}, {po['number']}, {vec(po['start'])}, {vec(po['stop'])}, "
+                       f"{po['direction']!r}, {po['excitation_direction']!r}, conductor={po['conductor']!r}, "
+                       f"termination={po.get('termination','open')!r}, " + ", ".join(fields) + exc + ")")
+            continue
         if po.get("type") == "coaxial":
             mt = next((m for m in d.get("materials", []) if m.get("name") == po.get("dielectric")), {})
             display = ""

@@ -1013,7 +1013,7 @@ export function addWaveguidePort() { setFeedCreation("waveguide"); }
 
 /** Switch a port between lumped and waveguide, keeping its place (a waveguide takes a × b from the
  * port box across its direction where it has one). */
-export function setPortType(i: number, type: "lumped" | "waveguide" | "coaxial") {
+export function setPortType(i: number, type: "lumped" | "waveguide" | "coaxial" | "microstrip" | "cpw") {
   if (type !== "lumped" && draft.ports[i]?.group) {
     setMessage({ tone: "warn", text: t(type === "coaxial" ? "props.port.group.removeBeforeCoaxial" : "props.port.group.removeBeforeWaveguide") });
     return;
@@ -1025,6 +1025,15 @@ export function setPortType(i: number, type: "lumped" | "waveguide" | "coaxial")
     p.type = type;
     delete p.r_i; delete p.r_o; delete p.r_os; delete p.conductor; delete p.dielectric;
     delete p.feed_shift; delete p.measurement_shift; delete p.termination;
+    delete p.excitation_direction; delete p.gap; delete p.reference_ohm;
+    if (type === "microstrip" || type === "cpw") {
+      delete p.R; delete p.reference_impedance; delete p.a; delete p.b; delete p.mode;
+      p.conductor = d.materials.find((m) => m.kind === "metal")?.name ?? "";
+      p.excitation_direction = p.direction === "z" ? "x" : "z";
+      p.feed_shift = 0; p.measurement_shift = .5; p.reference_ohm = 50; p.termination = "open";
+      if (type === "cpw") p.gap = .5;
+      return;
+    }
     if (type === "coaxial") {
       delete p.R; delete p.reference_impedance; delete p.a; delete p.b;
       p.mode = "TEM"; p.r_i = 0.5; p.r_o = 1.5; p.r_os = 2;

@@ -531,6 +531,21 @@ def generate(sim, f_max: float | None = None, cells_per_wavelength: float = 20, 
     for p in feeds + list(getattr(sim, "lumped_elements", [])):
         st, sp = np.asarray(p["start"], float), np.asarray(p["stop"], float)
         k = "xyz".index(p["direction"])
+        if p.get("type") in ("microstrip", "cpw"):
+            from .planar import validate_planar
+            _, e = validate_planar(p)
+            normal = e if p["type"] == "microstrip" else 3-k-e
+            L.add(normal, [st[normal],sp[normal]], PRIO_HARD, "planar conductor planes")
+            # Equal neighboring planes are required by the native differential
+            # TL estimator. Keep these distinct from transverse metal edges.
+            sign = np.sign(sp[k]-st[k])
+            center = st[k]+sign*p["measurement_shift"]
+            feature = abs(st[e]-sp[e]) if p["type"] == "microstrip" else p["gap"]
+            delta = min(local_res(k,center), feature/3, abs(sp[k]-st[k])/20)
+            L.add(k, [center-delta,center,center+delta,st[k]+sign*p["feed_shift"]], PRIO_HARD, "planar source and probes")
+            L.add(k, [st[k],sp[k]], PRIO_HARD, "planar line ends")
+            intended.append(delta)
+            continue
         for a in range(3):
             if a == k or abs(sp[a] - st[a]) < 1e-9:
                 L.add(a, [st[a], sp[a]], PRIO_HARD, f"port {p.get('number', p.get('name', ''))}")
@@ -869,6 +884,8 @@ def generate(sim, f_max: float | None = None, cells_per_wavelength: float = 20, 
         except OverflowError:
             skipped_cell_limit = True
             dropped.append(candidates.pop())
+    from .planar import align_automatic_probes
+    align_automatic_probes(sim, protected=required)
     report = mesh_report(sim, res_air, res_min, min_cell, warnings, settings)
     report["fine_features"] = measure_features(features, [grid.GetLines(a) for a in range(3)])
     report["fine_feature_refinement"] = {

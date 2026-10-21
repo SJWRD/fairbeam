@@ -111,7 +111,7 @@ export type DesignCut = RectCut | CircleCut | PolygonCut;
  * waveguide port (one TE mode, broad wall a along (direction+1)%3, b along (direction+2)%3; start /
  * stop span the cross-section, the excitation at start, the mode probes at stop). */
 export interface DesignPort {
-  type: "lumped" | "waveguide" | "coaxial";
+  type: "lumped" | "waveguide" | "coaxial" | "microstrip" | "cpw";
   number: number;
   /** lumped only */
   R?: Expr;
@@ -127,7 +127,11 @@ export interface DesignPort {
   dielectric?: string | null;
   feed_shift?: Expr;
   measurement_shift?: Expr;
-  termination?: "open" | "short";
+  termination?: "open" | "short" | "pml";
+  /** Planar TL ports: propagation uses direction; transverse electric field uses this axis. */
+  excitation_direction?: Axis;
+  gap?: Expr;
+  reference_ohm?: Expr;
   a?: Expr;
   b?: Expr;
   start: Vec3;

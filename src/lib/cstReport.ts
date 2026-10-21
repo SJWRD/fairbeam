@@ -17,8 +17,9 @@ export const noteKind = (n: ReportNote): NoteKind => (n.kind === "missing" ? "mi
 export const noteText = (n: ReportNote, lang: string): string => {
   if (lang !== "tr") return n.message;
   if (typeof n.message_tr === "string" && n.message_tr) return n.message_tr;
-  for (const key of ["home.importCst.meshHex", "home.importCst.meshIgnored"] as const) {
+  for (const key of ["home.importCst.meshHex", "home.importCst.meshIgnored", "home.importCst.planarPortRefused"] as const) {
     if (n.message === en[key]) return tr[key];
+    if (key === "home.importCst.planarPortRefused" && n.message === `not imported: ${en[key]}`) return tr[key];
   }
   return n.message;
 };

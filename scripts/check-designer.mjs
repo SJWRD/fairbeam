@@ -771,4 +771,5 @@ for (const prim of [tube, ball, side, cone, ring]) {
 console.log(`check-designer: ${checks} checks, ${failures} failed (${fx.expressions.length} expressions, ${fx.cases.length} cases)`);
 // This script is part of both CI's check:designer and check:exports aggregations.
 await import('./check-result-session-state.mjs');
+await import('./check-planar-ports.mjs');
 process.exit(failures ? 1 : 0);
