@@ -156,7 +156,9 @@ check(/\.dock, \.rdk, \.dw-result/.test(read("src/charts/LineChart.tsx")), "M to
 // ---- the Efficiency view and the far-field quantity (#farfield-quantities)
 check(/props\.view === "efficiency"\}><ResultEfficiency b=\{props\.b\} \/>/.test(views), "the Efficiency tab draws its view");
 check(/points=\{plot\(\)\.points\}/.test(views) && /t\("efficiency\.noteFarfieldOnly"/.test(views) && /Simulation › Monitors › Far field/.test(en["efficiency.noteFarfieldOnly"])
-  && /t\("efficiency\.noteBand"/.test(views) && /Efficiency over the band/.test(en["efficiency.noteBand"].other),
+  && /t\("efficiency\.noteBand"/.test(views)
+  && en["efficiency.noteBand"].one === "Radiation efficiency at {count} frequency (Simulation › Monitors › Efficiency)."
+  && en["efficiency.noteBand"].other === "Radiation efficiency at {count} frequencies (Simulation › Monitors › Efficiency).",
   "the Efficiency view marks the far-field points and says where more radiation efficiency comes from");
 check(en["ribbon.sim.efficiency"] === "Efficiency" && /label=\{t\("ribbon\.sim\.efficiency"\)\}[^\n]*openRibbonResult\("efficiency"\)/.test(keys), "Post-processing opens the Efficiency tab");
 check(en["ribbon.post.farfield"] === "Far field" && /<Show when=\{ribbonFarfield\(\)\}>[\s\S]{0,200}<RGroup label=\{t\("ribbon\.post\.farfield"\)\}[\s\S]{0,300}<PatternQuantitySelect/.test(keys), "Post-processing shows the quantity picker while a pattern is shown");

@@ -104,7 +104,7 @@ Bu, `sweep` komutunun tam bir eksenli ve değerlerini **kabadan inceye** sırala
 - `--param` ile başlatılan çalışmalar dahil, bu rezonanstaki **S11 derinliği** değişimi
 
 |Δf| < `--tol-f` (varsayılan %0,5), |ΔS11| < `--tol-s11` (varsayılan 1 dB) ve varsa
-|ΔDmax| < `--tol-d` (varsayılan 0,1 dB) olduğunda adım yakınsamış sayılır. İki koşu da enerji
+|ΔDmax| < `--tol-d` (varsayılan 0,1 dB) olduğunda adım yakınsamış sayılır. İki çalıştırma da enerji
 sönümü ölçütünü sağlamalı; hiçbirinde yetersiz ince ayrıntı bildirilmemelidir. S11 derinliği
 eksikse denetim geçmez. Çalışma, **son** adımı yakınsamışsa yakınsamıştır. Global mesh parametresi
 değişirken port hücreleri sabit kalıyorsa, bu denetimler iki ek yerel inceltmenin yerini tutmaz.
@@ -184,7 +184,7 @@ Yalnızca ikinci kaynak modeli portu mevcut 4 mm dilin tamamına yayar; koaksiye
 
 Çizgi kaynak denetimi geçmedi. Sabit genişlikli kaynak iki ardışık yerel denetimi de **geçti**.
 Her adımda frekans değişimi %0,5'in; minimum derinliği ve 867 MHz değişimleri 0,5 dB'nin;
-0,7–1,05 GHz boyunca en büyük karmaşık S11 farkı 0,01'in altında olmalıdır. Bütün koşular ayrıca
+0,7–1,05 GHz boyunca en büyük karmaşık S11 farkı 0,01'in altında olmalıdır. Bütün çalıştırmalar ayrıca
 −60 dB enerji sönümüne ulaşmalı, 1,001 yansıyan güç sınırını geçmemeli ve minimumu sabit
 0,85–1,00 GHz izleme aralığında tutmalıdır. Yalnızca frekansın uyuşması yeterli değildir.
 
@@ -203,7 +203,7 @@ python -m tests.blade_feed_study --phase auto --width 4 --densities 20 30 40 --a
 
 Sabit kaynak `python/tests/fixtures/blade_feed_base.design.json` dosyasındadır. `--phase auto`,
 dalga boyu başına 20, 30 ve 40 hücreyle otomatik mesh oluşturur; yalnızca sabit ızgarayı değil,
-türetilen dış kutu dahil bu ayarı denetler. Her koşu en çok sekiz milyon hücre ve 5.400 saniyeyle
+türetilen dış kutu dahil bu ayarı denetler. Her çalıştırma en çok sekiz milyon hücre ve 5.400 saniyeyle
 sınırlıdır. Sonuçlar tam girdiyi, ham gerilim/akım kayıtlarını, karmaşık S11 CSV'sini, mesh'i,
 enerjiyi ve kabul kayıtlarını içerir. Komutun bitmesi yakınsama kanıtı değildir:
 iki ardışık geçiş için `comparison.json` dosyasını inceleyin.
@@ -228,8 +228,8 @@ varsayılanını ve deneysel `feed_fraction` seçeneğini korur.
 
 Ölçülen özetler, girdi/çıktı özet değerleri ve sınırlar
 `python/tests/fixtures/blade_source_study_20261008.json` dosyasındadır. Windows 11 üzerinde
-Ryzen 9 7900X, 32 GiB RAM, openEMS 0.37.0rc3 ve CSXCAD 0.7.0rc3 kullanıldı; yeni koşular
-12 CPU iş parçacığıyla çalıştı. Tekrar kullanılan çizgi kaynak yarım mesh koşusu dört iş
+Ryzen 9 7900X, 32 GiB RAM, openEMS 0.37.0rc3 ve CSXCAD 0.7.0rc3 kullanıldı; yeni çalıştırmalar
+12 CPU iş parçacığıyla çalıştı. Tekrar kullanılan çizgi kaynak yarım mesh çalıştırması dört iş
 parçacığı kullandı: normalize girdiler birebir eşleşti, dört/on iki iş parçacıklı başlangıç
 yanıtlarının farkı sıfırdı. Süreler hız kıyaslaması değildir. Bu yerel testler fiziksel doğruluğu,
 uzak alan yakınsamasını veya GPU eşliğini göstermez.
@@ -251,14 +251,14 @@ mesh'ten kaymaması için ilkel koordinatları 17 anlamlı basamakla aktarılır
 Tüm galeri saatler sürebilir. Komut, büyük örnekler için native çözüm başına zaman aşımını
 900'den 15.000 saniyeye çıkarır; bir çift için bunun iki katı artı 50 saniye ayrılır.
 `--threads N`, fiziksel girdiyi değiştirmeden iki yoldaki CPU iş parçacığı sayısını ayarlar.
-Her denemede yeni çıktı klasörü kullanın; yarıda kesilen koşuların çıktıları korunur.
+Her denemede yeni çıktı klasörü kullanın; yarıda kesilen çalıştırmaların çıktıları korunur.
 
 Kontroller aynı girdinin eşdeğerliğini, enerji sönümünü, matris pasifliğini, S matrisi hesabını
 ve sonuç saklama yuvarlamasını ayrı değerlendirir. Uzak alanı kapsamaz; mesh yakınsaması veya
 fiziksel doğruluk kanıtı değildir. Ayrı arşivden çıkarılmış çalıştırılabilir dosya, uygulamayla
 aynı upstream çözücü ikilisini içerebilir; kütüphane özetini karşılaştırıp bu durumu kaydedin.
 
-8 Ekim 2026 Windows CPU kontrolünde 21 galeri örneği/varyantı, sırayla 64 çözücü koşusunda
+8 Ekim 2026 Windows CPU kontrolünde 21 galeri örneği/varyantı, sırayla 64 çözücü çalıştırmasında
 tamamlandı. Çiftlerin iki tarafında aynı olmak üzere dört veya 12 iş parçacığı kullanıldı.
 Ham karmaşık S matrisleri birebir aynıydı; bağımsız matris hesabındaki en büyük fark 5.58e-16,
 paket yuvarlamasındaki en büyük fark 7.05e-6 oldu. Tüm örnekler enerji ve matris pasifliği
@@ -270,7 +270,7 @@ bağımsız bir çözücü veya fiziksel ölçümlerle uyum kanıtı değildir. 
 Tam galeri kaydı, önceki çizgi kaynaklı Blade modelini kullanır; kaynak özetleri kanıtın parçasıdır.
 Bu kayıt, sonradan düzenlenmiş bir kaynağın tekrar çalıştırılması gibi sunulmamalıdır.
 Tarihsel 21 örneklik toplam, artık dağıtılmayan Blade'i de içerir. Güncel varsayılan galeri
-koşuları Blade'i dışarıda tutar; `--models blade_867` araştırma kaynağını açıkça seçer.
+çalıştırmaları Blade'i dışarıda tutar; `--models blade_867` araştırma kaynağını açıkça seçer.
 Bu kontrolde GPU çalıştırması ve uzak alanlar test edilmedi.
 
 Yenilenen Blade kaynağı, 9 Ekim'de iki yolda da 12 CPU iş parçacığıyla, aynı −60 dB/300.000

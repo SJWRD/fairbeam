@@ -30,7 +30,7 @@ const built = await build({
     resolveId(id) { if (id.endsWith("window-close-entry")) return "\0window-close-entry"; },
     load(id) {
       if (id !== "\0window-close-entry") return;
-      return ["designer/store", "designer/windowClose", "lib/unsavedWork", "editor/store"].map((path, i) =>
+      return ["designer/store", "designer/windowClose", "lib/unsavedWork", "editor/store", "designer/closeActivity"].map((path, i) =>
         `export * as m${i} from ${JSON.stringify(`${root}src/${path}.ts`)};`).join("\n");
     },
   }],
@@ -92,7 +92,7 @@ globalThis.fetch = async (url, init = {}) => {
 };
 
 const code = (Array.isArray(built) ? built[0] : built).output[0].code;
-const { m0: store, m1: wc, m2: work, m3: editor } = await import(`data:text/javascript;base64,${Buffer.from(code).toString("base64")}`);
+const { m0: store, m1: wc, m2: work, m3: editor, m4: activity } = await import(`data:text/javascript;base64,${Buffer.from(code).toString("base64")}`);
 
 // ------------------------------------------------------------------ the shell's side
 
@@ -107,7 +107,7 @@ const partNames = () => store.draft.parts.map((p) => p.name);
 /** the dialog's Save button (CloseProject.tsx WindowCloseDialog) */
 const dialogSave = () => store.saveBeforeLeaving(() => wc.decideWindowClose("close"));
 /** the dialog's Don't save button */
-const dialogDiscard = () => { store.closeDesign(); wc.decideWindowClose("close"); };
+const dialogDiscard = () => wc.approveWindowDiscard();
 async function openA() {
   await store.openDesign("a");
   assert.equal(store.file()?.id, "a");
@@ -369,4 +369,94 @@ assert.equal(r.ask(), 'close');
   wc.finishUpdate(update.id);
   assert.equal(editor.draft(), 'newer', 'deferring install preserves Python text');
 }
-console.log("check-window-close: designer and Python unsaved work, cancellation, stale approval and in-flight save pass");
+// Closing the actual app must query server-wide activity, including runs absent from local history.
+editor.setDraft(editor.file().source);
+let active = ["other-workspace-running", "queued-sweep"];
+let readError = false;
+let readDeferred = null;
+let reads = 0;
+const unregister = activity.registerCloseActivity(async () => {
+  reads++;
+  if (readDeferred) return await readDeferred;
+  if (readError) throw new Error("server unavailable");
+  return [...active];
+});
+{
+  const r = shellRequest("quit");
+  assert.equal(r.ask(), "pending", "clean app waits for a fresh server-wide run query");
+  await sleep(0);
+  assert.equal(activity.closeActivity()?.count, 2);
+  assert.equal(r.ask(), "pending", "runs question blocks quit");
+  activity.decideCloseActivity(false);
+  assert.equal(r.ask(), "cancel", "Cancel preserves active/queued runs");
+}
+{
+  const r = shellRequest();
+  assert.equal(r.ask(), "pending"); await sleep(0);
+  activity.decideCloseActivity(true);
+  assert.equal(r.ask(), "pending", "final exit checks activity again"); await sleep(0);
+  assert.equal(r.ask(), "close", "same runs do not ask twice");
+}
+{
+  await openA(); addPart("keep-until-all-consent");
+  const r = shellRequest("quit");
+  assert.equal(r.ask(), "pending"); await sleep(0);
+  activity.decideCloseActivity(true);
+  assert.equal(r.ask(), "pending", "designer consent follows run consent");
+  wc.approveWindowDiscard();
+  active.push("new-run-during-draft-question");
+  assert.equal(r.ask(), "pending"); await sleep(0);
+  assert.equal(activity.closeActivity()?.count, 3, "a new run needs consent");
+  activity.decideCloseActivity(false);
+  assert.equal(r.ask(), "cancel");
+  assert.ok(store.dirty(), "Cancel after Don't save retains the draft");
+  assert.equal(partNames().at(-1), "keep-until-all-consent");
+  await sleep(1150);
+  assert.ok(storage.has(backupKey()), "Cancel retains the local backup");
+  store.closeDesign();
+}
+{
+  active = []; readError = true;
+  const r = shellRequest();
+  assert.equal(r.ask(), "pending"); await sleep(0);
+  assert.equal(activity.closeActivity()?.count, null, "unavailable status needs explicit consent");
+  activity.decideCloseActivity(false);
+  assert.equal(r.ask(), "cancel");
+  readError = false;
+}
+{
+  let release;
+  readDeferred = new Promise(resolve => { release = resolve; });
+  const old = shellRequest(); assert.equal(old.ask(), "pending");
+  readDeferred = null;
+  const next = shellRequest(); assert.equal(next.ask(), "pending");
+  await sleep(0);
+  release(["stale"]); await sleep(0);
+  assert.equal(activity.closeActivity(), null, "stale response cannot open a new request's question");
+  assert.equal(next.ask(), "pending"); await sleep(0);
+  assert.equal(next.ask(), "close");
+}
+{
+  await openA(); addPart("replace-during-status");
+  let release;
+  readDeferred = new Promise(resolve => { release = resolve; });
+  const r = shellRequest(); assert.equal(r.ask(), "pending");
+  const created = store.createDesign({ id: "b", name: "B" });
+  assert.ok(store.replaceRequest());
+  assert.equal(r.ask(), "cancel", "replacement question cancels the pending exit");
+  release(["late-running"]); await sleep(0);
+  assert.equal(activity.closeActivity(), null, "a canceled exit's late status cannot open a run question");
+  store.replaceRequest().decide(false);
+  assert.equal(await created, null);
+  readDeferred = null;
+  store.closeDesign();
+}
+{
+  const before = reads;
+  const r = shellRequest("update");
+  assert.equal(r.ask(), "close", "updates retain their existing native runs warning");
+  assert.equal(reads, before);
+  wc.finishUpdate(r.id);
+}
+unregister();
+console.log("check-window-close: designer/Python consent, active runs, unknown status, final recheck and stale replies pass");

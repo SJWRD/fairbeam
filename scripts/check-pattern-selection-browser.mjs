@@ -53,7 +53,8 @@ try {
       assert.ok(file,'actual browser CSV download completes');
       const csv=await readFile(join(downloads,file),'utf8');
       const a=tsv.trimEnd().split(/\r?\n/).map(r=>r.split('\t'));
-      const b=csv.trimEnd().split(/\r?\n/).map(r=>r.split(','));
+      assert.equal(csv.charCodeAt(0),0xfeff,'toolbar CSV begins with a UTF-8 BOM');
+      const b=csv.slice(1).trimEnd().split(/\r?\n/).map(r=>r.split(','));
       assert.deepEqual(a,b,'actual system clipboard and downloaded CSV contain the same table');
       await page.screenshot({path:join(artifacts,`${stem}-${lang}.png`)});
       await writeFile(join(artifacts,`${stem}-${lang}.tsv`),tsv);

@@ -187,6 +187,8 @@ jobs:
           node scripts/check-compare-bounds-browser.mjs
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           node scripts/check-user-project-browser.mjs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node scripts/check-quit-activity-browser.mjs
 
       - name: Keep browser failure evidence (including recovered attempts)
         if: always()

@@ -17,6 +17,7 @@
   },
   "bundle": {
     "active": true,
+    "category": "DeveloperTool",
     "publisher": "Fairbeam",
     "copyright": "Copyright © 2026 Fairbeam contributors",
     "shortDescription": "The open electromagnetic workbench.",

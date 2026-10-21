@@ -6,7 +6,7 @@ This is an opt-in research integration, not a production Floquet port or general
 
 ## Configure and run
 
-1. Build and serve this source revision using the normal [source setup](FROM-SOURCE.md).
+1. Installed desktop users should follow the [experimental solver guide](EXPERIMENTAL-SOLVERS.md); there is no source-build prerequisite. Contributors running this source revision should use the normal [source setup](FROM-SOURCE.md).
 2. In Design, open Simulation → Experimental solvers.
 3. Choose a backend and enter its local executable/package path. Check availability before submitting. A missing or incompatible backend prevents submission.
 4. Submit a bounded experiment. It waits behind any existing simulation; cancellation uses the same process-tree cleanup as the ordinary queue.
@@ -18,7 +18,7 @@ You can instead set `FAIRBEAM_PERIODIC_EXECUTABLE` or `FAIRBEAM_ELMER_ROOT` in t
 
 ### Installed-app adapter
 
-Fairbeam 0.7.4 includes `fairbeam_elmer.py` in the desktop bundle and copies it into the managed Python app directory during updates. If 0.7.3 reports `No module named fairbeam_elmer`, update Fairbeam; reinstalling the Elmer binaries alone does not repair the missing adapter.
+The desktop bundle includes `fairbeam_elmer.py` and copies it into the managed Python app directory during updates. If an older or damaged installation reports `No module named fairbeam_elmer`, update or repair Fairbeam; reinstalling the Elmer binaries alone does not repair the missing adapter.
 
 The panel includes a **How to run this experiment** guide. A missing periodic runtime is a prerequisite failure, not evidence of an Elmer installation problem. There is no automatic periodic backend installer: build the explicitly linked research backend first. On macOS its native build still needs platform qualification.
 

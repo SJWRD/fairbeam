@@ -71,6 +71,8 @@ export default {
       await s.click('header.screen.start');
       await s.wait('.home');
       assert.equal(await s.page.evaluate(() => window.fairbeamWindowClose('quit', 18001)), 'pending');
+      // The shell polls while the fresh, server-wide activity request is in flight.
+      await s.waitFor(() => { window.fairbeamWindowClose('quit', 18001); return !!document.querySelector('[role=dialog]'); });
       await s.wait('[role=dialog]');
       await s.click('common.cancel', {within:'[role=dialog]'});
       await s.gone('[role=dialog]');

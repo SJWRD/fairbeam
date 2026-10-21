@@ -74,6 +74,18 @@ function localValue(name: string, v: string): string {
   return v;
 }
 
+/** Format only the translation's literal numbers, before inserting names or code.
+ * Running this on the completed message would corrupt expressions such as "part-1.5". */
+function localTemplate(key: string, params: Record<string, string> = {}): string {
+  let text = t(key);
+  // The comma-parser diagnostic deliberately shows a valid dot-decimal input example.
+  if (decimalComma() && key !== "checks.msg.expr.unexpectedComma") {
+    text = text.replace(/(?<![\p{L}\p{N}_./])-?\d+(?:\.\d+)?(?![\p{L}\p{N}_/]|\.\d)/gu,
+      value => localValue("", value));
+  }
+  return text.replace(/\{(\w+)\}/g, (placeholder, name: string) => params[name] ?? placeholder);
+}
+
 /** `text` through the templates under `prefix`, or null when none matches. */
 function translate(prefix: string, text: string, code: string, depth = 0): string | null {
   for (const tpl of templates(prefix)) {
@@ -84,7 +96,7 @@ function translate(prefix: string, text: string, code: string, depth = 0): strin
       const v = m.groups?.[name] ?? "";
       params[name] = (depth < 3 && subTranslate(code, name, v, depth + 1)) || localValue(name, v);
     }
-    return t(tpl.key, params);
+    return localTemplate(tpl.key, params);
   }
   return null;
 }
@@ -118,7 +130,7 @@ export function checkExplain(c: Pick<Check, "code" | "explain">): string {
   const key = `checks.explain.${c.code}`;
   const english = EN[key];
   if (typeof english !== "string") return c.explain;
-  if (english === c.explain) return t(key);
+  if (english === c.explain) return localTemplate(key);
   // an explanation with a value in it (a failed preview's reason)
   if (/\{\w+\}/.test(english)) return translate(key, c.explain, c.code) ?? c.explain;
   return c.explain;

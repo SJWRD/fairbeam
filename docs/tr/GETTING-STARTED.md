@@ -1,17 +1,17 @@
 # Başlarken
 
 <!--
-  Web sitesi bu dosyayı Türkçe başlangıç kılavuzu olarak yayımlar.
+  Web sitesi bu dosyayı Türkçe Başlarken kılavuzu olarak yayımlar.
 -->
 
-Bu kılavuz, Fairbeam masaüstü uygulamasını denemek isteyenler içindir: uygulamayı kurun, ardından bir yama anten tasarlayın, simüle edin ve sonuçlarını inceleyin. Tasarımcının tüm özellikleri [DESIGNER.md](DESIGNER.md) sayfasında açıklanır. Fairbeam'i kaynak kodundan derlemek için [Fairbeam'i kaynak kodundan çalıştırma](FROM-SOURCE.md) sayfasına bakın. Uygulamada Yardım › Başlangıç Kılavuzu bu sayfanın yayımlanmış sürümünü açar.
+Bu kılavuz, Fairbeam masaüstü uygulamasını denemek isteyenler içindir: uygulamayı kurun, ardından bir yama anten tasarlayın, simüle edin ve sonuçlarını inceleyin. Tasarımcının tüm özellikleri [DESIGNER.md](DESIGNER.md) sayfasında açıklanır. Fairbeam'i kaynak kodundan derlemek için [Fairbeam'i kaynak kodundan çalıştırma](FROM-SOURCE.md) sayfasına bakın. Uygulamada Yardım › Başlarken kılavuzu bu sayfanın yayımlanmış sürümünü açar.
 
 ## 1. Kurulum
 
 Kurulum dosyasını [fairbeam.org](https://fairbeam.org) veya [sürümler sayfasından](https://github.com/ismailakdag/fairbeam-releases/releases) indirin.
 
 - **macOS** (Apple silicon, macOS 27 veya üzeri): `.dmg` dosyasını açın ve Fairbeam'i Uygulamalar klasörüne sürükleyin. Uygulama Developer ID ile imzalanmış ve Apple tarafından doğrulanmıştır.
-- **Windows** (10/11, x64): `-setup.exe` dosyasını çalıştırın. Yönetici izni istemeden kullanıcı hesabınıza kurulur. Kurulum dosyası kod imzalı olmadığından SmartScreen “Windows bilgisayarınızı korudu” mesajını gösterebilir: **Ek bilgi › Yine de çalıştır** seçeneğini kullanın.
+- **Windows** (10/11, x64): `-setup.exe` dosyasını çalıştırın. Yönetici izni istemeden kullanıcı hesabınıza kurulur. Kurulum dosyası kod imzalı olmadığından SmartScreen “Windows bilgisayarınızı korudu” mesajını gösterebilir: **Ek bilgi › Yine de çalıştır** seçeneğini kullanın. `.fb` dosyasına çift tıkladığınızda Fairbeam önerilmiyorsa [.fb dosyalarını açma](WINDOWS.md#known-limitations) bölümüne bakın.
 
 **İlk açılış.** Fairbeam'in simülasyon çalışma ortamına (Python, openEMS ve Fairbeam paketi) ihtiyacı vardır. Kurulum ekranında çalışma ortamının kurulması gerektiği belirtilir: **Çalışma ortamını kur** seçeneğini kullanın (düğmede indirme boyutu gösterilir; süre bağlantınıza ve sisteme bağlıdır). Mevcut bir openEMS kurulumunuz varsa **Mevcut bir Python kullan…** ile Fairbeam'i bu kuruluma yönlendirin. Uygulama ardından **Ana ekran** ile açılır. Sonraki açılışlarda bu adım atlanır; yeni sürümler uygulamada sunulur (Yardım › Güncellemeleri denetle).
 
@@ -21,7 +21,7 @@ Kurulum dosyasını [fairbeam.org](https://fairbeam.org) veya [sürümler sayfas
 
 1. **Ana ekran** üzerinde **Yeni tasarım** altında bir ad yazın (örneğin `My patch`), Baskılı grubundaki **Yama anten şablonu** seçeneğini (“Toprak düzlemi üzerinde prob beslemeli yama”) seçin ve **Oluştur ve tasarımcıyı aç** düğmesine tıklayın. Diğer şablonlar çalıştırılmaya hazır parametrik tasarımlardır: **Boş tasarım** (frekans bandı ve bakır içerir, geometri içermez), Temel antenler altında **Yarım dalga dipol**, **Çeyrek dalga monopol** ve **Açık uçlu dalga kılavuzu**; Baskılı altında **Baskılı kılıflı dipol** (867 MHz, toprak düzlemi yok); Devreler altında **Mikroşerit hat (iki portlu)** (FR-4 üzerinde 50 Ω, S11 ve S21 için). Her biri saniyeler içinde simüle edilir; bu kılavuz yama antenle devam eder.
 2. Tasarımcı açılır. Çalışma alanını inceleyin:
-   - üstteki **şerit**: Giriş, Modelleme, Dönüştür, Simülasyon, Optimizasyon, Son işlem;
+   - üstteki **şerit**: Giriş, Modelleme, Dönüştür, Görünüm, Simülasyon, Optimizasyon, Son işlem;
    - soldaki **gezinti ağacı**: tasarım, **Parametreler** (6 adet: `f0`, `W`, `L`, `h`, `G`, `feed`), **Katılar** (Alttaş, Toprak düzlemi, Yama; her birinin şekliyle birlikte), **Malzemeler**, **Portlar** (Port 1, 50 Ω) ve **Sonuçlar** (henüz boş);
    - ortadaki **3B görünüm**: döndürmek için sürükleyin, yakınlaştırmak için kaydırın, görünümü kaydırmak için sağ veya orta düğmeyle sürükleyin; İzometrik / Üst / Ön / Sağ / Alt kamerayı ayarlar, hedef düğmesi (veya Boşluk / F) modeli ekrana sığdırır;
    - sağdaki **Özellikler**: seçtiğiniz öğenin alanları;
@@ -36,7 +36,7 @@ Kurulum dosyasını [fairbeam.org](https://fairbeam.org) veya [sürümler sayfas
 - **Frekans bandı**: GHz cinsinden `f min` ve `f max`. Şablonda tasarım frekansı `f0` = 2,45 GHz çevresinde `f0 * 0.6` ile `f0 * 1.3` kullanılır.
 - **Sınırlar**: simülasyon kutusunun altı yüzü; her biri açık (MUR veya PML), elektrik duvarı (PEC) veya manyetik duvar (PMC) olabilir. Yama şablonunda altı yüzün tamamında MUR kullanılır.
 - **Mesh**: **Hücre / λ** otomatik mesh yoğunluğunu ayarlar; ayrıntılar **Mesh ayarları** bölümündedir. **Mesh yakınsaması…**, mesh'in yeterince ince olup olmadığını kontrol eder (aşağıya bakın); **Mesh görünümü** mesh'i 3B görünümde çizer. Durum çubuğu hücre sayısını ve en küçük hücreyi gösterir.
-- **Portlar**: **Ayrık**, **Dalga kılavuzu** ve **Direnç** bir port veya yük ekler.
+- **Portlar**: **Ayrık** ve **Dalga kılavuzu** bir port; **Toplu eleman ekle…** bir R/L/C yükü ekler. Deneysel koaksiyel portun [kurulumu ve sınırları](COAXIAL-PORTS.md) ayrıca açıklanır.
 - **Monitörler**:
   - **Uzak alan**: listelenen frekanslarda ışıma örüntüsü, yönlülük ve kazanç (şablon bunları `f0` frekansında kaydeder).
   - **Yüzey akımı**: belirttiğiniz frekanslarda metal levhalara yüzey akımı haritaları ekler.
@@ -52,7 +52,8 @@ Alt panelin **Denetimler** sekmesi çalıştırmayı engelleyen sorunları liste
 
 **Çalıştır** düğmesine tıklayın (Simülasyon sekmesi, üstteki Çalıştır düğmesi veya Ctrl/⌘+Enter). **Simülasyonu çalıştır** penceresi şunları gösterir:
 
-- **Motor**: **İş parçacığı** sayısıyla birlikte **CPU (çok iş parçacıklı)** (4 iyi bir varsayılandır) veya openEMS'in GPU sürümü kuruluysa **GPU (Metal veya CUDA sürümü)**;
+- **Çözücü**: bu uygulamada **openEMS** olarak bırakın. Deneysel Elmer seçeneklerinin geometri ve doğrulama sınırları farklıdır; bkz. [Deneysel çözücüler](EXPERIMENTAL-SOLVERS.md).
+- **Motor**: **CPU (çok iş parçacıklı)** veya openEMS'in GPU sürümü kuruluysa **GPU (Metal veya CUDA sürümü)**. CPU için **İş parçacığı** varsayılan olarak **Otomatik** konumdadır: ipucu mesh boyutuna ve fiziksel çekirdeklere göre seçilen sayıyı gösterir. Belirli bir sayıya ihtiyacınız yoksa Otomatik'te bırakın;
 - **S-parametresi örnek noktaları** (varsayılan 801) ve isteğe bağlı **Sonuç adı**;
 - tahmini çözücü süresi.
 
@@ -66,6 +67,7 @@ Alt panelin **Denetimler** sekmesi çalıştırmayı engelleyen sorunları liste
 - **1B Sonuçlar › Smith abağı**, **Empedans**, **VSWR** ve **Verimlilik** (bant boyunca uyumsuzluk verimliliği ile monitörün ışıma ve toplam verimliliği).
 - **Uzak alanlar › 3B örüntü (f = …)**, örüntüyü 3B görünümde model üzerine çizer; yanındaki uzak alan kartından **Yönlülük**, **Kazanç** veya **Gerçekleşen kazanç** seçin; maksimum değeri, kazancı, gerçekleşen kazancı, ışıma ve uyumsuzluk verimliliğini okuyun. **Uzak alan (f = …)** örüntü kesitlerini sekme olarak açar.
 - **2B/3B Sonuçlar › Yüzey akımı** (monitör varsa) metal üzerindeki akım haritasını gösterir. **E alanı (z = … mm, … GHz)** gibi alan düzlemi düğümü (Alan düzlemi monitörü varsa), E veya H haritasını 3B görünümde dB veya doğrusal renk ölçekli bir ısı haritası düzlemi olarak çizer. **2B harita** düğümü bunu eksenler, imleç altında değer okuma ve modelin dış çizgisiyle bir ısı haritası sekmesinde açar; **Faz** / **Canlandır** bir periyot boyunca fazı ve alanı gösterir.
+- **Tablolar › Özet** (veya Son işlem sekmesindeki **Özet**), çalıştırma içeriyorsa rezonansı, en düşük |S11| değerini, bant genişliğini, kazancı ve verimi gösterir. Eksik büyüklükler kullanılabilir gibi gösterilmez.
 - **Tablolar** ve **Günlük**.
 
 Şeridin **Son işlem** sekmesi aynı görünümleri açar. Bir geometri sekmesini (Giriş, Modelleme, …) seçmek veya bir katıya tıklamak, örüntüyü 3B görünümden kaldırıp tasarımı yeniden gösterir.
@@ -96,24 +98,34 @@ Alt panelin **Denetimler** sekmesi çalıştırmayı engelleyen sorunları liste
 
 ## 3. VBA makrosu içe aktarın
 
-**Ana ekran** üzerindeki **VBA makrosunu içe aktar…** (ayrıca Giriş › Tasarım › Makro içe aktar veya masaüstü uygulamasında Dosya › VBA makrosunu içe aktar…), CST uyumlu VBA makrosuyu (`.bas`, `.mcs`) ya da metin olarak kaydedilmiş geçmiş listesini okur. Kaydetmeden önce oluşturulanları ve atlanan veya değiştirilen her komutu satırıyla birlikte bir raporda gösterir. Tasarıma ad verip **Oluştur ve aç** seçeneğini kullanın. Okunan ve okunmayan özellikler: [DESIGNER.md, VBA makrosu içe aktarma](DESIGNER.md#importing-a-vba-macro).
+**Ana ekran** üzerindeki **VBA makrosunu içe aktar…** (ayrıca Giriş › Tasarım › VBA makrosunu içe aktar veya masaüstü uygulamasında Dosya › VBA makrosunu içe aktar…), CST uyumlu VBA makrosunu (`.bas`, `.mcs`) ya da metin olarak kaydedilmiş geçmiş listesini okur. Kaydetmeden önce oluşturulanları ve atlanan veya değiştirilen her komutu satırıyla birlikte bir raporda gösterir. Tasarıma ad verip **Oluştur ve aç** seçeneğini kullanın. Okunan ve okunmayan özellikler: [DESIGNER.md, VBA makrosu içe aktarma](DESIGNER.md#importing-a-vba-macro).
 
 ## 4. Dosyalarınızın konumu
 
-Her şey kullanıcı klasörünüzdeki **çalışma klasöründe**, `Documents/Fairbeam` altında saklanır (Windows: `%USERPROFILE%\Documents\Fairbeam`):
+Masaüstü uygulamasında **Kaydet**, seçtiğiniz konuma `<name>.fb` yazar. **Farklı Kaydet…** ayrı bir proje oluşturur; **Proje aç…** projeyi yeniden açar. Yanındaki `<name>.results/` klasörü kaydedilmiş sonuç paketlerini tutar. Projeyi taşırken, kopyalarken veya paylaşırken `.fb` dosyasıyla bu klasörü birlikte tutun.
+
+Tamamlanan çalıştırma çalışma alanında kullanılabilir kalır. “Yeni sonuçlar hazır” bildirimi çıktığında sonuçları eklemek için projeyi kaydedin; otomatik sonuç ekleme kaydedilmiş tasarım anlık görüntüsünü kullanır, daha yeni düzenlemeleri sessizce kaydetmez. Proje dosyası ayrıntıları sonucun bu anlık görüntüyle eşleştiğini, eski bir tasarıma ait olduğunu, eksik veya geçersiz olduğunu gösterir. Bunlar kimlik denetimleridir; yakınsama kanıtı değildir.
+
+Tasarımı kaldırmak normalde çalışma alanındaki kopyayı kaldırır. Masaüstündeki kaldırma penceresinde **.fb dosyasını ve sonuç klasörünü de mevcut konumlarından kaldır** seçilirse proje ve ona ait sonuçlar, projenin yanındaki `Fairbeam Deleted/` klasörüne taşınır. Kalıcı olarak silinmezler. Kurtarma ve sınırlamalar [Proje dosyaları (.fb)](FB-DOCUMENT.md) sayfasındadır.
+
+### Çalışma klasörü
+
+Yerel çalışma klasörü varsayılan olarak `Documents/Fairbeam` konumundadır (Windows: `%USERPROFILE%\Documents\Fairbeam`). Yalnızca JSON kullanan tasarımları ve Python modellerini de destekler:
 
 | Klasör | İçerik |
 | --- | --- |
-| `models/` | tasarımlarınız (`<name>.design.json`) ve Python modelleri |
-| `projects/` | sonuçlar: her çalıştırma için bir `.json` paketi ve `index.json` |
-| `templates/` | model şablonları |
-| `jobs/` | çalıştırma kuyruğu ve geçmişi |
-| `.sim/` | çalıştırmaların openEMS çalışma verileri |
+| `models/` | Çalışma tasarımları (`<name>.design.json`), taşınabilir `fb_<UUID>` kopyaları ve Python modelleri |
+| `projects/` | Çalışma alanının sonuç paketleri ve `index.json` |
+| `templates/` | Model şablonları |
+| `jobs/` | Çalıştırma kuyruğu durumu ve geçmişi |
+| `.sim/` | Çözücünün çalışma verileri |
+| `renders/<design-id>/` | Uygulamadan kaydedilen render görüntüleri |
+| `model-history/` | Kaydedilmiş veya kaldırılmış tasarım/Python kurtarma kopyaları |
 
-Üstteki dişli düğmesi (**Genel ayarlar**) **Klasörü aç** düğmesiyle **Çalışma klasörü** konumunu, arayüzün **Dil** seçimini (Sistem, English veya Türkçe; yerel menüler dahil) ve metin olarak gösterilen sayıların **Ondalık ayırıcı** ayarını gösterir. Ana ekrandaki örnekler kopyalardır: **Yeni tasarım olarak aç…** bir örnekten kendi tasarımınızı oluşturur; özgün örnek değişmez.
+**Genel ayarlar › Çalışma klasörü** konumu gösterir; **Klasörü aç** bu konumu açar. **Dil** ve **Ondalık ayırıcı**, arayüzü ve gösterilen sayıları etkiler. Ana ekrandaki örnekler salt okunur özgün dosyalardır: **Yeni tasarım olarak aç…** size ait kopyayı oluşturur.
 
 ## 5. Sorun bildirin
 
 **Ana ekran** altındaki **Geri bildirim gönder: Sorun bildir** (veya **Özellik öner**), uygulama sürümü ve işletim sisteminiz doldurulmuş olarak herkese açık [fairbeam-releases/issues](https://github.com/ismailakdag/fairbeam-releases/issues) takip sayfasının bildirim formunu tarayıcınızda açar. Üstteki konuşma balonu düğmesi (**Geri bildirim gönder**) ve Yardım › Sorun Bildir… her ekrandan aynı işlemi yapar. Fairbeam kendiliğinden hiçbir şey göndermez.
 
-Şunları eklemek yararlıdır: yaptıklarınız ve beklediğiniz sonuç, ekran görüntüsü (Giriş › Görünüm › **Ekran görüntüsü** 3B görünümü PNG olarak kaydeder), `models/` altındaki tasarım dosyası ve çalıştırmanın günlüğü (Sonuçlar › çalıştırmanız › Günlük).
+Şunları eklemek yararlıdır: yaptıklarınız ve beklediğiniz sonuç, ekran görüntüsü (Görünüm › Görünüm › **Ekran görüntüsü** 3B görünümü PNG olarak kaydeder), `.fb` projesi ve yanındaki `.results` klasörü (yalnızca JSON ile çalışıyorsanız çalışma alanındaki tasarım) ve çalıştırmanın günlüğü (Sonuçlar › çalıştırmanız › Günlük).

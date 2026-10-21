@@ -11,7 +11,7 @@ import { matchesShortcut, shortcutTable } from "../src/designer/shortcuts.ts";
 import { commandModifier, modifierShortcut } from "../src/lib/shortcut.ts";
 import { listKeyTarget } from "../src/lib/tabKeys.ts";
 import { viewportChangeCloses } from "../src/lib/menuDismiss.ts";
-import { BROWSER_RESERVED, SHEET_ORDER, shortcutSheet } from "../src/designer/shortcutSheet.ts";
+import { BROWSER_RESERVED, MAC_NATIVE_ONLY, SHEET_ORDER, shortcutSheet } from "../src/designer/shortcutSheet.ts";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const read = (p) => readFileSync(join(root, p), "utf8").replaceAll("\r\n", "\n");
@@ -45,6 +45,10 @@ eq(pc.delete.key, "Delete", "Windows/Linux: Delete reads Delete");
 eq(mac.redo.key, "⌘Y / ⇧⌘Z", "macOS: redo reads ⇧⌘Z, not Shift+⌘Z");
 eq(pc.redo.key, "Ctrl+Y / Shift+Ctrl+Z", "Windows/Linux: redo reads Shift+Ctrl+Z");
 eq(mac.save.key, "⌘S", "macOS save label");
+eq(mac.newDesign.key, "⌘N", "native New key equivalent");
+eq(mac.openDocument.key, "⌘O", "native Open key equivalent");
+eq(matchesShortcut("newDesign", key("n", { metaKey: true }), MAC), false, "native New has no duplicate page dispatcher");
+eq(matchesShortcut("openDocument", key("o", { metaKey: true }), MAC), false, "native Open has no duplicate page dispatcher");
 eq(pc.save.key, "Ctrl+S", "Windows/Linux save label");
 eq(mac.run.key, "⌘Enter", "macOS run label");
 eq(pc.run.key, "Ctrl+Enter", "Windows/Linux run label");
@@ -62,19 +66,25 @@ check(/import \{ SHORTCUTS \} from "\.\/shortcuts"/.test(read("src/designer/Shor
   const sheetEntries = Object.fromEntries(Object.entries(pc).map(([id, s]) => [id, { label: s.label, context: s.context, key: s.key }]));
   const extraIds = ["applyBoolean", "drawSolid", "base", "cameras", "mainTabsLocal", "closeShown", "orbit", "select3d", "treeNav", "treeMulti"];
   const extraEntries = Object.fromEntries(extraIds.map((id) => [id, { label: id, context: "", key: "x" }]));
-  const groupsOf = (desktop) => shortcutSheet(sheetEntries, extraEntries, desktop);
+  const groupsOf = (desktop) => shortcutSheet(sheetEntries, extraEntries, desktop, false);
   const web = groupsOf(false), app = groupsOf(true);
   eq(web.map((g) => g.group).join(","), "edit,view,panels,tools,boolean,mouse", "groups: Edit, View, Panels, Tools, Boolean, Mouse");
   const placed = Object.values(SHEET_ORDER).flat();
   for (const id of Object.keys(pc)) eq(placed.filter((x) => x === id).length, 1, `shortcut ${id} is listed once in the sheet`);
   for (const id of extraIds) eq(placed.filter((x) => x === id).length, 1, `extra row ${id} is listed once`);
-  eq(web.flatMap((g) => g.rows).length, Object.keys(pc).length + extraIds.length, "every row is shown in the browser too (none is hidden)");
+  eq(web.flatMap((g) => g.rows).length, Object.keys(pc).length + extraIds.length - MAC_NATIVE_ONLY.size, "Windows/browser do not advertise unavailable AppKit-only shortcuts");
+  const macWeb = shortcutSheet(mac, extraEntries, false, true).flatMap(g => g.rows);
+  const macApp = shortcutSheet(mac, extraEntries, true, true).flatMap(g => g.rows);
+  for (const id of MAC_NATIVE_ONLY) {
+    eq(macWeb.find(row => row.id === id)?.desktopOnly, true, `${id}: browser Mac marks native shortcut desktop-only`);
+    eq(macApp.filter(row => row.id === id).length, 1, `${id}: native Mac sheet lists the command once`);
+  }
   eq(web[0].rows.slice(0, 3).map((r) => r.id).join(","), "save,undo,redo", "Edit starts with the most used commands");
   eq(web[1].rows[0].id, "fit", "View starts with Fit");
   const reserved = web.flatMap((g) => g.rows).filter((r) => r.desktopOnly).map((r) => r.id).sort().join(",");
   eq(reserved, "close,mainTabs,transform", "in the browser: Ctrl+W, Ctrl+Tab and Ctrl+T are marked desktop app only");
   eq(app.flatMap((g) => g.rows).some((r) => r.desktopOnly), false, "the desktop app marks nothing");
-  for (const id of BROWSER_RESERVED) check(/Ctrl\+(T|W|Tab)\b/.test(pc[id].key), `${id} is a browser chord (${pc[id].key})`);
+  for (const id of BROWSER_RESERVED) check(/Ctrl\+(T|W|Tab|N|O)\b/.test(pc[id].key), `${id} is a browser chord (${pc[id].key})`);
   const help = read("src/designer/ShortcutHelp.tsx");
   check(/t\(`shortcuts\.group\.\$\{g\.group\}`\)/.test(help) && /<h3 class="shortcut-group-title"/.test(help), "each group has a heading");
   check(/<Show when=\{row\.desktopOnly\}><span class="shortcut-note" title=\{t\("shortcuts\.desktopOnly\.title"\)\}>\{t\("shortcuts\.desktopOnly"\)\}<\/span><\/Show>/.test(help), "a reserved chord says desktop app only, with the reason as tooltip");

@@ -65,7 +65,15 @@ assert.doesNotMatch(roadmap, /interrupted downloads resume|No lost work|same res
 assert.match(roadmap, /partial downloads restart/);
 const renderedRoadmap = renderRoadmap(JSON.parse(roadmap));
 assert.match(renderedRoadmap, /Availability refers to the stated release; future plans may change/);
-assert.doesNotMatch(renderedRoadmap, /class="rm-refs"/);
+assert.match(renderedRoadmap, /href="https:\/\/github\.com\/ismailakdag\/fairbeam\/issues\/168"/, "portable project entry links its verified PR");
+assert.match(renderedRoadmap, /href="https:\/\/github\.com\/ismailakdag\/fairbeam\/issues\/228"/, "planned feature links its current issue");
+assert.doesNotMatch(renderRoadmap({ ...JSON.parse(roadmap), issueUrl: null }), /class="rm-refs"/, "unpublished references remain hidden");
+const invalidLegacyRoadmap = JSON.parse(roadmap);
+const legacyArea = invalidLegacyRoadmap.areas.find(area => area.legacySnapshot);
+assert.ok(legacyArea, "historical roadmap snapshot is explicit");
+assert.ok(invalidLegacyRoadmap.areas.filter(area => area.legacySnapshot).every(area => area.items.every(item => !item.links?.length)), "unverified legacy numbers cannot infer releases");
+legacyArea.items[0].links = [180];
+assert.throws(() => renderRoadmap(invalidLegacyRoadmap), /legacy snapshot references are unverified/);
 assert.match(roadmap, /unless you select Delete the application data; workspaces remain/);
 const cards = [...home.matchAll(/<a class="example-card" href="(app\/\?example=([^"]+))">([\s\S]*?)<\/a>/g)];
 assert.equal(cards.length, 3);

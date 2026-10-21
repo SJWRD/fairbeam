@@ -9,7 +9,7 @@ import { StatusBadge } from "../runner/status";
 import { draft, file } from "./store";
 import { useModal } from "../lib/dialog";
 import { parseNumber } from "../lib/numberField";
-import { fmt, t } from "../i18n";
+import { fmt, locale, t } from "../i18n";
 import NumberField from "../components/NumberField";
 import LineChart, { type Series } from "../charts/LineChart";
 import ElmerAntennaResults from "./ElmerAntennaResults";
@@ -79,7 +79,7 @@ export default function ResearchDialog() {
     const native = (window as unknown as { __TAURI_INTERNALS__?: { invoke: (command: string, args: { link: string }) => Promise<unknown> } }).__TAURI_INTERNALS__;
     if (!native) return;
     event.preventDefault();
-    void native.invoke("open_external_link", { link: "research" }).catch(e => setError(t("about.error.openLink", { error: String(e) })));
+    void native.invoke("open_external_link", { link: locale() === "tr" ? "research-tr" : "research" }).catch(e => setError(t("about.error.openLink", { error: String(e) })));
   };
   const [historyError, setHistoryError] = createSignal("");
   const [runs, setRuns] = createSignal<Job[]>([]);
@@ -202,14 +202,14 @@ export default function ResearchDialog() {
         <Show when={!researchResultsOnly()}>
         <form id="research-form" class="research-options stack-lg" onSubmit={submit}>
           <label class="dz-field"><span class="dz-label">{t("research.backend")}</span><select ref={first} class="rp-select dz-input" value={backend()} disabled={!!operation()} onChange={e => changeBackend(e.currentTarget.value as Backend)}><option value="periodic">{name("periodic")}</option><option value="elmer">{name("elmer")}</option></select></label>
-          <p class="note">{t(backend() === "periodic" ? "research.periodic.scope" : "research.elmer.scope")}</p>
+          <p class="note">{t(backend() === "periodic" ? "research.periodic.scope" : "research.elmer.scope", { x: fmt.fixed(0.10, 2), y: fmt.fixed(0.05, 2), z: fmt.fixed(0.20, 2) })}</p>
           <div class="stack research-guide">
             <p class="note">{t(`research.${backend()}.setup`)}</p>
             <details><summary>{t("research.howTo")}</summary><ol>
               <li>{t(`research.${backend()}.step1`)}</li>
-              <li>{t(`research.${backend()}.step2`)}</li>
+              <li>{t(`research.${backend()}.step2`, { mesh: fmt.num(0.025), fineMesh: fmt.num(0.0125, 4) })}</li>
               <li>{t("research.step3")}</li>
-            </ol><a href="https://github.com/ismailakdag/fairbeam/blob/main/docs/RESEARCH-SOLVERS.md" target="_blank" rel="noopener noreferrer" onClick={openGuide}>{t("research.guide")}</a></details>
+            </ol><a href={`https://fairbeam.org/docs/${locale() === "tr" ? "tr/" : ""}experimental-solvers.html`} target="_blank" rel="noopener noreferrer" onClick={openGuide}>{t("research.guide")}</a></details>
           </div>
           <label class="dz-field"><span class="dz-label">{t(backend() === "periodic" ? "research.path.executable" : "research.path.install")}</span><input class="rp-input dz-input mono" autocomplete="off" spellcheck={false} value={path()} disabled={!!operation()} onInput={e => { probeVersion++; setPath(e.currentTarget.value); setCapability(null); }} /><span class="note">{t(`research.${backend()}.pathHint`)}</span></label>
           <Show when={backend() === "elmer" && runtime()?.supported && runtime()}>{rt => <div class="status-block research-runtime" role="status">
@@ -236,7 +236,7 @@ export default function ResearchDialog() {
               ]}>{field => <label class="dz-field"><span class="dz-label">{t(`research.${field.key}`)}</span><NumberField class="rp-input dz-input mono" required min={field.key === "front" || field.key === "back" ? undefined : "0.001"} max={field.key === "front" || field.key === "back" ? undefined : "1000"} value={field.value()} aria-invalid={parseNumber(field.value()) === null} onInput={e => field.set(e.currentTarget.value)} /></label>}</For>
             </div>
             <label class="dz-field"><span class="dz-label">{t("research.cpw")}</span><select class="rp-select dz-input mono" value={cpw()} onChange={e => setCpw(Number(e.currentTarget.value))}><option>20</option><option>30</option><option>40</option></select></label>
-            <Show when={invalid()}><p class="note" role="alert">{t("research.invalid")}</p></Show>
+            <Show when={invalid()}><p class="note" role="alert">{t("research.invalid", { fmin: fmt.num(0.001) })}</p></Show>
           </Show>
           <Show when={error()}><div class="status-block status-critical" role="alert"><CircleAlert size={14} /><span>{error()}</span></div></Show>
         </form>

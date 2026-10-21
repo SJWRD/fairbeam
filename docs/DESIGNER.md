@@ -16,10 +16,7 @@ designer.
 
 ## Start screen
 
-General settings → Appearance offers two coordinated themes: **Forest** (dark green) and
-**Academic** (light blue). They apply interface, accent, chart and viewport colors together,
-reset custom color overrides, and preserve simulation preferences. Individual appearance
-controls and Reset appearance remain available.
+For coordinated themes and display settings, see [Appearance](APPEARANCE.md).
 
 ![Start screen: a new design, your designs, the Python models and the examples](designer/start.png)
 
@@ -156,7 +153,7 @@ directivity rather than its gain.
 - **Ribbon**: one row of seven tabs, **Home**, **Modeling**, **Transform**, **View**, **Simulation**,
   **Optimize** and **Post-processing**. The groups of a tab:
   - Home:
-    - Project: Start, Import macro, Import PCB, Save, Close, Shortcuts.
+    - Design: Start, Import VBA macro, Import PCB, Save, Save as…, Close, Shortcuts.
     - Edit: History (the modeling history), Undo, Redo, Duplicate, Delete.
   - Modeling:
     - Tools: Boolean (Add, Subtract, Intersect, Insert), Pick points, Measure, Align, Align faces,
@@ -179,13 +176,13 @@ directivity rather than its gain.
     - Boundaries.
     - Mesh: the Cells / λ field (while there is room), Mesh settings, Mesh
       convergence…, Mesh view.
-    - Ports: Lumped, Waveguide, Add lumped element….
+    - Ports: Discrete, Waveguide, Add lumped element….
     - Monitors: Far field, Surface current, Efficiency, Field plane.
-    - Solver: Solver limits.
+    - Solver: Experimental solvers, Solver limits.
     - Run.
   - Optimize: Parameter sweep, Optimizer.
   - Post-processing: the result tabs to open (Summary, S-parameters, Smith, Efficiency, Pattern, 3D pattern,
-    Currents, Field plane, Field map), Farfield (the pattern quantity, only while a pattern is shown), and
+    Currents, Field plane, Field map), Far field (the pattern quantity, only while a pattern is shown), and
     Report and export (PDF report, Package, Python).
 
   The ribbon remembers the last tab, except that a design with no parts opens on Modeling. Showing a result switches to Post-processing, and going back
@@ -194,7 +191,7 @@ directivity rather than its gain.
   labels (the tooltip keeps the name) and then whole groups fold into drop-down buttons, so every
   command stays reachable.
 - **Navigation tree** (left): the design and its **Parameters** row (it opens the Parameters tab
-  of the dock), then **Components**, **Materials**, **Ports**,
+  of the dock), then **Solids**, **Materials**, **Ports**,
   **Lumped elements** and **Results**. A red or amber mark shows that a check points at that item.
   The simulation settings are not in the tree: they are the Simulation tab of the ribbon. See
   [The navigation tree](#the-navigation-tree).
@@ -237,7 +234,7 @@ directivity rather than its gain.
     and **Preview failed** with a Retry button when the server itself could not build it;
   - the run server state (a click looks for the server again; the bar also checks it every ten seconds).
 
-**Close** in the Project group (or **File › Close Design** in the desktop app) releases the open
+**Close** in the Design group (or **File › Close Design** in the desktop app) releases the open
 design and returns to Start. With unsaved changes, choose **Save**, **Don't save**, or **Cancel**.
 A failed save leaves the design open and explains the problem. The saved design remains under
 **Your designs** so it can be opened again. Close does not cancel a running simulation.
@@ -250,12 +247,18 @@ Shortcuts (or ? in the designer) lists them all.
 
 ### The navigation tree
 
+Right-click **Solids** and choose **New component** to create and name an empty folder.
+Folders are saved even while empty. Drag parts onto the folder or use **Move to component**
+in their context menu. Folder operations affect organization; each part keeps its own material
+and ordered transforms. The Transform panel shows actual translucent result surfaces even when
+coplanar with the original, with a rotation-axis/center or mirror-plane reference.
+
 ![The navigation tree with a run open under Results, and its 3D pattern in the 3D view](../landing/media/designer-pattern.jpg)
 
 - **Parameters**: one row with the number of parameters; a click opens the Parameters tab of the
   dock.
-- **Components**: the parts with their shapes, in component folders when they have one. Drag a part
-  onto a folder (or onto the Components heading for the top level) to move it; right-click a part or
+- **Solids**: the parts with their shapes, in component folders when they have one. Drag a part
+  onto a folder (or onto the Solids heading for the top level) to move it; right-click a part or
   shape for its menu.
 - **Materials**, **Ports** and **Lumped elements** (resistors); the + on a heading adds one.
 - **Results**: one node per run of the design, newest first, labeled with its name, time and
@@ -298,6 +301,15 @@ Shortcuts (or ? in the designer) lists them all.
   `patch_antenna_impedance_1.5-3GHz_2026-10-07T10-22-01+0300.csv`), with the frequency of a sweep or
   of the selected far-field cut, the run time written without colons, and only letters, digits and
   `_ . + -`, so the name is valid on Windows and macOS. Touchstone files use the view `sparams`.
+
+The result toolbar and the exported package use different CSV layouts. Toolbar CSV has
+human-readable headers with units, efficiency in percent, CRLF line endings, and empty cells for
+missing or non-finite values. Package CSV uses ASCII `snake_case` headers, efficiency fractions
+(0–1), LF line endings, and `inf`, `-inf` or `nan` for non-finite values; missing values are empty.
+Both use comma-separated columns and a decimal point, regardless of the UI language. In Excel
+with Turkish or other decimal-comma settings, import with **Data › From Text/CSV** and choose
+comma as the delimiter and decimal point for numeric conversion; the files contain no `sep=`
+directive. Compare the header and units before combining the two exports.
 
 The **Filter** box at the top keeps the items whose name or detail contains every word typed, with
 the folders above them; Escape clears it. The tree works from the keyboard: Up/Down move, Right
@@ -484,10 +496,24 @@ A part's properties also add more shapes to it. The kinds:
   drawing tool; it comes from an example (the pyramidal horn) or a JSON file, and Properties shows
   its vertex and face counts and the vertices read-only. The build (CSXCAD `AddPolyhedron`) and the
   3D view fan every face into triangles, oriented outward by the enclosed volume, so a mirrored copy
-  still builds. Part transforms (move, rotate, scale, mirror, copies) map the vertices. The VBA macro format has no
-  polyhedron, so the macro skips it and lists a warning; the Python export writes
+  still builds. Part transforms (move, rotate, scale, mirror, copies) map the vertices. The VBA macro export writes companion ASCII STL files (`<macro name>_<solid>.stl`) beside the `.bas`, in the macro unit with transforms applied, and imports them with their materials. Keep the files together: the macro uses `STL_FOLDER` if set, otherwise the open model's root folder, and asks for a folder if the files are missing. Fairbeam can read these same companion files back. Non-finite geometry or a singular transform is still skipped with a warning. The Python export writes
   `add_polyhedron(...)` with a small helper. The checks use its bounding box, and refuse bad
   indices (`polyhedron`) or vertices all in one plane (`polyhedron-flat`).
+
+### Outline corner round and bevel
+
+Right-click a rectangular sheet or brick (or its selected shape) and choose **Round / bevel
+outline corners…**. Select an axis and a radius or setback. For a sheet the axis must be its
+normal. For a brick the four edges parallel to that axis are treated; the top and bottom rims
+remain sharp. The size must be positive and less than half the shorter outline side.
+
+This is a geometric operation: bevels become eight-point polygons and rounds use 16 chords per
+quarter circle. Sheets become native polygons and bricks become native polygon extrusions. The
+preview, mesh, Python and geometry exports use those same points. Apply stores the evaluated
+dimensions at the current parameter values, retains the part's material and transforms and is
+one undo step. Cuts and live Boolean history must first be materialized. Arbitrary 3D edge
+fillets, top/bottom rim blends and free-form CAD surfaces are not supported by this tool.
+
 
 ### Drawing on the work plane
 
@@ -560,6 +586,9 @@ optional top-level `wcs` field (`normal`, `origin` as three expressions, `angle`
 field open with the global WCS, the server ignores the field, and geometry never depends on it.
 Every WCS change is one undo step. Unresolved or nonfinite origins are reported and cannot be
 committed by the shape dialog or mouse drawing; correct them or their parameters first.
+
+
+
 
 ### Transforms
 
@@ -704,8 +733,8 @@ operand (the sheets would become polygons); use a rectangle cut or apply the cut
 
 ### Ports and resistors
 
-Ribbon Simulation › Ports › **Lumped** or **Waveguide** adds a port; its properties switch it
-between **Lumped** and **Waveguide**.
+Ribbon Simulation › Ports › **Discrete** or **Waveguide** adds a port; its properties switch it
+between **Discrete** and **Waveguide**.
 
 - **Lumped port**: a number, an impedance, a start and stop point and the current direction
   (x, y or z). A probe feed runs from the ground plane to the patch: start and stop differ only
@@ -718,7 +747,7 @@ between **Lumped** and **Waveguide**.
   port so the backward wave is absorbed.
 - "Excited (driven) port" chooses whether a port is driven; with several driven ports, Fairbeam runs
   once per port and stores the S-matrix ([MULTIPORT.md](MULTIPORT.md)).
-- **Resistor** (Simulation › Ports › Resistor): a lumped resistor between two points, for terminations and loads.
+- **Lumped element** (Simulation › Ports › Add lumped element…): a lumped resistor between two points, for terminations and loads.
 
 **Grouped discrete ports (opt-in).** In a lumped port's properties, **Add grouped feed** adds a
 physical feed while keeping one logical port number, excitation selection and reference
@@ -750,6 +779,51 @@ an unbalanced field. These format and normalization tests establish no mesh-conv
 for Examples 7.7 or 7.8.
 
 Designs use the automatic mesh; a hand-made mesh needs a Python model ([MODELS.md](MODELS.md)).
+
+The Ports and Lumped elements **+** actions open a creation form. Enter both endpoints, the
+current/propagation direction and the electrical settings; **Create** commits one undo step.
+Cancel leaves the design unchanged. Discrete ports use a small direction arrow in the viewport.
+Existing ports and elements remain editable in Properties, including picked endpoints.
+
+A discrete port's physical openEMS source/termination uses a positive real resistance. Its
+optional **Complex power-wave reference** is postprocessing metadata: the Kurokawa
+coefficient is `(Zin - conj(Zref)) / (Zin + Zref)`, requiring `Re Zref > 0`. The Impedance result
+shows the match and `1 - |Γ|²` at the middle frequency sample. Raw result bundles retain separate
+complex power-wave coefficients across the frequency grid. Native S-parameters, their Smith
+chart, the physical source and multiport matrices retain their original real reference. This
+reference does not install a physical load. For a passive equivalent circuit, use an
+R/L/C load; a constant imaginary impedance is not a broadband causal time-domain element.
+
+Lumped elements support any positive R (Ω), L (H) and C (F) combination, with absent branches
+left empty, and **Series** or **Parallel** topology. Native RLC requires CSXCAD/openEMS 0.37 or
+later; older runtimes report the limitation instead of approximating it. Saved `resistors`
+arrays still work, with optional `L`, `C` and `topology` fields. Python export and readback retain
+them. The VBA macro exports every element as a `LumpedElement` with its R, L and C (a zero value is an
+absent component) as a series or parallel RLC, and the macro import reads them back.
+The [RF validation record](benchmarks/rf-rlc-workflows/README.md) distinguishes native API support
+from circuit-response agreement: the tested parallel circuit passed its 10% criterion, while
+the series circuit did not. Series numerical accuracy remains an open validation item.
+
+Waveguide setup supports the rectangular TE modes offered by openEMS, with explicit aperture,
+excitation/probe endpoints and propagation direction. General Bloch/Floquet ports, oblique
+periodic excitation and higher diffraction-order extraction are not implemented. A normal
+incidence PEC/PMC unit-cell fixture is a restricted symmetry model, not general Floquet support.
+
+Dielectrics also expose positive isotropic, loss-free, frequency-independent relative
+permeability μr. Magnetic loss, anisotropic tensors and dispersive ferrites are not represented.
+
+Native APIs: [CSXCAD RLC properties](https://docs.openems.de/en/latest/concepts/properties.html);
+reference convention: [scikit-rf power-wave definitions](https://scikit-rf.readthedocs.io/en/latest/examples/networktheory/Working%20with%20Complex%20Characteristic%20Impedances.html).
+
+The optional target-impedance load helper in RLC creation converts target `Z = R + jX` at a
+positive reference frequency into a physical passive parallel equivalent. With
+`ω = 2πf`, it fills `Rp = (R² + X²)/R`, and either `C = -X/[ω(R² + X²)]`
+for negative reactance or `L = (R² + X²)/(ωX)` for positive reactance. Zero
+reactance gives only the resistor. The target requires positive R; component
+values remain SI Ω/H/F. This matches only at the selected frequency, does not
+create a constant broadband imaginary impedance, and never changes the port's
+power-wave reference. Filling is local to the form; Create is one undoable edit.
+
 
 ## Checks
 
@@ -916,6 +990,10 @@ without the dialog.
   A thin low-loss substrate (RT5880 at 0.254 mm rings for ~50 ns, ~280,000 timesteps) needs that room;
   the `slow-ringdown` check warns when an explicit limit is below the estimated ring-down.
 
+**Experimental Elmer FEM.** Simulation › Experimental solvers opens setup and limitations. The Elmer choices in Run do not automatically replace openEMS. Read the [experimental solver guide](EXPERIMENTAL-SOLVERS.md) first.
+
+**Coaxial TEM port (experimental).** This port-type choice needs a compatible runtime and explicit acceptance. [Coaxial ports](COAXIAL-PORTS.md) describes supported geometry and numerical qualification criteria that are still unmet.
+
 ## Mesh view
 
 Ribbon Simulation › **Mesh view** (or a click on the cell count in the status bar) shows the FDTD mesh
@@ -990,7 +1068,8 @@ simulation** dialog:
 
 - **Engine**: **CPU (multi-threaded)**, or **GPU (Metal or CUDA build)** when the server has that
   build ([GPU.md](GPU.md)).
-- **Threads** for the CPU engine (4 is a good default).
+- **Solver**: openEMS is the default; the Elmer options are [experimental](EXPERIMENTAL-SOLVERS.md).
+- **Threads** for the CPU engine: **Auto** by default, chosen from mesh size and physical cores (the hint shows the number), or a count from 1 to the available core count.
 - **S-parameter sample points**: the S-parameter samples over the band (801 by default, 11 to
   20001).
 - **Result name**: leave blank to keep a unique bundle for every run (model id plus run suffix). A run never replaces an earlier one: a name that is already taken gets a short id added.
@@ -1202,9 +1281,62 @@ folder, preserving their names, then reopen the copied `.fb`. Never overwrite an
 or copy only the `.fb` when you need its recorded results. This portable-project recovery is
 separate from the workspace design backups above.
 
+## Views, screenshots and renders
+
+### Export the current view
+
+The header's **Export…** menu follows the visible workspace. In Design's 3D tab, it offers
+geometry formats, the current unsaved design JSON and Python. Geometry export is unavailable
+for an empty design. In a result tab, CSV and Touchstone use the toolbar's current result,
+S-parameter selection and comparisons. Figure SVG and PNG capture the plotted charts with
+their visible quantities and traces. In Drawing, the menu uses that drawing's SVG, PDF and PNG
+export actions. A format without data is disabled with the reason in its tooltip.
+
+The camera button and View ribbon Screenshot capture the visible 3D view, chart or technical
+drawing. They are disabled on Start and for empty geometry or a result view without a supported
+figure. They never capture a hidden 3D canvas behind a result tab or drawing. Download requests,
+saved paths, cancellations and errors also appear in the app's global notice.
+
+### Rendered view and Render image
+
+The 3D view's **Rendered** button (next to the camera presets, and in the View ribbon's Render
+group) shows the design as a render: physically based materials, a studio environment with key,
+fill and rim light, a soft ground shadow, and the ports. Copper, gold, silver, tin, nickel,
+aluminium, brass and steel are metallic with their own colour and roughness; a PEC or an unknown
+metal is copper. FR-4 is a translucent yellow-green laminate, Rogers, Taconic and PTFE laminates
+are cream, alumina is white, any other dielectric is a neutral beige; air, vacuum and cut-outs are
+not drawn. A part's own **Color** wins over these defaults and keeps the metallic finish, and an
+**Opacity** below 100 % draws it see-through (plain transparency instead of the laminate's tint). A
+material is recognised by its name or library entry in the designer, and by its conductivity,
+permittivity and loss in a result or an example (the bundle does not carry names). The table is
+`src/render/materials.ts`, plain data that the Blender renderer mirrors.
+
+Orbit, pan, zoom and the camera presets work as usual, edits update the render, and switching back
+restores the modelling view exactly (selection, see-through dielectrics, edges). The same button is
+in the Results and Examples 3D view. The toolbar under the presets sets the ports (**Connector**: an
+SMA where one fits, otherwise the marker; **Marker**: a small red bead and rod; **Hidden**), the ground
+shadow, a green solder mask on PCB laminates, and a dark background.
+
+A connector fits a lumped port that feeds through a board: at a board edge (within about 2 mm or 3 %
+of the board) an edge-launch SMA points out of that edge with its pin on the trace; otherwise, with
+free space beyond a ground plane, a bottom-mount SMA sits under the ground plane with its pin up the
+port. A dipole's gap in free air, a port between two traces, and a ground plane smaller than the
+6.35 mm hex get the marker. Waveguide ports show a thin flange outline, lumped elements a small
+SMD body.
+
+**Render image…** (View ribbon, the rendered-view toolbar and the header's **Export…** menu) draws
+pictures offscreen and saves PNGs into the workspace folder `renders/<design-id>/` as
+`<design>_<angle>_<timestamp>.png` (a taken name gets `-2`, `-3`, so no render is overwritten; with no
+server the browser's download is used). Angles: Isometric, Top, Front, Right, Back, Left, Bottom and the
+current view, any number in one go. Resolution: 1920×1080, 3840×2160 or custom (64 to 8192 px).
+Background: transparent, studio or dark. Also ports, solder mask, ground shadow, perspective or
+orthographic, and a quality (Draft: none, Standard: 2×, High: 3× supersampling, always with
+multisampling and held to the GPU's limits). The pictures show as thumbnails with **Copy image**; **Open
+folder** opens the folder in the system's file manager. The renderer and its code load on first use.
+
 ## Files
 
-- **Where**: designs are saved in the run server's models folder, next to the Python models.
+- **Where**: desktop Save writes a portable `.fb` project where you choose, with saved results in the adjacent `.results` folder. Move them together. JSON-only designs, portable workspace copies and Python models also live in the workspace `models/` folder; see [Project files (.fb)](FB-DOCUMENT.md).
   Repository checkout: `python/models/`. Desktop app: `models/` in the workspace, `~/Documents/Fairbeam`
   on macOS and `%USERPROFILE%\Documents\Fairbeam` on Windows.
 - **Saving**: a changed workspace design save keeps its previous version under
@@ -1289,9 +1421,19 @@ separate from the workspace design backups above.
   512 KB size limit, one at a time, and `FDTD.Run` / `Simulation.run` raise instead of starting the
   solver. This is not a sandbox: the script can do whatever Python can, so apply only your own code.
 
+Python export writes `FAIRBEAM_ORGANIZATION`, containing only optional `components`
+folder paths and part-name-to-component assignments. Import/apply restores assignments
+using the actual source CSXCAD property of each read-back group, only when that
+property name is unique. Rotated copies split into groups keep their source folder;
+a literal name ending in `[2]` is never interpreted as a copy. Removed or
+renamed parts are not recreated from metadata. Python modules without this constant retain
+the existing import behavior. Folder-list paths must be non-empty slash-separated names;
+legacy part paths retain their existing empty-segment warning.
+
+
 ## Importing a VBA macro
 
-**Import VBA macro…** (Start screen, Home › Project › Import macro, File › Import VBA macro…) reads a
+**Import VBA macro…** (Start screen, Home › Design › Import VBA macro, File › Import VBA macro…) reads a
 CST-compatible VBA macro (`.bas`, `.mcs`) or a history list saved as text and shows the import
 report before anything is saved: what was created, and every command that was not imported or was
 changed on the way, with its line. Name the design and **Create and open** saves it and opens it
@@ -1381,7 +1523,7 @@ unplated holes, routed slots.
 
 ### The Import PCB artwork dialog
 
-**Import PCB artwork…** (Start screen, Home › Project › Import PCB, File › Import PCB Artwork… in the
+**Import PCB artwork…** (Start screen, Home › Design › Import PCB, File › Import PCB artwork… in the
 desktop app) does the same with a form. Choose the files or drop them on the dialog (up to 12 files,
 8 MB each and 16 MB together; they are read in the page and sent to the run server, which saves
 nothing until you create the design).
@@ -1413,54 +1555,9 @@ substrate, thickness, eps_r, tan_d, f0, units, chord_tol, margin, origin}}`, ans
 report, layers, checks}`), and `POST /api/designs` with `pcb: {files, options}` creates the file.
 Other files, bad numbers or too many files answer 422 (413 beyond the size limits).
 
-## Scenario checks
-
-Focused checks are `npm run check:eta-presentation` and `npm run check:run-profiles`
-(pure logic), plus `npm run check:modal-focus` and `npm run check:run-profile-dialog` (temporary
-Vite/run-server stacks, Chrome and the Python runtime with openEMS required; no solver runs).
-The opt-in `scripts/check-home-accessibility.mjs` uses intercepted API fixtures against a running
-Vite server; see its header for environment variables. It covers compact layouts, the header menu,
-project search/sort/favorites, failure states, and desktop panel preference restoration.
-
-`npm run check:scenarios` drives realistic first-time tasks through the real UI in headless Chrome,
-each in English and in Turkish, and stops on the first thing a user would trip over. It is heavier
-than `check:designer` (about 3 minutes, one coarse solver run) and is not part of it.
-
-- **S1** builds a patch from the empty design using only the UI: an FR4 brick, a ground sheet and a
-  patch, a slot cut with right-click › Boolean › Subtract ›, a mirrored solid through the Transform dialog's
-  live preview, the face-extrude preview, a discrete port and the band, Color… on a solid and on a
-  component, Save and a reload, then **one coarse run** (see below) and its S-parameters and Summary.
-- **S2** imports a VBA macro (`examples/cst/patch-antenna.bas`) and PCB artwork
-  (`python/tests/fixtures/pcb/*.gtl, *.gko`) and checks that the solids and the report appear.
-- **S3** opens the Sweep dialog (the default range is ±10 %, the submission is captured, never
-  sent), the Optimizer (its validation messages) and Simulation settings (Discard).
-- **S4** copies two bundled example bundles as runs of a design (one with a synthetic field map) and
-  checks the Summary with Δ vs A, Copy data and CSV, the run's Properties, the Field map with Phase
-  and Animate, and Retry after a failed result load.
-- **S5** opens the Python panel, edits a parameter value in the script and Applies it (one undo step),
-  applies a script that raises (the line is named and the design stays) and leaves Edit with unapplied
-  changes (the confirmation).
-- **S6** creates a Python model from Start, opens its linked Design with the source in the Python
-  panel, then returns to Start and confirms **Open as Design** reuses that Design without making a
-  duplicate.
-- **S7** checks repeated transform previews, a single Apply and undo, component-wide transforms,
-  moving parts between component folders, independent grid visibility and local drawing frames.
-
-Every step asserts the expected state and audits the page: no element overflows its container, no
-clipped text without a tooltip, no raw i18n keys, no dialog outside the window, and no console error
-or warning (which includes the `[i18n]` missing-key warning). A failing step saves a screenshot
-under `$TMPDIR/fairbeam-scenario-failures/`. The audit checks itself first on a page with known faults.
-
-The runner starts Vite and a run server on free ports over a temp folder (a copy of `public/` whose
-`projects/` is also the server's `--projects`, because Vite serves result files from its public
-folder while the server writes into `--projects`; a folder elsewhere fails to load, see
-[RUN-SERVER.md](RUN-SERVER.md)) and stops both by PID at the end. The solver run takes the
-`/tmp/fairbeam-sim.lock` directory (`mkdir` takes it, `rmdir` releases it) and runs at `nice -n 10`; when
-the lock is held, or with `--skip-run`, the run is skipped. Options: `S1 S3` (only those scenarios),
-`--lang en|tr`, `--skip-run`; `FAIRBEAM_CHROME` and `FAIRBEAM_PYTHON` point at another Chrome or
-python. The checks that a browser cannot do are in [DESKTOP-CHECKLIST.md](DESKTOP-CHECKLIST.md).
-
 ## Known limitations
+
+- **Windows .fb association.** If Fairbeam is absent from the first Open with list, follow the [opening steps](WINDOWS.md#known-limitations).
 
 - **Lossless horn power balance.** The shipped pyramidal horn is marked lossless. Its reported
   radiation efficiency is 100 % by construction when the measured power balance passes the
@@ -1471,6 +1568,8 @@ python. The checks that a browser cannot do are in [DESKTOP-CHECKLIST.md](DESKTO
 - **Unsigned Windows installer.** The macOS app is signed and notarized and opens with
   a double-click, but the Windows installer is not code-signed: SmartScreen warns on the first run
   (More info › Run anyway; [DESKTOP.md](DESKTOP.md)).
+
+Contributor scenario checks are in the [check guide](CHECKS.md#scenario-checks).
 
 ## Feedback
 
@@ -1485,151 +1584,3 @@ browser:
 The app sends nothing by itself and puts nothing else into the link. Attach the design file or a log
 if they help, and remove anything private first. In the desktop app the local run server opens the
 system browser, since the app window does not open web pages itself.
-
-### Outline corner round and bevel
-
-Right-click a rectangular sheet or brick (or its selected shape) and choose **Round / bevel
-outline corners…**. Select an axis and a radius or setback. For a sheet the axis must be its
-normal. For a brick the four edges parallel to that axis are treated; the top and bottom rims
-remain sharp. The size must be positive and less than half the shorter outline side.
-
-This is a geometric operation: bevels become eight-point polygons and rounds use 16 chords per
-quarter circle. Sheets become native polygons and bricks become native polygon extrusions. The
-preview, mesh, Python and geometry exports use those same points. Apply stores the evaluated
-dimensions at the current parameter values, retains the part's material and transforms and is
-one undo step. Cuts and live Boolean history must first be materialized. Arbitrary 3D edge
-fillets, top/bottom rim blends and free-form CAD surfaces are not supported by this tool.
-
-Right-click **Components** and choose **New component** to create and name an empty folder.
-Folders are saved even while empty. Drag parts onto the folder or use **Move to component**
-in their context menu. Folder operations affect organization; each part keeps its own material
-and ordered transforms. The Transform panel shows actual translucent result surfaces even when
-coplanar with the original, with a rotation-axis/center or mirror-plane reference.
-### Deliberate RF setup
-
-The Ports and Lumped elements **+** actions open a creation form. Enter both endpoints, the
-current/propagation direction and the electrical settings; **Create** commits one undo step.
-Cancel leaves the design unchanged. Discrete ports use a small direction arrow in the viewport.
-Existing ports and elements remain editable in Properties, including picked endpoints.
-
-A discrete port's physical openEMS source/termination uses a positive real resistance. Its
-optional **Complex power-wave reference** is postprocessing metadata: the Kurokawa
-coefficient is `(Zin - conj(Zref)) / (Zin + Zref)`, requiring `Re Zref > 0`. The Impedance result
-shows the match and `1 - |Γ|²` at the middle frequency sample. Raw result bundles retain separate
-complex power-wave coefficients across the frequency grid. Native S-parameters, their Smith
-chart, the physical source and multiport matrices retain their original real reference. This
-reference does not install a physical load. For a passive equivalent circuit, use an
-R/L/C load; a constant imaginary impedance is not a broadband causal time-domain element.
-
-Lumped elements support any positive R (Ω), L (H) and C (F) combination, with absent branches
-left empty, and **Series** or **Parallel** topology. Native RLC requires CSXCAD/openEMS 0.37 or
-later; older runtimes report the limitation instead of approximating it. Saved `resistors`
-arrays still work, with optional `L`, `C` and `topology` fields. Python export and readback retain
-them. The VBA macro exports every element as a `LumpedElement` with its R, L and C (a zero value is an
-absent component) as a series or parallel RLC, and the macro import reads them back.
-The [RF validation record](benchmarks/rf-rlc-workflows/README.md) distinguishes native API support
-from circuit-response agreement: the tested parallel circuit passed its 10% criterion, while
-the series circuit did not. Series numerical accuracy remains an open validation item.
-
-Waveguide setup supports the rectangular TE modes offered by openEMS, with explicit aperture,
-excitation/probe endpoints and propagation direction. General Bloch/Floquet ports, oblique
-periodic excitation and higher diffraction-order extraction are not implemented. A normal
-incidence PEC/PMC unit-cell fixture is a restricted symmetry model, not general Floquet support.
-
-Dielectrics also expose positive isotropic, loss-free, frequency-independent relative
-permeability μr. Magnetic loss, anisotropic tensors and dispersive ferrites are not represented.
-
-Native APIs: [CSXCAD RLC properties](https://docs.openems.de/en/latest/concepts/properties.html);
-reference convention: [scikit-rf power-wave definitions](https://scikit-rf.readthedocs.io/en/latest/examples/networktheory/Working%20with%20Complex%20Characteristic%20Impedances.html).
-
-### Export the current view
-
-The header's **Export…** menu follows the visible workspace. In Design's 3D tab, it offers
-geometry formats, the current unsaved design JSON and Python. Geometry export is unavailable
-for an empty design. In a result tab, CSV and Touchstone use the toolbar's current result,
-S-parameter selection and comparisons. Figure SVG and PNG capture the plotted charts with
-their visible quantities and traces. In Drawing, the menu uses that drawing's SVG, PDF and PNG
-export actions. A format without data is disabled with the reason in its tooltip.
-
-The camera button and View ribbon Screenshot capture the visible 3D view, chart or technical
-drawing. They are disabled on Start and for empty geometry or a result view without a supported
-figure. They never capture a hidden 3D canvas behind a result tab or drawing. Download requests,
-saved paths, cancellations and errors also appear in the app's global notice.
-
-### Rendered view and Render image
-
-The 3D view's **Rendered** button (next to the camera presets, and in the View ribbon's Render
-group) shows the design as a render: physically based materials, a studio environment with key,
-fill and rim light, a soft ground shadow, and the ports. Copper, gold, silver, tin, nickel,
-aluminium, brass and steel are metallic with their own colour and roughness; a PEC or an unknown
-metal is copper. FR-4 is a translucent yellow-green laminate, Rogers, Taconic and PTFE laminates
-are cream, alumina is white, any other dielectric is a neutral beige; air, vacuum and cut-outs are
-not drawn. A part's own **Color** wins over these defaults and keeps the metallic finish, and an
-**Opacity** below 100 % draws it see-through (plain transparency instead of the laminate's tint). A
-material is recognised by its name or library entry in the designer, and by its conductivity,
-permittivity and loss in a result or an example (the bundle does not carry names). The table is
-`src/render/materials.ts`, plain data that the Blender renderer mirrors.
-
-Orbit, pan, zoom and the camera presets work as usual, edits update the render, and switching back
-restores the modelling view exactly (selection, see-through dielectrics, edges). The same button is
-in the Results and Examples 3D view. The toolbar under the presets sets the ports (**Connector**: an
-SMA where one fits, otherwise the marker; **Marker**: a small red bead and rod; **Hidden**), the ground
-shadow, a green solder mask on PCB laminates, and a dark background.
-
-A connector fits a lumped port that feeds through a board: at a board edge (within about 2 mm or 3 %
-of the board) an edge-launch SMA points out of that edge with its pin on the trace; otherwise, with
-free space beyond a ground plane, a bottom-mount SMA sits under the ground plane with its pin up the
-port. A dipole's gap in free air, a port between two traces, and a ground plane smaller than the
-6.35 mm hex get the marker. Waveguide ports show a thin flange outline, lumped elements a small
-SMD body.
-
-**Render image…** (View ribbon, the rendered-view toolbar and the header's **Export…** menu) draws
-pictures offscreen and saves PNGs into the workspace folder `renders/<design-id>/` as
-`<design>_<angle>_<timestamp>.png` (a taken name gets `-2`, `-3`, so no render is overwritten; with no
-server the browser's download is used). Angles: Isometric, Top, Front, Right, Back, Left, Bottom and the
-current view, any number in one go. Resolution: 1920×1080, 3840×2160 or custom (64 to 8192 px).
-Background: transparent, studio or dark. Also ports, solder mask, ground shadow, perspective or
-orthographic, and a quality (Draft: none, Standard: 2×, High: 3× supersampling, always with
-multisampling and held to the GPU's limits). The pictures show as thumbnails with **Copy image**; **Open
-folder** opens the folder in the system's file manager. The renderer and its code load on first use.
-
-### RF creation and Python folder metadata
-
-Ports and passive R/L/C elements open a creation form before editing the design. The form
-keeps endpoints explicit, separates the real source resistance from a complex power-wave
-reference, and reports waveguide cutoff and unsupported Floquet/Bloch workflows. Native
-series RLC remains available with an inline numerical-validation limitation in creation
-and Properties (see `docs/benchmarks/rf-rlc-workflows`).
-
-Python export writes `FAIRBEAM_ORGANIZATION`, containing only optional `components`
-folder paths and part-name-to-component assignments. Import/apply restores assignments
-using the actual source CSXCAD property of each read-back group, only when that
-property name is unique. Rotated copies split into groups keep their source folder;
-a literal name ending in `[2]` is never interpreted as a copy. Removed or
-renamed parts are not recreated from metadata. Python modules without this constant retain
-the existing import behavior. Folder-list paths must be non-empty slash-separated names;
-legacy part paths retain their existing empty-segment warning.
-
-The optional target-impedance load helper in RLC creation converts target `Z = R + jX` at a
-positive reference frequency into a physical passive parallel equivalent. With
-`ω = 2πf`, it fills `Rp = (R² + X²)/R`, and either `C = -X/[ω(R² + X²)]`
-for negative reactance or `L = (R² + X²)/(ωX)` for positive reactance. Zero
-reactance gives only the resistor. The target requires positive R; component
-values remain SI Ω/H/F. This matches only at the selected frequency, does not
-create a constant broadband imaginary impedance, and never changes the port's
-power-wave reference. Filling is local to the form; Create is one undoable edit.
-
-### Minimum-window scenario check
-
-`node scripts/check-scenarios.mjs S8 S9 S10 --compact --skip-run` runs EN/TR
-Appearance, visible-surface exports and RF forms at the native desktop minimum.
-The Rust window fit uses 1024 × 700 logical points, reduced to 1024 × 688 on a
-728-point work area after title-bar allowance. RF forms run at both heights;
-Cancel/Create actions must remain inside the modal and reachable onscreen by Tab.
-At these widths the navigation/properties panels are overlays: scenarios open their
-real edge strips when needed. The default scenario dimensions and step count stay unchanged.
-No FDTD solve is requested by this command.
-
-`node scripts/check-scenarios.mjs S9 --compact --skip-run --ribbon-file-audit`
-also checks View/Simulation icon alignment at 1024, 1280 and 1440 pixels in EN/TR,
-and opens an actual result bundle through More's file chooser. The extra check is opt-in.

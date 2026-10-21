@@ -3,6 +3,7 @@ import {readFileSync,writeFileSync} from 'node:fs';
 import {join} from 'node:path';
 import {tmpdir} from 'node:os';
 import {execFileSync} from 'node:child_process';
+import {checkVisibleExports} from './visible-export-checks.mjs';
 import {pythonPath,root} from './stack.mjs';
 async function menu(s){
  const label=await s.T('contextExport.label');
@@ -71,6 +72,9 @@ export default {id:'S9',title:'Export the active visible surface',async run(s,ct
   await s.click('header.screenshot.aria',{within:'#header-more-menu'});await s.sleep(750);
   assert.equal(await s.page.evaluate(()=>window.__exports.filter(e=>e.url?.startsWith('data:image/png')).length),before);
   await menu(s);assert.deepEqual(await s.page.$$eval('[data-export-action]',es=>es.map(e=>e.dataset.exportAction)),['drawing-svg','drawing-pdf','drawing-png']);await s.press('Escape');
+ });
+ await s.step('chart figures preserve notes, numeric text and line keys; CSV exports preserve their byte dialect',async()=>{
+  await checkVisibleExports(s.page,s.lang);
  });
  if(ctx.ribbonFileAudit) await s.step('File opening and ribbon baselines at supported desktop widths',async()=>{
   await s.ev((_,m)=>m.w.setAppMode('design'),null,{w:'/src/workspace.ts'});
