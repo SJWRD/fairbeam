@@ -10,9 +10,9 @@ abstract: >-
   array and material analysis, and reproducible run bundles with exports to
   Touchstone, CSV, STL, glTF, Gerber and CST-compatible VBA macros.
 authors:
-  - given-names: İsmail
-    family-names: Akdağ
-    affiliation: İzmir Kâtip Çelebi University
+  - given-names: Ismail
+    family-names: Akdag
+    affiliation: Izmir Kâtip Çelebi University
     orcid: "https://orcid.org/0000-0001-6470-5892"
 repository-code: "https://github.com/ismailakdag/fairbeam"
 url: "https://fairbeam.org"
