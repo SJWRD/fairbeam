@@ -56,6 +56,14 @@ farkı ve çözümlenen `..` yolları aynı kilit kimliğini kullanır.
 
 Kuyruk pencereye değil sunucuya aittir: bir betik veya başka bir pencereden gönderilen çalıştırma (`POST /api/runs` ya da terminalden `fairbeam run --server`; bkz. [CLI.md](CLI.md#runs-the-app-shows---server)) aynı kuyrukta bekler ve saniyeler içinde açık uygulamada görünür. Uygulama görünürken her 5 s'de `/api/health` adresini kontrol eder (2 ms'lik istek); pencere öne geldiğinde bunu hemen yapar. Sağlık yanıtının `queue` alanı (`running`, `queued`, her değişimde artan `version` sayacı ve sunucu dışındaki `fairbeam run` süreçleri için `external`) değiştiğinde çalıştırma listesi, bir çalıştırma bitmişse sonuç dizini yeniden alınır. Sunucuyu meşgul eden çalıştırma, **Simülasyonu başlat** düğmesini **Simülasyonu kuyruğa al** olarak değiştirir ve öndeki çalıştırmayı belirtir. Tasarımcı, açık tasarım için başka bir istemcinin başlattığı çalıştırmayı izler; durum çubuğu sunucudaki diğer çalıştırmaları gösterir.
 
+Uygulama bu güncellemelerde ve etkin bir tarama sırasında `/api/runs?summary=1` adresini
+kullanır. Araştırma geçmişi `/api/research/runs?summary=1` adresinden alınır. İki özet de
+işin üst verilerini korur, `result` alanını çıkarır; böylece her sorguda geçmiş araştırma
+sonuçlarının tüm dizileri yeniden indirilmez. Bir araştırma çalıştırması seçildiğinde tam
+sonuç, bütünlük denetimiyle birlikte `/api/research/runs/{id}` adresinden alınır.
+Mevcut API istemcileri için `summary=1` içermeyen liste isteklerinin tam yanıtı ve
+diskteki iş geçmişi değişmez.
+
 - **Son çalıştırmalar**: bekleyen satırda **Sıradan çıkar** (×), çalışan satırda **Durdur** (■) vardır; **Kuyruğu temizle** bekleyen tüm çalıştırmaları kaldırır (`POST /api/queue/clear`), çalışan devam eder.
 - **Tasarımcı**: alt panelin **Kuyruk** sekmesi sunucunun kuyruğa alınmış veya çalışan tüm çalıştırmalarını (diğer modeller ve istemciler dahil) listeler; her birinde **İzle**, **Durdur** veya **Sıradan çıkar**, ayrıca **Kuyruğu temizle** bulunur. Alt panelde **Çalıştırmayı iptal et**, önce panelde gösterilen, yoksa pencerenin izlediği, o da yoksa sunucuda çalışan işi durdurur.
 - Sunucusuz terminalden başlatılan çalıştırma (aynı simülasyon köküne yazan `fairbeam run`) kuyruğa girmez: ön kontrol ve Çalıştırma paneli CPU'yu kullandığını belirtir.

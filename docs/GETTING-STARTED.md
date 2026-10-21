@@ -21,7 +21,7 @@ Download the installer from [fairbeam.org](https://fairbeam.org) or the
   The app is signed with a Developer ID and notarized by Apple.
 - **Windows** (10/11, x64): run the `-setup.exe`. It installs for your user, without an
   administrator prompt. The installer is not code-signed, so SmartScreen may show "Windows protected
-  your PC": choose **More info › Run anyway**.
+  your PC": choose **More info › Run anyway**. If double-clicking a `.fb` file does not offer Fairbeam, see [Opening .fb files](WINDOWS.md#known-limitations).
 
 **First start.** Fairbeam needs its simulation runtime (Python, openEMS and the Fairbeam
 package). The setup screen says "Fairbeam needs to install its runtime": choose **Install the
@@ -42,9 +42,9 @@ and newer versions are offered in the app (Help › Check for updates).
    dipole** (867 MHz, no ground plane; under Printed) and **Microstrip line (two-port)** (50 Ω on
    FR-4, for S11 and S21; under Circuits). Each simulates in seconds; this guide follows the patch.
 2. The designer opens. Take a look around:
-   - the **ribbon** at the top: Home, Modeling, Transform, Simulation, Optimize, Post-processing;
+   - the **ribbon** at the top: Home, Modeling, Transform, View, Simulation, Optimize, Post-processing;
    - the **navigation tree** on the left: the design, **Parameters** (6: `f0`, `W`, `L`, `h`, `G`,
-     `feed`), **Components** (Substrate, Ground plane, Patch, each with its shape), **Materials**,
+     `feed`), **Solids** (Substrate, Ground plane, Patch, each with its shape), **Materials**,
      **Ports** (Port 1, 50 Ω) and **Results** (none yet);
    - the **3D view** in the middle: drag to orbit, scroll to zoom, right- or middle-drag to pan;
      Iso / Top / Front / Right / Bottom set the camera and the target button (or Space / F) fits
@@ -54,8 +54,8 @@ and newer versions are offered in the app (Help › Check for updates).
      design's runs side by side) and Log. The plots of a run open as tabs beside the 3D view.
 3. Click **Patch** in the tree (or on the model) to see its brick: every value can be a number or
    an expression over the parameters, such as `W/2`.
-4. Right-click a part in the tree or in the 3D view for Hide, Rename, Transform…, Duplicate,
-   Delete, **Add a lumped port**, **Move to component ›** and the Boolean operations. A part moved
+4. Right-click a solid in the tree or in the 3D view for Hide, Rename, Transform…, Duplicate,
+   Delete, **Add a discrete port…**, **Move to component ›** and the Boolean operations. A solid moved
    to a component shows in a folder of the tree; right-click the folder to rename, ungroup or
    delete it.
 
@@ -70,7 +70,7 @@ Open the **Simulation** tab of the ribbon:
 - **Mesh**: **Cells / λ** sets the automatic mesh density; **Mesh settings** has the details,
   **Mesh convergence…** checks whether the mesh is fine enough (see below) and **Mesh view**
   draws the mesh in the 3D view. The status bar shows the cell count and the smallest cell.
-- **Ports**: **Lumped**, **Waveguide** and **Resistor** add a port or a load.
+- **Ports**: **Discrete** and **Waveguide** add a port; **Add lumped element…** adds an R/L/C load. The experimental coaxial port has separate [limits and setup](COAXIAL-PORTS.md).
 - **Monitors**:
   - **Far field**: the radiation pattern, directivity and gain at the listed frequencies (the
     starter records it at `f0`).
@@ -93,8 +93,8 @@ passed" when there is nothing to fix.
 Click **Run** (Simulation tab, or the Run button at the top, or Ctrl/⌘+Enter). The **Run the
 simulation** dialog shows:
 
-- **Engine**: **CPU (multi-threaded)** with the number of **Threads** (4 is a good default), or
-  **GPU (Metal or CUDA build)** when the GPU build of openEMS is installed;
+- **Solver**: leave it on **openEMS** for this walkthrough. The experimental Elmer options have different geometry and validation limits; see [Experimental solvers](EXPERIMENTAL-SOLVERS.md).
+- **Engine**: **CPU (multi-threaded)**, or **GPU (Metal or CUDA build)** when the GPU build of openEMS is installed. CPU **Threads** defaults to **Auto**: the hint shows the choice for the mesh size and physical cores. Keep Auto unless you need a specific count;
 - **S-parameter sample points** (801 by default) and an optional **Result name**;
 - a solver time estimate.
 
@@ -119,6 +119,7 @@ When the run is done it appears under **Results** in the tree, with its time and
   the E or H map as a heat-map plane in the 3D view, with a color bar in dB or linear; its
   **2D map** node opens it as a heat map tab with axes, a hover readout and the model's outline,
   and **Phase** / **Animate** show the phase and the field over one period.
+- **Tables › Summary** (also **Summary** on the Post-processing tab) gives resonance, minimum |S11|, bandwidth, gain and efficiency when the run contains them. Missing quantities stay unavailable.
 - **Tables** and **Log**.
 
 The **Post-processing** tab of the ribbon opens the same views. Choosing a geometry tab (Home,
@@ -170,28 +171,34 @@ as a run** and **Apply best parameters to design**. See [OPTIMIZE.md](OPTIMIZE.m
 
 ## 3. Import a VBA macro
 
-On **Start**, **Import VBA macro…** (also Home › Project › Import macro, or File › Import VBA
+On **Start**, **Import VBA macro…** (also Home › Design › Import VBA macro, or File › Import VBA
 macro… in the desktop app) reads a CST-compatible VBA macro (`.bas`, `.mcs`) or a history list saved as text. Before anything is
 saved it shows a report: what was created, and every command that was skipped or changed, with its line. Name the design and **Create and open** it. What is
 read and what is not: [DESIGNER.md, Importing a VBA macro](DESIGNER.md#importing-a-vba-macro).
 
 ## 4. Where your files are
 
-Everything lives in the **workspace** folder, `Documents/Fairbeam` in your home folder (Windows:
-`%USERPROFILE%\Documents\Fairbeam`):
+In the desktop app, **Save** writes `<name>.fb` where you choose. **Save as…** creates a separate project; **Open project…** opens one again. The adjacent `<name>.results/` folder holds its saved result bundles. Keep the `.fb` file and this folder together when moving, copying or sharing the project.
+
+A completed run remains available in the workspace. Save the project to include new results when the “New results are ready” notice appears; automatic result attachment uses the saved design snapshot, never silently saving newer edits. Project file details show whether a result matches that snapshot, belongs to an earlier design, is missing or is invalid. These are identity checks, not evidence of convergence.
+
+Removing a design normally removes its workspace copy. In the desktop removal dialog, selecting **Also remove the .fb file and its results folder from their current location** moves the project and its owned results into `Fairbeam Deleted/` beside the project. It does not permanently erase them. Recovery and limitations are described in [Project files (.fb)](FB-DOCUMENT.md).
+
+### Workspace folder
+
+The local working folder defaults to `Documents/Fairbeam` (Windows: `%USERPROFILE%\Documents\Fairbeam`). It also supports JSON-only designs and Python models:
 
 | Folder | Holds |
 | --- | --- |
-| `models/` | your designs (`<name>.design.json`) and Python models |
-| `projects/` | the results: one `.json` bundle per run, plus `index.json` |
-| `templates/` | model templates |
-| `jobs/` | the run queue and its history |
-| `.sim/` | openEMS working data of the runs |
+| `models/` | Working designs (`<name>.design.json`), portable `fb_<UUID>` copies and Python models |
+| `projects/` | Workspace result bundles and `index.json` |
+| `templates/` | Model templates |
+| `jobs/` | Run queue state and history |
+| `.sim/` | Solver working data |
+| `renders/<design-id>/` | Rendered images saved from the app |
+| `model-history/` | Saved or removed design/Python recovery copies |
 
-The gear button at the top (**General settings**) shows the **Workspace folder** with an **Open
-folder** button, the **Language** of the interface (System, English or Türkçe, native menus
-included) and the **Decimal separator** for numbers shown as text. The examples on the Start screen are copies: **Open as new design…** makes a
-design of your own from one, and the original stays unchanged.
+**General settings › Workspace folder** shows the location and **Open folder** opens it. The **Language** and **Decimal separator** settings affect the interface and displayed numbers. Start-screen examples are read-only originals: **Open as new design…** makes your own copy.
 
 ## 5. Report a problem
 
@@ -201,5 +208,5 @@ feature**) opens the issue form of the public tracker,
 browser with the app version and your operating system filled in. The speech-bubble button at
 the top (**Send feedback**) and Help › Report a Problem… do the same from any screen. Fairbeam sends nothing by itself.
 
-Helpful to include: what you did and what you expected, a screenshot (Home › View › **Screenshot**
-saves a PNG of the 3D view), the design file from `models/`, and the run's log (Results › your run › Log).
+Helpful to include: what you did and what you expected, a screenshot (View › View › **Screenshot**
+saves the visible view), the `.fb` project and its adjacent `.results` folder (or the workspace design for JSON-only work), and the run's log (Results › your run › Log).

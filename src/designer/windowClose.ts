@@ -4,13 +4,16 @@
 // shell asks again every 150 ms while the answer is "pending": the Save / Don't save / Cancel
 // question (CloseProject.tsx) is open. "close" lets the window go, "cancel" keeps it.
 //
-// Nothing unsaved (no design open, or a clean one with no save running) closes at once. The
+// A fresh server-wide run check precedes the unsaved-work questions, and a final check catches
+// runs submitted while those questions were open. Unknown run status requires explicit consent.
+// With no work at stake the request closes after those checks. The
 // decision itself is the #86 contract: Save must finish cleanly (saveBeforeLeaving), Don't save
-// closes the design and drops its local backup (closeDesign). Updates reuse the question but
-// preserve the draft until the native install continuation commits.
+// closes the design and drops its local backup (closeDesign) only after every exit question.
+// Updates reuse the question but preserve the draft until the native install continuation commits.
 import { createSignal } from "solid-js";
-import { dirty, draft, file, replaceRequest, saving } from "./store";
+import { closeDesign, dirty, draft, file, replaceRequest, saving } from "./store";
 import { checkUnsavedWork, resetUnsavedWorkApproval } from "../lib/unsavedWork";
+import { cancelCloseActivity, checkCloseActivity, requireFinalActivityCheck } from "./closeActivity";
 
 export type WindowLeave = "window" | "quit" | "update";
 export type WindowCloseAnswer = "close" | "pending" | "cancel";
@@ -20,6 +23,7 @@ export const [windowClose, setWindowClose] = createSignal<{ kind: WindowLeave; i
 /** the choice made in the dialog, handed to the shell on its next question for the same request */
 let decided: { id: number; answer: "close" | "cancel" } | null = null;
 let updateDiscard: { id: number; snapshot: string } | null = null;
+let windowDiscard: { id: number; snapshot: string } | null = null;
 export const [updateApproved, setUpdateApproved] = createSignal<number | null>(null);
 const designSnapshot = () => JSON.stringify([file()?.id, file()?.backup_scope, draft]);
 
@@ -28,6 +32,14 @@ export function approveUpdateDiscard() {
   const open = windowClose();
   if (open?.kind !== "update" || saving()) return;
   updateDiscard = { id: open.id, snapshot: designSnapshot() };
+  decideWindowClose("close");
+}
+
+/** Keep Don't save reversible until every exit question has been answered. */
+export function approveWindowDiscard() {
+  const open = windowClose();
+  if (!open || open.kind === "update" || saving()) return;
+  windowDiscard = { id: open.id, snapshot: designSnapshot() };
   decideWindowClose("close");
 }
 
@@ -55,19 +67,37 @@ export function answerWindowClose(kind: WindowLeave, id: number): WindowCloseAns
   if (choice?.id === id && choice.answer === "cancel") return "cancel";
   // Native destroy/exit bypasses beforeunload. Obtain separate, snapshot-bound
   // approval for Python text before allowing the shell to close the window.
-  if (replaceRequest()) return "cancel";
+  if (replaceRequest()) { cancelCloseActivity(id); return "cancel"; }
+  if (kind !== "update") {
+    const activity = checkCloseActivity(id, "initial");
+    if (activity !== "clear") {
+      if (activity === "cancel") { resetUnsavedWorkApproval(); windowDiscard = null; }
+      return activity;
+    }
+  }
   const extra = checkUnsavedWork(id);
-  if (extra !== "clear") return extra;
+  if (extra !== "clear") { requireFinalActivityCheck(id); return extra; }
   // "close" is honoured only while nothing is at stake: an edit or a save since then asks again
   const approvedDraft = kind === "update" && !saving() && updateDiscard?.id === id
     && updateDiscard.snapshot === designSnapshot();
-  if (!unsavedAtStake() || approvedDraft) {
+  const approvedWindowDraft = kind !== "update" && !saving() && windowDiscard?.id === id
+    && windowDiscard.snapshot === designSnapshot();
+  if (!unsavedAtStake() || approvedDraft || approvedWindowDraft) {
+    if (kind !== "update") {
+      const activity = checkCloseActivity(id, "final");
+      if (activity !== "clear") {
+        if (activity === "cancel") { resetUnsavedWorkApproval(); windowDiscard = null; }
+        return activity;
+      }
+      if (approvedWindowDraft) { closeDesign(); windowDiscard = null; }
+    }
     // Synchronous signal update: the UI blocks edits before the shell sees its approval.
     if (kind === "update") setUpdateApproved(id);
     return "close";
   }
   // the open "Save changes before creating/opening…?" question has to be answered first
   if (replaceRequest()) return "cancel";
+  requireFinalActivityCheck(id);
   setWindowClose({ kind, id });
   return "pending";
 }
@@ -76,7 +106,7 @@ export function answerWindowClose(kind: WindowLeave, id: number): WindowCloseAns
 export function decideWindowClose(answer: "close" | "cancel") {
   const open = windowClose();
   if (!open) return;
-  if (answer === "cancel") resetUnsavedWorkApproval();
+  if (answer === "cancel") { resetUnsavedWorkApproval(); windowDiscard = null; }
   decided = { id: open.id, answer };
   setWindowClose(null);
 }

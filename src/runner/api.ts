@@ -398,6 +398,7 @@ export interface Job {
   kind?: "run" | "optimize" | "research";
   research?: { backend: "periodic" | "elmer"; path: string; settings: Record<string, unknown>; snapshot_sha256: string;
     source?: { model_id: string; workspace_hash: string; backup_scope: string; design_sha256: string } };
+  /** Omitted by polling summaries; explicit researchRun details include the result. */
   result?: ResearchResult | null;
   optimize?: { vary: OptVary[]; goals: OptGoal[]; max_evals: number; method: string; excite?: string } | null;
   /** display name given by the user (the bundle file name is its slug, `name`) */
@@ -523,7 +524,7 @@ export const api = {
     call<{ backend: string; available: boolean; reason?: string }>("POST", "/research/probe", { backend, path }, signal),
   elmerRuntime: (signal?: AbortSignal) => call<ElmerRuntime>("GET", "/research/elmer/runtime", undefined, signal),
   elmerInstall: (signal?: AbortSignal) => call<ElmerRuntime>("POST", "/research/elmer/install", {}, signal),
-  researchRuns: (signal?: AbortSignal) => call<{ runs: Job[] }>("GET", "/research/runs", undefined, signal),
+  researchRuns: (signal?: AbortSignal) => call<{ runs: Job[] }>("GET", "/research/runs?summary=1", undefined, signal),
   researchRun: (id: string, signal?: AbortSignal) => call<Job>("GET", `/research/runs/${encodeURIComponent(id)}`, undefined, signal),
   researchStart: (body: { backend: "periodic" | "elmer"; path: string; settings: Record<string, unknown>; design?: Design;
     source?: { model_id: string; workspace_hash: string; backup_scope: string } }, signal?: AbortSignal) =>
@@ -539,7 +540,7 @@ export const api = {
   models: () => call<{ models: ModelEntry[] }>("GET", "/models").then((d) => d.models),
   preview: (model: string, params: Record<string, ParamValue>, signal?: AbortSignal) =>
     call<PreviewResult>("POST", "/preview", { model, params }, signal),
-  runs: () => call<{ runs: Job[] }>("GET", "/runs").then((d) => d.runs),
+  runs: (signal?: AbortSignal) => call<{ runs: Job[] }>("GET", "/runs?summary=1", undefined, signal).then((d) => d.runs),
   submit: (body: { model: string; params: Record<string, ParamValue>; threads: number; engine?: string; name?: string; end_criteria_db?: number; points?: number; cells?: number }) =>
     call<Job>("POST", "/runs", withThreads(body)),
   /** memory / CPU check of a planned run; level "unknown" means it could not be checked */

@@ -19,11 +19,13 @@ try {
     const page = await context.newPage();
     await page.setViewport({ width: 1440, height: 1000 });
     await page.evaluateOnNewDocument(language => localStorage.setItem("fairbeam.generalSettings", JSON.stringify({ language })), language);
-    let available = false, unavailable = false, detailConflict = false, jobs = [], submitted;
+    let available = false, unavailable = false, detailConflict = false, ordinaryUnavailable = false, jobs = [], submitted;
     const requests = [];
+    const historyQueries = [], ordinaryQueries = [];
+    const summaryRows = () => jobs.map(({ result, ...metadata }) => metadata);
     await page.setRequestInterception(true);
     page.on("request", request => {
-      const pathname = new URL(request.url()).pathname;
+      const requestUrl = new URL(request.url()), pathname = requestUrl.pathname;
       if (!pathname.startsWith("/api/")) return void request.continue();
       const respond = (data, status = 200) => request.respond({ status, contentType: "application/json", body: JSON.stringify(data) });
       if (pathname.startsWith("/api/research/")) {
@@ -36,13 +38,20 @@ try {
           const job = { id: `synthetic-${language}`, kind: "research", status: "queued", phase: "queued", created: 1, created_iso: "2026-10-09T12:00:00Z", error: null, bundle: null, result: null, research: { backend: submitted.backend, path: submitted.path, settings: submitted.settings, snapshot_sha256: "synthetic-fixture" } };
           jobs = [job]; return void respond(job);
         }
-        if (pathname === "/api/research/runs") return void respond({ runs: jobs });
+        if (pathname === "/api/research/runs") {
+          historyQueries.push(requestUrl.search);
+          return void respond({ runs: requestUrl.searchParams.get("summary") === "1" ? summaryRows() : jobs });
+        }
         if (detailConflict) return void respond({ error: "Synthetic result checksum mismatch" }, 409);
         const found = jobs.find(job => job.id === decodeURIComponent(pathname.split("/").at(-1)));
         return void respond(found ?? { error: "Synthetic run no longer exists" }, found ? 200 : 404);
       }
       if (pathname === "/api/health") return void respond({ ok: true, api: 1, engines: ["cpu"], queue: { running: null, queued: 0 }, cpu_count: 4, research: true });
-      if (pathname === "/api/runs") return void respond({ runs: [] });
+      if (pathname === "/api/runs") {
+        ordinaryQueries.push(requestUrl.search);
+        if (ordinaryUnavailable) return void respond({ error: "Synthetic polling failure" }, 503);
+        return void respond({ runs: requestUrl.searchParams.get("summary") === "1" ? summaryRows() : jobs });
+      }
       if (pathname === "/api/models") return void respond({ models: [] });
       return void respond({ error: "Synthetic test: no endpoint" }, 404);
     });
@@ -57,13 +66,13 @@ try {
     await open();
     assert.equal(await page.$$eval('.research-guide li', rows => rows.length), 3);
     assert.match(await page.$eval('.research-guide', e => e.textContent), /revision-4|revizyon-4/);
-    assert.equal(await page.$eval('.research-guide a', e => e.href), 'https://github.com/ismailakdag/fairbeam/blob/main/docs/RESEARCH-SOLVERS.md');
+    assert.equal(await page.$eval('.research-guide a', e => e.href), `https://fairbeam.org/docs/${language === "tr" ? "tr/" : ""}experimental-solvers.html`);
     assert.deepEqual(await page.evaluate(async () => {
       const calls = [];
       window.__TAURI_INTERNALS__ = { invoke: async (...args) => { calls.push(args); } };
       try { document.querySelector('.research-guide a').click(); await Promise.resolve(); return calls; }
       finally { delete window.__TAURI_INTERNALS__; }
-    }), [['open_external_link', { link: 'research' }]], 'desktop guide uses the fixed native link key');
+    }), [['open_external_link', { link: language === 'tr' ? 'research-tr' : 'research' }]], 'desktop guide uses the fixed native link key for its language');
     const start = '.research-dialog button[type="submit"]';
     assert.equal(await page.$eval(start, e => e.disabled), true, "unprobed solver cannot submit");
     await page.click(".research-options > button");
@@ -117,10 +126,46 @@ try {
     jobs[0] = { ...jobs[0], status: "failed", phase: "done", error: "Synthetic validation failure", result: { status: "results_exported", frequency_hz: [1e9, 5e9, 10e9], s11_real: [0.1, 0.3, 0.2], s11_imag: [0, 0, 0], s21_real: [0.9, 0.8, 0.9], s21_imag: [0, 0, 0] } };
     await page.click(".research-results > .cluster button");
     await page.waitForSelector(".research-chart svg");
+    assert.deepEqual(await page.evaluate(async () => {
+      const runner = await import("/src/runner/store.ts");
+      await runner.refreshRuns();
+      return runner.jobs().map(job => ({ id: job.id, status: job.status, hasResult: Object.hasOwn(job, "result") }));
+    }), [{ id: jobs[0].id, status: "failed", hasResult: false }], "ordinary polling keeps research status without fetching historical arrays");
+    ordinaryUnavailable = true;
+    await page.evaluate(async () => (await import("/src/runner/store.ts")).refreshRuns());
+    assert.deepEqual(await page.evaluate(async () => (await import("/src/runner/store.ts")).jobs().map(job => job.id)),
+      [jobs[0].id], "failed summary poll retains the previous run list");
+    ordinaryUnavailable = false;
     assert.ok(await page.$(".research-results .status-warn"), "unvalidated exports are explicitly labeled");
     assert.ok(await page.$(".research-results [role=alert]"), "failed run remains failed even when curves are exported");
     await page.click(".research-results details summary");
     assert.equal(await page.$$eval(".research-table tbody tr", rows => rows.length), 3);
+    assert.ok(requests.includes(`/api/research/runs/${jobs[0].id}`), "the selected chart loads its full result from the detail route");
+    // The main integration must retain both compact polling and the caller's
+    // cancellation signal. Exercise the real API method/call chain with one
+    // controlled fetch rejection; unrelated browser requests keep their fetch.
+    assert.deepEqual(await page.evaluate(async () => {
+      const { api } = await import("/src/runner/api.ts");
+      const controller = new AbortController();
+      const originalFetch = window.fetch;
+      let observed = null;
+      window.fetch = (input, init) => {
+        if (init?.signal !== controller.signal) return originalFetch(input, init);
+        observed = { url: String(input), method: init.method, body: init.body ?? null };
+        return new Promise((_, reject) => {
+          controller.signal.addEventListener("abort", () => reject(controller.signal.reason), { once: true });
+          controller.abort();
+        });
+      };
+      try {
+        await api.runs(controller.signal);
+        return { observed, rejected: false };
+      } catch (error) {
+        return { observed, rejected: true, name: error.name, originalReason: error === controller.signal.reason };
+      } finally { window.fetch = originalFetch; }
+    }), { observed: { url: "/api/runs?summary=1", method: "GET", body: null }, rejected: true, name: "AbortError", originalReason: true },
+    "ordinary summary polling forwards the caller's AbortSignal and preserves its abort reason");
+    assert.ok(await page.$(".research-chart svg"), "cancelled ordinary API request leaves the selected full result visible");
     if (screenshots) await page.screenshot({ path: new URL(`research-${language}-desktop.png`, evidence).pathname.replace(/^\/(\w:)/, "$1") });
     await page.keyboard.press("Escape");
     await page.waitForSelector(".research-dialog", { hidden: true });
@@ -164,7 +209,9 @@ try {
     unavailable = true;
     await page.click(".research-results > .cluster button");
     await page.waitForSelector(".research-results [role=alert]");
+    assert.ok(ordinaryQueries.length > 0 && ordinaryQueries.every(query => query === "?summary=1"), "all ordinary polls opt into summaries");
+    assert.ok(historyQueries.length > 0 && historyQueries.every(query => query === "?summary=1"), "research history polls opt into summaries while detail stays full");
     await context.close();
   }
-  console.log("check-research-ui: EN/TR capability gates, queue/cancel, reopening, isolation, result warnings, tables, mobile layout and unavailable server passed (synthetic API)");
+  console.log("check-research-ui: EN/TR capability gates, queue/cancel, summary polling/AbortSignal/error retention, selected full results, reopening, isolation, result warnings, tables, mobile layout and unavailable server passed (synthetic API)");
 } finally { await browser?.close(); await server.close(); }

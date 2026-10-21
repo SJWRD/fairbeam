@@ -207,6 +207,12 @@ export function readmeReport(bundle: Bundle, opt: ReportOptions): string {
   // the files of this package, from its own entries
   push("## Files", "");
   push(table(["File", "Contents"], opt.files.map((f) => [`\`${f.path}\``, f.description])), "");
+  if (opt.files.some((f) => f.path.startsWith("data/") && f.path.endsWith(".csv")))
+    push(
+      "**CSV formats.** Package CSVs are machine-oriented: ASCII snake_case headers, efficiency as fractions (0–1), LF line endings, no UTF-8 BOM, and `inf`, `-inf` or `nan` for non-finite numbers (missing values are empty). The result toolbar's CSV download is human-oriented: headers include units, efficiency is in percent (%), line endings are CRLF, missing/non-finite values are empty, and a UTF-8 BOM preserves characters such as Ω and ∠ in Excel. Both use commas as delimiters and decimal points in numbers. Column names and units are part of each format; do not interchange fraction and percentage values.",
+      "In Excel with a regional semicolon list separator, import via Data > From Text/CSV and select a comma delimiter and decimal point instead of double-clicking the file.",
+      "",
+    );
   if (opt.files.some((f) => f.path === "data/s11.s1p"))
     push("Touchstone: `data/s11.s1p` is Touchstone v1 (`# GHz S RI R <port impedance>`): frequency in GHz, then Re and Im of S11. Most RF tools read it directly, so it can be overlaid on other S11 results.", "");
   if (opt.files.some((f) => f.path === "data/bands.csv"))

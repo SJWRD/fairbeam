@@ -1,232 +1,53 @@
-# Portable Fairbeam documents
+# Project files (.fb)
 
-The development desktop shell can open and save editable `.fb` documents, with result bundles
-in an adjacent folder. This work targets 0.8.0 and still needs the platform checks below before
-release. Existing design JSON and result bundles remain supported.
+The desktop app saves an editable design as a portable `.fb` project, with saved results in an adjacent folder. Existing JSON designs and result bundles remain supported. A project keeps the design and the identity of its results together; it does not certify simulation accuracy.
 
-## Desktop workflow
+## Save and open
 
-- File > Open selects a `.fb` document or imports legacy JSON. A second launch forwards `.fb`
-  paths to the running window. Queued requests wait while a modal window is open. Unsaved
-  changes are handled before opening a queued document.
-- The first native `.fb` save opens a file picker and creates a separate `fb_` workspace from
-  the current draft. The source JSON is not overwritten. Later portable edits use the new workspace;
-  the original JSON remains independently editable. Bound document saves write the workspace
-  revision first, then the selected `.fb` file. Canceling keeps existing unsaved edits and results pending, but does not
-  mark a clean document changed. A failed write retains a retry reminder; retry uses the workspace
-  revision that was actually written.
-- Save remains available for an unchanged writable design, so newly completed runs can be added
-  without editing geometry. Completions observed in the current document's workspace mark it
-  unsaved. A successful save acknowledges the results it started with; later completions still
-  need another save. Results skipped by the storage adapter produce a persistent warning.
-- Save As creates a separate document identity and editable workspace copy. Choose a new filename:
-  replacing an existing destination through Save As is currently refused, even if the native
-  picker offered an overwrite confirmation. The model list is refreshed before selecting the
-  copy, so a simulation can start immediately with its own model and parameters.
-- Reopening a document uses its stable UUID instead of importing another workspace copy. Moving
-  the `.fb` file and its adjacent result folder together preserves relative result references.
-- Project file details in the model tree show the location and each referenced result's status.
-  A result can match the saved design, belong to an earlier design, be missing, or fail validation.
-  Matching the design does not establish mesh convergence or physical accuracy.
-- Start keeps portable workspace copies visible and identifies them by their `.fb` path. The
-  path is display/search metadata, not permission to open a file; missing or ambiguous metadata
-  falls back to the workspace filename. Deleting a workspace copy does not delete its `.fb` file.
-  Search normalizes names, paths and result-directory names to NFC, so decomposed macOS filenames
-  match typed Unicode. Display normalization never changes the path used for filesystem access.
+Choose **Save** to select a location for a new `<name>.fb`. The first save makes a separate editable workspace copy; the original JSON design stays independent. Later saves update the selected project. Canceling the picker keeps the draft and does not create a project file.
 
-The native shell retains the selected path and revision behind an opaque handle. Browser code
-cannot submit arbitrary external paths. The private bridge is restricted to the shell's current
-server session. Browser uploads and drops import the embedded design as a workspace copy and
-do not grant access to adjacent files.
+Use **Open project…** or File › Open to open it again. **Save as…** makes a new project identity and a separate workspace copy. Choose a new filename: overwriting an existing project through Save As is refused, even if the operating system's picker offers an overwrite prompt. If a project changed outside Fairbeam, reopen it or save a separate copy instead of overwriting the other changes.
 
-The completion reminder uses a bounded per-window session journal of job identifiers, not result
-contents. It survives a renderer reload, but is not an authoritative attachment ledger and does
-not survive a full app restart. Explicit Open establishes a fresh baseline from the selected
-document; Save can still collect eligible completed runs from that document's workspace history.
+The project file details in the tree show the location. Start also identifies portable workspace copies by their project path. Opening the same project reuses its identity rather than making another import.
+
+## Results beside the project
+
+`<name>.results/` sits beside `<name>.fb`. Results are copied from the workspace when saved. A newly completed run remains available there even if attachment fails; the app shows a warning and Save can retry. Automatic result attachment uses the saved design snapshot; it does not silently save current edits. If the app says **New results are ready. Save the project to include them in the .fb file.**, save explicitly.
+
+Each result records its exact-byte checksum and the design snapshot used for that run. The tree distinguishes matching, earlier-design, missing and invalid results. Matching the design does not establish matching run settings, mesh convergence or physical accuracy. Missing or invalid results do not prevent opening the embedded design.
+
+Saved results may also have derived `runs/` folders with geometry, source, metadata and result data. The original checksummed JSON bundle remains canonical. Separately exported figures and renders are not automatically generated by saving a project.
+
+## Move, share and recover
+
+Copy or move the `.fb` file and its adjacent `.results` folder together, keeping the folder name. Relative result references then remain usable. Renaming only the results folder breaks those references. Workspace files such as models, job history and renders are described in [Getting started](GETTING-STARTED.md#4-where-your-files-are).
+
+Removing a design from Start normally removes its workspace copy. The desktop removal dialog can also move the `.fb` and owned results into **Fairbeam Deleted**, beside the project. The dialog shows that this preserves workspace history and cached runs and does not free disk space. Removal refuses ambiguous ownership, shared results or unreadable ownership data rather than risk another project's files.
+
+To recover, open the reported `Fairbeam Deleted` location and move the project and its results folder together back to a location you choose, then use **Open project…**. Inspect any existing destination first. For JSON-only designs and saved Python versions, follow [workspace recovery](DESIGNER.md#recovering-saved-or-deleted-workspace-designs).
 
 ## Existing JSON files
 
-While a bound document is open, newly completed runs are automatically attached using its
-saved workspace snapshot. Unsaved designer edits are not silently saved. A pending failed
-design save pauses automatic publication until an explicit Save resolves it. Failed automatic
-result saves leave the workspace result available and show an error; explicit Save retries.
+Opening or dropping a `.design.json` imports an editable workspace copy without overwriting the source. Desktop Save can then create a separate `.fb` project. JSON export remains available for interchange. Opening a result-only bundle does not invent an editable design.
 
-Each saved result also has an immutable `runs/run-<result hash>-<design hash prefix>/` folder below the adjacent
-`.results` directory. It separates S-parameter JSON, far-field JSON, geometry, matching source
-design (when available), and run metadata. The original checksummed bundle remains canonical.
-`drawings`, `images`, and `optimization` folders reserve locations for separately exported
-artifacts; this does not automatically render plots or capture an optimizer study. Distinct
-result hashes get new folders, and existing files are never overwritten with different data.
-These derived folders are optional: an export error does not discard the saved document.
+The browser can import a project's embedded design, but cannot read the adjacent results folder from a dropped file. Use the desktop app for the complete portable project workflow.
 
-The `.fb` format is additive. Existing `.design.json` designs and JSON result bundles still open
-through File > Open or import/drop. Legacy 0.6.x design and result schema names are still
-recognized. Importing a JSON design creates an editable workspace copy; it does not rewrite the
-source JSON file. A desktop Save can then create a separate `.fb` project. JSON export remains
-available for interchange, and importing a result-only bundle does not invent an editable design.
+## Known limitations
 
-## Format
+- Some Windows installations do not initially offer Fairbeam in **Open with**. Follow the [Windows opening steps](WINDOWS.md#known-limitations), or open the project from inside Fairbeam.
+- Save As currently requires a new destination filename. Recover archived files manually; there is no in-app Restore interface for the archive.
+- Filesystems differ in atomic-create and metadata support. A refused save leaves the original intact; on an unsupported removable/network volume, save a new copy on a supported local volume and copy the project and results together. This is not a promise of support for every volume.
+- Saving a project is not a backup against device failure. Keep independent copies of important work. Storage checks protect ordinary files; full security metadata and power-loss durability are outside the guarantee.
 
-A UTF-8 JSON `.fb` document uses `schema: "fairbeam.document/1"` and exactly these fields:
+## Format reference
+
+The UTF-8 JSON file uses `schema: "fairbeam.document/1"` and these fields:
 
 | Field | Meaning |
 | --- | --- |
-| `id` | Canonical lowercase UUID identifying this document |
-| `design` | Embedded `fairbeam.design/1` editable design; validated by the existing server checks |
-| `results_directory` | A single portable folder name beside the document |
-| `results` | List of result references, which may be empty |
+| `id` | Stable lowercase UUID identifying the project |
+| `design` | Embedded editable `fairbeam.design/1` design |
+| `results_directory` | Portable folder name beside the project |
+| `results` | References with `file`, `sha256` and `design_sha256` |
 
-Each result reference has exactly `file`, `sha256`, and `design_sha256`. The first is a JSON
-filename in the adjacent folder. `sha256` identifies the exact result file bytes. The design
-hash identifies the design snapshot used for that run, and can differ from the current design.
-It must not be recomputed from the current geometry when attaching an older run. Hashes establish
-identity, not physical accuracy, solver equivalence, or convergence.
-
-`design_sha256` uses the Python `design_digest` helper. For this identity only, JSON numbers are
-rounded to finite IEEE-754 doubles, then integral values and negative zero are written as integers.
-Normalization is recursive; booleans remain booleans. The normalized snapshot is serialized as
-sorted-key, two-space-indented UTF-8 JSON with a final newline. This makes an unchanged browser
-round trip (`32.0` to `32`, for example) retain its design identity. It is not a hash of browser
-`JSON.stringify` output. Result-file `sha256` continues to hash the exact original bytes.
-
-Folder and result names cannot contain path separators, traversal, alternate streams, Windows
-device names, or trailing dots/spaces, and are limited to 180 UTF-8 bytes.
-Result names with the same NFC-normalized lowercase spelling are refused; stored filenames keep
-their original spelling. This catches canonical Unicode and ordinary case duplicates, not every
-filesystem's Unicode alias rule.
-A document is limited to 40 MiB, an individual result to 200 MiB, and the reference list to 10,000.
-The Python reader rejects duplicate JSON keys and non-finite numbers. Browser envelope checks are
-preflight only: the server must validate the complete design and file contents before use.
-
-## Storage API and checks
-
-`fairbeam.documents.create(design, results_directory)` makes a separate snapshot.
-`save(path, document)` creates a new file; overwriting requires the byte hash returned by `read` or
-the previous successful `save`. Cooperating writers share an OS advisory lock. Writes are staged
-and flushed in the destination directory before publication. A stale revision, deleted file,
-failed flush, or failed replacement must not silently overwrite the previous document.
-
-On macOS, document saves in the same parent directory share a lock identified by the directory's
-device and inode. This intentionally serializes separate documents too, avoiding differences in
-filesystem case and Unicode alias rules. New files use `renamex_np(RENAME_EXCL)` where supported,
-falling back to an exclusive hardlink only when exclusive rename is unavailable. If neither
-operation is supported, creation fails without publishing partial content.
-Earlier native macOS checks on APFS passed ordinary saves, concurrent saves through case aliases,
-Unicode result-name collision checks and locked-file refusal. The metadata-copy change below
-requires a new Finder-open/save check on macOS. On the tested exFAT volume, neither exclusive
-rename nor hardlinks was supported, so creation refused without publishing partial content.
-Save on an internal APFS volume, then copy the `.fb` file and its adjacent results folder together.
-Other volumes still need their own checks.
-Other POSIX systems use an exclusive hardlink, and Windows uses a no-replace rename.
-
-The file is flushed before publication, but the parent directory is not fsynced afterward. This
-provides atomic visibility and conflict protection, not a guarantee that the rename survives
-power loss.
-
-Windows replacement refuses a destination with named data streams, including `Zone.Identifier`,
-or when stream enumeration fails or is unsupported. It checks before staging and again before
-publication; Save As to a new filename leaves the original file and its streams intact. This
-policy has been tested on NTFS; other Windows volumes need their own checks. Identical-byte saves
-do not replace the file and need no stream enumeration.
-
-Windows replacement also compares the destination and empty staging file's owner and primary
-group SIDs. A mismatch or unreadable identity refuses the save before writing bytes; the app
-does not change ownership or request additional privileges. This also keeps owner-relative
-access entries meaningful. Replacement then copies and verifies the destination DACL, including inherited ACEs and
-inheritance protection, on the empty staging file before writing document bytes. If the DACL
-cannot be read, applied, or preserved exactly, saving fails before replacing the destination.
-A retained deletion-capable handle removes a failed stage even when the copied DACL denies
-deletion; cleanup does not restore broader parent permissions onto document bytes. Publication
-continues to use rename/replace, without `ReplaceFileW`'s partial-failure behavior.
-This is a policy for ordinary local document files, not complete filesystem-metadata preservation.
-The writer neither queries nor guarantees preservation of SACLs, auditing rules, mandatory labels,
-or security resource attributes, and it does not enable security privileges. Files whose security
-depends on that metadata require a separate-copy workflow; the app does not detect those policies.
-Other attributes, including encryption and compression, are not copied or guaranteed.
-
-POSIX replacement preserves ordinary mode bits and requires the empty staging file's owner/group to
-match the destination. Special mode bits and BSD file flags remain unsupported. On macOS, the writer
-copies ACLs and extended attributes onto the empty stage using `fcopyfile(COPYFILE_ACL | COPYFILE_XATTR)`.
-Descriptor queries compare all listed attribute bytes and serialized ACLs before writing and again
-before replacement. This includes Finder's last-used date, tags, quarantine and other exposed attributes;
-failed copying or verification leaves the original intact. Linux still refuses extended metadata.
-An identical-byte save does not replace the file. These checks cover metadata exposed to the current
-user, within the advisory-lock and static-boundary guarantees below, without escalating permissions.
-
-New POSIX documents and portable result files currently use owner-only permissions (`0600`).
-They can be copied or shared, but do not automatically grant access to other local users through
-the directory's umask. Existing file permissions are preserved on replacement; this release does
-not widen them. Umask-aware creation remains a follow-up requiring native ACL and staging checks.
-
-`read(path)` returns `(document, byte_hash)` without opening results or executing Python.
-`read_result(path, document, reference)` checks membership, relative boundaries, regular files,
-and the content hash. Static symlinks and Windows reparse points in the result directory/file
-are refused. This is not a sandbox against a malicious local process concurrently swapping
-filesystem entries. A user-selected parent directory is resolved before access.
-
-Missing results do not prevent opening the embedded design. A result with a mismatched checksum
-is reported as unavailable rather than silently loaded. The workspace adapter captures the
-immutable input snapshot and exact completed result bytes, then copies verified bundles into
-the sidecar when saving. Older jobs without that provenance are skipped with a warning.
-Driven Elmer runs started from a saved workspace can also be attached. The server validates
-the workspace scope, saved revision, and original design before recording source identity in
-the checksummed research input. Capture verifies that original design separately from the
-experimental solver settings, plus the research result and exported bundle checksums. The
-experimental result remains experimental; attachment does not establish numerical accuracy.
-Source-less research calls retain their existing workspace history behavior and are not
-attached to `.fb` documents. Other research modes have no portable viewer bundle.
-Capture assumes exclusive output-directory ownership during the worker's write and completion;
-external writers replacing an output before its first capture are not provenance-attested.
-No sidecar garbage collector runs: unreferenced files are retained.
-
-From the repository root, with its own installed dependencies:
-
-```sh
-npm run check:documents
-cd python
-python -m unittest discover -s tests -p 'test_document*.py' -v
-python -m unittest discover -s tests -p test_native_documents_api.py -v
-python -m unittest discover -s tests -p test_research_documents.py -v
-cd ..
-```
-
-The shared cases in `python/tests/fixtures/document_envelopes.json` exercise both languages.
-Filesystem tests cover stale saves, simultaneous writers, Unicode, missing results, corrupted
-checksums, links, size limits, and failed writes. They require neither a solver nor network access.
-Windows cases also exercise named-stream refusal, stream-query failures, ordinary and read-only
-saves, and a stream added during staging. They verify original bytes, streams, owner/group, DACL,
-and file attributes remain intact after refusal. Other cases cover matching and mismatched
-owner/group SIDs, ownership read failures,
-protected and inherited destination DACLs, ACL failures before publication, and cleanup with a
-DACL that denies deletion. Numeric identity cases cover nested
-values, negative zero, exponents, and large integers rounded as browser JSON numbers.
-Platform-independent mocks check the macOS exclusive-rename contract, unsupported-volume refusal,
-competing creates, and parent-directory lock identities; these do not replace tests on a Mac.
-Metadata mocks cover descriptor query errors, ACLs, attributes, and ownership refusal. Native
-platform tests check Linux xattr refusal and macOS ACL/Finder-tag refusal on temporary fixtures.
-
-For manual local I/O measurements without a solver or network, run
-`python scripts/benchmark-document-io.py --bundles 500 --padding-kib 4 --repeats 3 --output current.json`
-from the repository root. Repeat with the same fixture arguments and either
-`--per-reference-manifest` (a fresh validated reader per reference) or
-`--legacy-result-reader` (an isolated second result read/hash). These are separate cost baselines,
-not complete historical implementations. The default fixture is eight bundles with 8 MiB padding;
-fixtures are limited to 1,000 bundles and 256 MiB total padding. Reports count actual reader bytes,
-result hashes, design hashes, and manifest validations. Each Open must match an unmodified-reader
-control exactly, including references, statuses, and copied bytes; sidecar hashes, sizes, and
-modification times must stay unchanged. Use new report filenames and compare alternating runs;
-cache priming and verification are outside the measured operation.
-
-## Remaining release gates
-
-- Round-trip desktop checks on Windows and macOS: Save/Open/cancel, an already running app,
-  path/rename/move, dirty-draft confirmation, and installed file associations.
-- Review the result-status presentation with missing, corrupt, historical, and newly computed
-  results. Existing JSON import, export, and the openEMS workflow must remain usable.
-- Validate the bounded metadata policy on target Windows and macOS volumes. Windows preserves
-  DACLs and owner/group identities and refuses named streams or failed stream queries. macOS copies
-  and verifies exposed ACLs/xattrs; Linux refuses extended metadata. Both preserve owner/group and mode. Windows SACLs,
-  audit/security policies, encryption, compression, and other attributes are outside the verified
-  preservation contract; unrestricted metadata-preserving overwrites are not supported.
-
-Do not promote a release on storage and unit checks alone.
+The project limit is 40 MiB; each result is at most 200 MiB, with at most 10,000 references. Checksums establish identity, not numerical validation. Developers can read the [storage contracts and platform checks](FB-DOCUMENT-DEVELOPMENT.md).

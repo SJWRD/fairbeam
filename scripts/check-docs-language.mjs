@@ -33,7 +33,7 @@ try {
     for (const theme of ["light", "dark"]) {
       await page.goto(`${base}/docs/tr/`, { waitUntil: "networkidle0" });
       await page.evaluate((value) => localStorage.setItem("fairbeam.theme", value), theme);
-      for (const slug of ["getting-started", "designer", "cli"]) {
+      for (const slug of ["getting-started", "designer", "cli", "project-files", "experimental-solvers", "coaxial-ports", "appearance"]) {
         await page.goto(`${base}/docs/tr/${slug}.html`, { waitUntil: "networkidle0" });
         const state = await page.evaluate(() => ({
           lang: document.documentElement.lang,
@@ -68,6 +68,32 @@ try {
   assert.equal(await page.$eval(".doc-body", (node) => node.lang), "en");
   assert.deepEqual(await page.evaluate(() => JSON.parse(localStorage.getItem("fairbeam.generalSettings"))), { language: "en", preserved: "keep" });
 
+  // Evidence links must survive translated text-node splitting on the public pages.
+  for (const width of [1440, 390]) {
+    await page.setViewport({ width, height: width === 390 ? 844 : 1000 });
+    for (const lang of ["en", "tr"]) {
+      await page.goto(`${base}/features.html`, { waitUntil: "networkidle0" });
+      await page.evaluate(lang => window.fairbeamSiteLanguage.setLanguage(lang), lang);
+      for (const path of ["validation.html", "benchmarks.html", "linux.html#tested-configuration-and-limits"]) {
+        assert.ok(await page.$(`a[href="docs/${path}"]`), `features ${lang}: evidence link ${path}`);
+      }
+      const values = await page.$eval(".table-block table", node => node.textContent);
+      assert.ok(values.includes(lang === "tr" ? "2,13–2,17" : "2.13–2.17"), `features ${lang}: documented dipole range`);
+      assert.ok(values.includes(lang === "tr" ? "15,52" : "15.52"), `features ${lang}: horn evidence`);
+      assert.ok(values.includes(lang === "tr" ? "0,004" : "0.004"), `features ${lang}: waveguide evidence`);
+      assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), `features ${lang}: fits ${width}`);
+      if (screenshots) await page.screenshot({ path: join(screenshots, `features-${lang}-${width}.png`), fullPage: true });
+      await page.goto(`${base}/roadmap.html`, { waitUntil: "networkidle0" });
+      assert.ok(await page.$('a[href="https://github.com/ismailakdag/fairbeam/issues/228"]'));
+      assert.match(await page.$eval(".rm-intro + .note", node => node.textContent), lang === "tr" ? /yeniden doğrulanmamıştır/ : /have not been reverified/);
+      assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), `roadmap ${lang}: fits ${width}`);
+    }
+  }
+  await page.goto(base, { waitUntil: "networkidle0" });
+  assert.ok(await page.$('#download a[href="docs/linux.html"]'));
+  assert.ok(await page.$('#download a[href="docs/from-source.html"]'));
+  await page.evaluate(() => window.fairbeamSiteLanguage.setLanguage("en"));
+
   await page.goto(`${base}/docs/#get-started`, { waitUntil: "networkidle0" });
   await Promise.all([page.waitForNavigation({ waitUntil: "networkidle0" }), page.click('[data-site-language="tr"]')]);
   assert.equal(new URL(page.url()).hash, "#get-started");
@@ -91,5 +117,5 @@ try {
   await Promise.all([blocked.waitForNavigation({ waitUntil: "networkidle0" }), blocked.click('[data-site-language="en"]')]);
   assert.equal(new URL(blocked.url()).pathname, "/docs/cli.html");
   assert.equal(await blocked.$eval("html", (node) => node.lang), "en");
-  console.log("check-docs-language: 3 pages × 2 widths × 2 themes; language switch, anchors, saved settings, no-JS and unavailable storage OK");
+  console.log("check-docs-language: 7 pages × 2 widths × 2 themes; EN/TR evidence links, roadmap provenance, language switch, anchors, saved settings, no-JS and unavailable storage OK");
 } finally { await browser?.close(); rmSync(profile, { recursive: true, force: true }); }

@@ -1,7 +1,7 @@
 import { commandModifier, isMacPlatform, modifierShortcut } from "../lib/shortcut.ts";
 import { t } from "../i18n/index.ts";
 
-export type ShortcutId = "transform" | "duplicate" | "delete" | "rename" | "save" | "saveAs" | "undo" | "redo" | "close" | "fit" | "brick" | "export" | "run" | "cancel" | "help" | "extrudeFace" | "markers" | "tree" | "dock" | "side" | "ribbon" | "mainTabs" | "panes"
+export type ShortcutId = "newDesign" | "openDocument" | "transform" | "duplicate" | "delete" | "rename" | "save" | "saveAs" | "undo" | "redo" | "close" | "fit" | "brick" | "export" | "run" | "cancel" | "help" | "extrudeFace" | "markers" | "tree" | "dock" | "side" | "ribbon" | "mainTabs" | "panes"
   | "booleanAdd" | "booleanSubtract" | "booleanIntersect" | "booleanInsert";
 
 /** One entry: its label and context are read in the current language each time (getters), so the
@@ -18,6 +18,8 @@ function entry<I extends ShortcutId>(id: I, key: string) {
 export function shortcutTable(mac = isMacPlatform()) {
   const m = (key: string) => modifierShortcut(key, mac);
   return {
+    newDesign: entry("newDesign", m("N")),
+    openDocument: entry("openDocument", m("O")),
     transform: entry("transform", m("T")),
     duplicate: entry("duplicate", m("D")),
     delete: entry("delete", mac ? "⌫" : "Delete"),
@@ -57,6 +59,8 @@ type KeyEvent = Pick<KeyboardEvent, "key" | "metaKey" | "ctrlKey" | "altKey" | "
 export function matchesShortcut(id: ShortcutId, e: KeyEvent, mac = isMacPlatform()): boolean {
   const key = e.key.toLowerCase(), mod = commandModifier(e, mac), plain = !e.metaKey && !e.ctrlKey && !e.altKey;
   switch (id) {
+    // These are native menu accelerators. The page must not dispatch a second command.
+    case "newDesign": case "openDocument": return false;
     case "transform": case "duplicate": case "save": case "close": case "brick": case "export":
       return mod && !e.altKey && !e.shiftKey && key === ({ transform: "t", duplicate: "d", save: "s", close: "w", brick: "b", export: "e" } as const)[id];
     // the browser may keep Shift+Ctrl+S for itself (a web capture); the desktop menu has it too

@@ -4,7 +4,9 @@ import { X } from "lucide-solid";
 import { useModal } from "../lib/dialog";
 import { closeDesign, defaultDesignerSession, dirty, draft, file, message, releaseDraft, replaceRequest, type ReplaceRequest, saveAndCloseDesign, saveBeforeLeaving, saving } from "./store";
 
-import { answerWindowClose, approveUpdateDiscard, decideWindowClose, finishUpdate, updateApproved, windowClose, type WindowLeave } from "./windowClose";
+import { answerWindowClose, approveUpdateDiscard, approveWindowDiscard, decideWindowClose, finishUpdate, updateApproved, windowClose, type WindowLeave } from "./windowClose";
+import { closeActivity, decideCloseActivity, registerCloseActivity } from "./closeActivity";
+import { api, isTerminal } from "../runner/api";
 import { modifierShortcut } from "../lib/shortcut";
 import { t } from "../i18n";
 
@@ -151,7 +153,7 @@ function WindowCloseDialog(props: { kind: WindowLeave }) {
       // Update consent keeps the draft until install; Later can still cancel the update.
       discard={() => {
         if (props.kind === "update") approveUpdateDiscard();
-        else { closeDesign(); decideWindowClose("close"); }
+        else approveWindowDiscard();
       }}
       cancel={() => decideWindowClose("cancel")}
       captureEscape
@@ -159,9 +161,41 @@ function WindowCloseDialog(props: { kind: WindowLeave }) {
   );
 }
 
+function RunningWorkDialog(props: { count: number | null }) {
+  let dialog!: HTMLDivElement;
+  let cancelButton!: HTMLButtonElement;
+  const cancel = () => decideCloseActivity(false);
+  useModal(() => dialog, cancel, () => cancelButton);
+  return (
+    <div class="scrim" onPointerDown={e => e.target === e.currentTarget && cancel()}>
+      <div ref={dialog} class="dialog close-project-dialog" role="dialog" aria-modal="true" aria-labelledby="close-runs-title"
+        aria-describedby="close-runs-description" tabindex="-1">
+        <div class="dialog-head">
+          <div>
+            <h2 id="close-runs-title">{t(props.count === null ? "closeRuns.unknown.title" : "closeRuns.title")}</h2>
+            <p id="close-runs-description">{props.count === null ? t("closeRuns.unknown.description") : t("closeRuns.description", { count: props.count })}</p>
+          </div>
+          <button class="icon-btn" onClick={cancel} aria-label={t("common.cancel")}><X size={16} /></button>
+        </div>
+        <div class="dialog-foot"><div class="dialog-actions">
+          <button class="btn btn-ghost" onClick={() => decideCloseActivity(true)}>{t("closeRuns.quit")}</button>
+          <button ref={cancelButton} class="btn btn-primary" onClick={cancel}>{t("common.cancel")}</button>
+        </div></div>
+      </div>
+    </div>
+  );
+}
+
 /** Mounted above workspace modes so File > Close also works after visiting Results or Start. */
 export default function CloseProjectHost() {
   onMount(() => {
+    // /runs is the server's full manager list, not the current document's cached history.
+    onCleanup(registerCloseActivity(async () => {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 5000);
+      try { return (await api.runs(controller.signal)).filter(job => !isTerminal(job.status)).map(job => job.id); }
+      finally { clearTimeout(timer); }
+    }));
     const onClose = (event: Event) => {
       if (!file()) return;
       // Tell the native menu that a project owns this command, even while a dialog is open.
@@ -192,6 +226,7 @@ export default function CloseProjectHost() {
     <>
       <Show when={requested() && file()}><CloseProjectDialog /></Show>
       <Show when={windowClose()}>{(request) => <Portal><WindowCloseDialog kind={request().kind} /></Portal>}</Show>
+      <Show when={closeActivity()}>{request => <Portal><RunningWorkDialog count={request().count} /></Portal>}</Show>
       {/* in <body>, after every other modal: the New model dialog stays behind it */}
       <Show when={replaceRequest()} keyed>{(request) => <Portal><ReplaceProjectDialog request={request} /></Portal>}</Show>
       <Show when={updateApproved() !== null}><Portal>

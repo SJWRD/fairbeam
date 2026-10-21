@@ -237,7 +237,7 @@ export default function Home() {
               <Show when={serverState() === "checking" || serverState() === "unknown"} fallback={
                 <>
                   <h2>{t("home.offline.title")}</h2>
-                  <p>{withCommand(t("home.offline.body"), "fairbeam serve")}</p>
+                  <p><Show when={isDesktopShell()} fallback={withCommand(t("home.offline.body"), "fairbeam serve")}>{t("home.offline.desktop")}</Show></p>
                   <button class="btn btn-ghost btn-sm" onClick={() => probeServer()}>{t("home.offline.checkAgain")}</button>
                 </>
               }>

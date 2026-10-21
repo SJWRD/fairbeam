@@ -16,8 +16,9 @@ Turkish students and Teknofest teams are welcome.
 - Product names, file formats and code stay as they are: Fairbeam, openEMS, CSXCAD, Python,
   Touchstone, `.design.json`, `.s2p`, Gerber, PDF, CSV, GPU/CPU, TE10.
 - Units and symbols stay: mm, GHz, dB, dBi, Ω, S/m, εr, tan δ, λ.
-- Short, natural UI Turkish. Buttons are imperatives ("Kaydet", "Çalıştır", "İptal"), menus use
-  title case like macOS Turkish ("Farklı Kaydet…"), sentences end with a full stop.
+- Short, natural UI Turkish. Buttons are imperatives ("Kaydet", "Çalıştır", "İptal"). Native menus
+  use title case and the fixed command names below ("Farklı Kaydet…", "Geri Al", "Başlarken Kılavuzu").
+  Ordinary UI text uses sentence case. Sentences end with a full stop.
 - Suffixes on names and codes take an apostrophe: openEMS'in, Python'u, S11'in. Fairbeam
   is read with a front vowel (/iː/) before the final m and takes the front-vowel suffixes: Fairbeam'i, Fairbeam'e,
   Fairbeam'de, Fairbeam'den, Fairbeam'in, Fairbeam'le. Write them by hand; never add a suffix to the
@@ -50,7 +51,9 @@ Turkish students and Teknofest teams are welcome.
 | Examples | Örnekler | |
 | Results | Sonuçlar | tab, tree folder, dock; "2B/3B Sonuçlar" is the tree's field-map folder |
 | Post (ribbon tab, run step) | Son işlem | processing after the solver |
-| Result file (a run's saved `.json`) | Sonuç dosyası | what "Open result or design file…" opens (a design file becomes a new design); "Proje" is no longer used in the interface (see UI terms) |
+| Result file (a run's saved `.json`) | Sonuç dosyası | what "Open result or design file…" opens (a design file becomes a new design); the portable `.fb` file is a project (Proje); see UI terms |
+| Project (portable `.fb` with its results folder) | Proje / proje dosyası | "Open project…" = "Proje aç…", "Project file" = "Proje dosyası" |
+| Getting started guide | Başlarken kılavuzu | not "Başlangıç kılavuzu" |
 | Workspace (folder) | Çalışma klasörü / çalışma alanı | |
 | Ribbon | Şerit | as in Office |
 | Tab | Sekme | |
@@ -71,8 +74,11 @@ Turkish students and Teknofest teams are welcome.
 | Export package (the zip of a result: header button, dialog title, ribbon tooltip) | Paketi dışa aktar | one name everywhere; the ribbon button may use the short form "Paket" when its tooltip says "Paketi dışa aktar" |
 | Preview | Önizleme | "Mesh önizlemesi" (not "Önizleme mesh'i") |
 | Rendered (the View toggle) / Render image… / Rendered image (PNG)… | Render / Render görüntüsü… / Render görüntüsü (PNG)… | one term for the feature; its ribbon group is "Render", apart from the "Görünüm" tab |
+| Technical drawing (Drawing view, export and package) | Teknik çizim / Çizim | not "teknik resim" |
+| Renderer / rendering | Render motoru / render alınıyor | use render for image generation; ordinary geometry drawing may use çizmek |
 | Run (verb / button, noun, list) | Çalıştır / Çalıştırma / Çalıştırmalar | one term for a simulation run, in every text ("Bu çalıştırma", "yeniden çalıştırın", the Çalıştırmalar tab); "koşu" and "koşturmak" are not used. Its saved file is the result file |
-| Job | İş | |
+| Job | İş | one queued job; not a study |
+| Study (mesh convergence or parameter study) | Çalışma | reserved for a study; a run is Çalıştırma, a job is İş |
 | Run server | Çalıştırma sunucusu | `fairbeam serve` |
 | Runtime | Çalışma ortamı | the managed Python + openEMS |
 | Engine | Motor | CPU/GPU engine |
@@ -90,10 +96,11 @@ Turkish students and Teknofest teams are welcome.
 | Shape / primitive | Şekil | one brick, cylinder, polygon… inside a solid |
 | Brick | Kutu | |
 | Cylinder / Sphere / Cone / Torus | Silindir / Küre / Koni / Torus | |
-| Polygon / extruded polygon | Çokgen / uzatılmış çokgen | |
+| Polygon / extruded polygon | Çokgen / ekstrüde çokgen | action labels are Ekstrüzyon and Yüz ekstrüzyonu |
 | Sheet | Levha | a zero-thickness shape |
 | Wire | Tel | |
 | Transform | Dönüştür | |
+| Transform WCS… / Show WCS | WCS'yi dönüştür… / WCS'yi göster | WCS is the working coordinate system; retain the abbreviation in command labels |
 | Translate / Rotate / Mirror / Scale | Ötele / Döndür / Aynala / Ölçekle | |
 | Copies | Kopyalar | |
 | Boolean: Add (union) / Subtract / Intersect | Boolean: Birleştir / Çıkar / Kesiştir | |
@@ -114,7 +121,7 @@ Turkish students and Teknofest teams are welcome.
 | Air padding | Hava payı | mesh › pad, and its check `air-pad` |
 | Feed | Besleme | |
 | Port / discrete port / waveguide port | Port / ayrık port / dalga kılavuzu portu | "Discrete port" is the name of the lumped port, "ayrık port" in every text including the Checks (never "toplu port"); the file format still says `lumped` |
-| Lumped element (R, L, C) | Toplu eleman | "toplu" is only for these R/L/C elements, never for a port |
+| Lumped element (R, L, C) | Toplu eleman | "toplu" is only for these R/L/C elements, never for a port; Add lumped element… is Toplu eleman ekle… |
 | Excitation | Uyarım | |
 | Resistor | Direnç | |
 | Axis | Eksen | |
@@ -174,10 +181,11 @@ Turkish students and Teknofest teams are welcome.
 
 ## UI terms (English wording decisions)
 
-The English interface uses one word per thing. The Turkish texts follow the same split.
+The English interface uses one word per thing. The Turkish texts follow the same split. "Project" means the portable `.fb` file and its adjacent results folder; it does not replace design, run or result file. Code keys such as `document.*` keep their existing names.
 
 | Thing | UI word | Not | Turkish |
 |---|---|---|---|
+| The portable `.fb` file ([project files](FB-DOCUMENT.md)) | project: "Open project…", "Project file" | document, file (alone), belge | proje / proje dosyası |
 | The editable model file (`*.design.json`) | design: "New design", "Close design", "Your designs", "Open as new design…", "Design ID" | project | tasarım |
 | One simulation and what it produced | run: "Runs" tab, "Compare runs", "Run server" | project, simulation cell | çalıştırma |
 | The saved `.json` of a run | result file: "Open result or design file…", "Result file" | project bundle, project | sonuç dosyası |

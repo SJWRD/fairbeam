@@ -293,7 +293,7 @@ export async function exportResultCsv(bundle: Bundle | null | undefined, view: R
   requireExportPhase(bundle, view, runs, options);
   const { saveDownload } = await import("../lib/download");
   return saveDownload(filename.toLowerCase().endsWith(".csv") ? filename : `${filename}.csv`,
-    resultDataCsv(activeResultDataTable(bundle, view, frequencyHz, runs, options)), "text/csv;charset=utf-8");
+    "\uFEFF" + resultDataCsv(activeResultDataTable(bundle, view, frequencyHz, runs, options)), "text/csv;charset=utf-8");
 }
 
 function requireExportPhase(bundle: Bundle | null | undefined, view: ResultView, runs: { file: string; bundle: Bundle }[] | undefined, options: ResultDataOptions) {

@@ -86,7 +86,7 @@ try {
     await s.wait('.research-dialog');
     assert.equal(await page.$eval('#research-form select', e => e.value), 'elmer');
     assert.equal(await page.$('[data-testid="elmer-antenna-form"]'), null, 'setup replaces, rather than stacks, the run dialog');
-    assert.ok(await page.$('#research-form a[href$="RESEARCH-SOLVERS.md"]'));
+    assert.equal(await page.$eval('#research-form a', e => e.href), `https://fairbeam.org/docs/${lang === "tr" ? "tr/" : ""}experimental-solvers.html`);
     await page.screenshot({ path: `${evidence}/elmer-setup-${lang}.png` });
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
     assert.ok(!s.consoleIssues.some(x => x.startsWith('page error')), s.consoleIssues.join('\n'));
