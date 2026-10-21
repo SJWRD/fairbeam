@@ -17,11 +17,30 @@ try {
     await page.evaluateOnNewDocument(language=>localStorage.setItem('fairbeam.generalSettings',JSON.stringify({language})),language);
     await page.goto(stack.url,{waitUntil:'domcontentloaded'});
     await page.waitForSelector('.home form input[type=text]');
-    const fill=async(selector,value)=>{await page.click(selector,{clickCount:3});await page.keyboard.type(value);await page.keyboard.press('Tab');};
+    const fill=async(selector,value)=>{
+      await page.click(selector,{clickCount:3});
+      // Pointer multi-click selection differs between platforms; explicitly select the input,
+      // as the shared scenario harness does, so typed coordinates replace rather than append.
+      await page.$eval(selector,e=>e.select());
+      await page.keyboard.type(value);
+      assert.equal(await page.$eval(selector,e=>e.value),value,`${selector}: requested coordinate entered`);
+      await page.keyboard.press('Tab');
+    };
     const click=async(key,scope='')=>{
       const button=await page.evaluateHandle(({label,scope})=>[...document.querySelectorAll(`${scope} button`)].find(e=>(e.getAttribute('aria-label')||e.textContent.trim())===label),{label:translations[key],scope});
       assert.ok(button.asElement(),`control ${key} exists`);
-      await button.asElement().click();await button.dispose();
+      const point=await button.evaluate(el=>{
+        const r=el.getBoundingClientRect();
+        for(const u of [.5,.1,.9]) for(const v of [.5,.1,.9]) {
+          const x=r.left+r.width*u,y=r.top+r.height*v,hit=document.elementFromPoint(x,y);
+          if(hit&&el.contains(hit)) return {x,y};
+        }
+        return null;
+      });
+      // A modeless form can cover the center of a camera button at this narrow width.
+      // Click its exposed portion, never a different element through an occluding form.
+      assert.ok(point,`control ${key} has a visible pointer target`);
+      await page.mouse.click(point.x,point.y);await button.dispose();
     };
     await fill('.home form input[type=text]',`Shape workflow ${language}`);
     await click('home.newProject.create','.home');
@@ -37,7 +56,7 @@ try {
       await fill(`#dz-__shape-start-${axis}-`,start);await fill(`#dz-__shape-stop-${axis}-`,stop);
     }
     const summary=await page.$eval('.sd .dialog-foot',e=>e.textContent);
-    assert.ok(summary.includes(translations['shape.summary.sheet'].replace('{axis}','Z')),`${language}: zero-thickness sheet is explicitly described`);
+    assert.ok(summary.includes(translations['shape.summary.sheet'].replace('{axis}','Z')),`${language}: zero-thickness sheet is explicitly described; actual footer: ${JSON.stringify(summary)}`);
     await click('common.ok','.sd');
     await page.waitForSelector('.sd',{hidden:true});
     await page.waitForFunction(()=>document.activeElement?.classList.contains('viewport'));
@@ -49,6 +68,8 @@ try {
     await page.keyboard.press('Escape');
     await page.waitForSelector('.sd',{hidden:true});
     assert.equal(await page.evaluate(()=>document.activeElement?.textContent.trim()),translations['viewport.view.top']);
+    // Re-announcements clear first and publish on the next animation frame.
+    await page.waitForFunction(label=>document.querySelector('.viewport [role=status], .viewport [aria-live]')?.textContent?.includes(label),{},translations['viewport.view.top']);
     const announcements=await page.$eval('.viewport [role=status], .viewport [aria-live]',e=>e.textContent);
     assert.ok(announcements.includes(translations['viewport.view.top']),`${language}: camera view name is translated`);
     assert.ok(!announcements.includes('viewport.'),'no raw translation key in the camera announcement');

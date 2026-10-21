@@ -1,7 +1,7 @@
 // Focused regression for the viewport's resolved-primitive geometry cache.
 import assert from "node:assert/strict";
 import * as THREE from "three";
-import { SceneGeometryCache, primitiveGeometry } from "../src/scene/geometry.ts";
+import { buildParts, SceneGeometryCache, primitiveGeometry } from "../src/scene/geometry.ts";
 
 const shape = {
   kind: "linpoly", normal: 2, elevation: 1.25, length: 2.5,
@@ -9,6 +9,16 @@ const shape = {
   priority: 1, bbox: [[0, 0, 1.25], [4, 3, 3.75]], exact: true,
 };
 const polygon = { ...shape, kind: "polygon", length: undefined };
+
+// Shapes in one solid share its color, but highlighting one must not change its neighbor.
+const [solid] = buildParts({ parts: [{ name: "arms", type: "Metal", bbox: shape.bbox,
+  primitives: [shape, { ...shape, elevation: 5, bbox: [[0, 0, 5], [4, 3, 7.5]] }] }] },
+  { metal: "#b87333", dielectric: "#ffffff", edge: "#000000", cut: "#0000ff" }, null, false);
+const [first, second] = solid.meshes;
+assert.notEqual(first.material, second.material, "primitive highlights use separate materials");
+first.material.emissive.set("#ffffff");
+assert.equal(second.material.emissive.getHex(), 0, "the other primitive keeps its original brightness");
+solid.group.traverse((object) => { object.geometry?.dispose(); object.material?.dispose(); });
 
 const disposed = new Map();
 const watched = new WeakSet();

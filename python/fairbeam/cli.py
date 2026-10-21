@@ -14,10 +14,12 @@
 import argparse
 import copy
 import json
+import logging
 import math
 import os
 import re
 import sys
+import tempfile
 import time
 from pathlib import Path
 
@@ -33,6 +35,7 @@ REPO = Path(__file__).resolve().parents[2]
 # checkout, the desktop app's workspace in the packaged runtime
 DEFAULT_OUT = REPO / "public" / "projects"
 DEFAULT_SIM = REPO / ".sim"
+_LOG = logging.getLogger(__name__)
 
 
 def _overrides(pairs):
@@ -139,7 +142,13 @@ def _write(bundle, out_dir: Path, slug: str, *, keep_existing: bool = False):
     tmp.write_text(json.dumps(finite_json(bundle), separators=(",", ":"), allow_nan=False),
                    encoding="utf-8")
     os.replace(tmp, path)
-    rebuild_index(out_dir)
+    try:
+        rebuild_index(out_dir)
+    except (OSError, ValueError, TypeError, KeyError, AttributeError, RecursionError, OverflowError) as exc:
+        # The canonical result is already committed. The derived browsing index
+        # can be rebuilt; its failure must not turn a completed solver run into
+        # a failed job or prevent the caller's "fairbeam: wrote" result signal.
+        _LOG.warning("Result %s was saved; the project index could not be updated: %s", path.name, exc)
     return path
 
 
@@ -655,7 +664,12 @@ UNCOUPLED_EFFICIENCY = 0.02   # total efficiency below this in every far-field e
 
 
 def _finite(x) -> bool:
-    return isinstance(x, (int, float)) and not isinstance(x, bool) and math.isfinite(x)
+    if not isinstance(x, (int, float)) or isinstance(x, bool):
+        return False
+    try:
+        return math.isfinite(x)
+    except OverflowError:  # a JSON integer may exceed the viewer's numeric range
+        return False
 
 
 def run_quality(b: dict) -> str | None:
@@ -752,9 +766,14 @@ _INDEX_CACHE: dict[str, tuple[tuple[int, int], dict | None]] = {}
 
 
 def _index_entry(f: Path) -> dict | None:
+    from .documents import _linked
+
     try:
-        st = f.stat()
+        st = f.lstat()
     except OSError:
+        return None
+    if _linked(st):
+        _LOG.warning("Skipping linked project index input %s", f.name)
         return None
     stamp = (st.st_mtime_ns, st.st_size)
     hit = _INDEX_CACHE.get(str(f))
@@ -766,18 +785,54 @@ def _index_entry(f: Path) -> dict | None:
 
 
 def _read_index_entry(f: Path) -> dict | None:
+    from .documents import _read_bytes
+
     try:
-        b = json.loads(f.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
+        # Match the reader's existing size rather than imposing a new bundle
+        # size limit. _read_bytes rejects links/special files and partial reads.
+        b = json.loads(_read_bytes(f, f.lstat().st_size).decode("utf-8"))
+        if not isinstance(b, dict):
+            raise ValueError("expected a project object")
+        if not schema_family(b.get("schema"), "fairbeam.project/"):
+            return None
+        entry = _bundle_index_entry(f, b)
+        # Validate each entry before caching it. A foreign bundle's NaN/Infinity
+        # must not make the whole index unreadable by the browser's JSON.parse.
+        json.dumps(entry, allow_nan=False)
+        values = [entry]
+        while values:
+            value = values.pop()
+            if isinstance(value, dict):
+                values.extend(value.values())
+            elif isinstance(value, list):
+                values.extend(value)
+            elif isinstance(value, (int, float)) and not isinstance(value, bool) and not _finite(value):
+                raise ValueError("index numbers must fit the viewer's finite numeric range")
+        return entry
+    except (OSError, ValueError, AttributeError, TypeError, KeyError, RecursionError, OverflowError) as exc:
+        _LOG.warning("Skipping invalid project index input %s: %s", f.name, exc)
         return None
-    if not schema_family(b.get("schema"), "fairbeam.project/"):
-        return None
+
+
+def _bundle_index_entry(f: Path, b: dict) -> dict:
+    for field in ("model", "mesh", "results", "run"):
+        if b.get(field) is not None and not isinstance(b[field], dict):
+            raise ValueError(f"{field} must be an object")
+    if b.get("name") is not None and not isinstance(b["name"], str):
+        raise ValueError("project name must be text")
+    model = b.get("model") or {}
+    if model.get("id") is not None and not isinstance(model["id"], str):
+        raise ValueError("model id must be text")
     res = b.get("results") or {}
+    bands = res.get("bands") or []
+    if (not isinstance(bands, list) or any(not isinstance(band, dict)
+            or not _finite(band.get("f_center")) for band in bands)):
+        raise ValueError("bands must contain finite center frequencies")
     entry = {
-        "file": f.name, "name": b.get("name"), "model": b.get("model", {}).get("id"),
+        "file": f.name, "name": b.get("name"), "model": model.get("id"),
         "created": b.get("created"), "simulated": bool(res),
-        "bands": [round(x["f_center"] / 1e9, 3) for x in res.get("bands", [])],
-        "cells": b.get("mesh", {}).get("total_cells"),
+        "bands": [round(x["f_center"] / 1e9, 3) for x in bands],
+        "cells": (b.get("mesh") or {}).get("total_cells"),
     }
     # optional (newer indexes only): each band's edges, for the picker's band text (src/lib/bands.ts):
     # the middle of the edges, or the range of a band that runs past the simulated range
@@ -805,19 +860,26 @@ def _read_index_entry(f: Path) -> dict | None:
 
 
 def rebuild_index(out_dir: Path):
+    from .modelfiles import _retry_busy
+
     entries = []
     for f in sorted(Path(out_dir).glob("*.json")):
-        if f.name == "index.json":
+        if f.name == "index.json" or f.name.startswith("._"):
             continue
         entry = _index_entry(f)
         if entry is not None:
             entries.append(entry)
     entries.sort(key=lambda e: (e["model"] or "", e["name"] or ""))
     # atomic: the viewer (and a concurrent run) must never read a half-written index
-    tmp = Path(out_dir) / f"index.json.{os.getpid()}.tmp"
-    tmp.write_text(json.dumps({"projects": entries, "updated": time.strftime("%Y-%m-%dT%H:%M:%S%z")}, indent=2),
-                   encoding="utf-8", newline="\n")  # LF on Windows too: index.json is committed
-    os.replace(tmp, Path(out_dir) / "index.json")
+    fd, name = tempfile.mkstemp(prefix=".index-", suffix=".tmp", dir=out_dir)
+    tmp = Path(name)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as stream:
+            json.dump({"projects": entries, "updated": time.strftime("%Y-%m-%dT%H:%M:%S%z")}, stream,
+                      indent=2, allow_nan=False)
+        _retry_busy(lambda: os.replace(tmp, Path(out_dir) / "index.json"))
+    finally:
+        tmp.unlink(missing_ok=True)
 
 
 def main(argv=None):

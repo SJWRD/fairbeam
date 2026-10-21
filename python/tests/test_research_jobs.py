@@ -14,7 +14,7 @@ from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from fairbeam import research
-from fairbeam.jobs import JobManager
+from fairbeam.jobs import Job, JobManager
 from fairbeam.procutil import pid_alive
 from fairbeam.server import App, make_server
 
@@ -238,6 +238,53 @@ class ResearchHTTP(ResearchFixtures, unittest.TestCase):
         return response.status,payload
 
     # Inherited queue tests use the same HTTP-owned manager; keep only endpoint-specific methods.
+    def test_summary_lists_preserve_metadata_and_full_detail_for_fresh_and_restored_jobs(self):
+        manager = self.app.manager
+        ordinary = Job(manager.root, id='summary-sweep', model='ordinary', status='running',
+                       created=3, sweep={'id': 'sweep', 'index': 0, 'total': 2},
+                       stats={'bands': [{'s11_min_db': -20}]}, info={'cells': 100})
+        manager.jobs[ordinary.id] = ordinary
+        for restored in (False, True):
+            job = Job(manager.root, id='summary-restored' if restored else 'summary-fresh',
+                      kind='research', model='research:periodic', status='done', created=2 if restored else 1,
+                      research={'backend': 'periodic', 'settings': {'cpw': 20}, 'snapshot_sha256': 'a' * 64})
+            value = result('periodic')
+            value.update(input_sha256=job.research['snapshot_sha256'],
+                         frequency_hz=[1e9 + i * 1e6 for i in range(1001)],
+                         s11_real=[0.] * 1001, s11_imag=[0.] * 1001,
+                         s21_real=[1.] * 1001, s21_imag=[0.] * 1001)
+            research.validate_result(value, 'periodic')
+            raw = research.encode(value)
+            folder = job.dir / 'research'; folder.mkdir(parents=True)
+            (folder / 'result.json').write_bytes(raw)
+            job.result = value
+            job.research['result_sha256'] = hashlib.sha256(raw).hexdigest()
+            job.save()
+            manager.jobs[job.id] = Job.load(manager.root, job.dir) if restored else job
+
+        # Opt-in summaries omit the payload before JSON encoding. Default callers and
+        # persisted manifests keep the full API representation, including null results.
+        for route in ('/api/runs', '/api/research/runs'):
+            code, full = self.request('GET', route)
+            self.assertEqual(code, 200)
+            code, summary = self.request('GET', route + '?summary=1')
+            self.assertEqual(code, 200)
+            self.assertEqual(summary['runs'], [{k: v for k, v in row.items() if k != 'result'} for row in full['runs']])
+            self.assertEqual(self.request('GET', route + '?summary=0')[1], full)
+            self.assertLess(len(json.dumps(summary)), len(json.dumps(full)) // 5)
+            self.assertEqual([row['id'] for row in summary['runs']],
+                             ['summary-sweep', 'summary-restored', 'summary-fresh'] if route == '/api/runs'
+                             else ['summary-restored', 'summary-fresh'])
+
+        for job_id in ('summary-fresh', 'summary-restored'):
+            original = manager.get(job_id)
+            for route in ('/api/runs/', '/api/research/runs/'):
+                code, detail = self.request('GET', route + job_id)
+                self.assertEqual(code, 200)
+                self.assertEqual(detail['result'], original.result)
+            self.assertEqual(Job.load(manager.root, original.dir).result, original.result)
+        self.assertIn('result', manager.list()[0], 'internal default list callers keep their contract')
+
     def test_routes_isolate_history_and_detect_result_tampering(self):
         with mock.patch('fairbeam.research.prepare',return_value=self.spec()):
             code,doc=self.request('POST','/api/research/runs',{'backend':'elmer','settings':{}})

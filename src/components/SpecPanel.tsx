@@ -4,6 +4,7 @@ import { bundle, farfieldIndex, setDockTab, setFarfieldIndex, setLayers } from "
 import { bandTexts } from "../lib/bands";
 import { compact, GHz, ghzText, num, seconds, timeUnit } from "../lib/format";
 import { bundleWriter } from "../lib/appVersion";
+import { modelToMm } from "../lib/modelUnits";
 import { convergenceTextUi, efficiencyIssue, efficiencyWarningUi } from "../lib/runText";
 import ComparisonCard from "./ComparisonCard";
 import MeasuredTimes from "./MeasuredTimes";
@@ -25,6 +26,7 @@ export default function SpecPanel() {
         {(b) => {
           const r = () => b().run;
           const res = () => b().results;
+          const toMm = () => modelToMm(b());
           const dt = () => (res()?.signals && "dt_s" in res()!.signals ? (res()!.signals as { dt_s: number | null }).dt_s : null);
           return (
             <>
@@ -126,13 +128,13 @@ export default function SpecPanel() {
                     fallback={
                       <p class="status-block status-warn">
                         <TriangleAlert size={14} />
-                        <span>{convergenceTextUi(r()!, b().solver.end_criteria_db, { maxTimesteps: b().solver.max_timesteps, minCell: b().mesh.min_cell })}</span>
+                        <span>{convergenceTextUi(r()!, b().solver.end_criteria_db, { maxTimesteps: b().solver.max_timesteps, minCell: b().mesh.min_cell * toMm() })}</span>
                       </p>
                     }
                   >
                     <p class="status-block status-good">
                       <CircleCheck size={14} />
-                      <span>{convergenceTextUi(r()!, b().solver.end_criteria_db, { maxTimesteps: b().solver.max_timesteps, minCell: b().mesh.min_cell })}</span>
+                      <span>{convergenceTextUi(r()!, b().solver.end_criteria_db, { maxTimesteps: b().solver.max_timesteps, minCell: b().mesh.min_cell * toMm() })}</span>
                     </p>
                   </Show>
                   <Show when={r()!.engine_warning}>
@@ -185,9 +187,9 @@ export default function SpecPanel() {
                 <dl class="kv">
                   <dt>{t("spec.grid")}</dt><dd class="mono">{t("spec.gridLines", { x: b().mesh.x.length, y: b().mesh.y.length, z: b().mesh.z.length })}</dd>
                   <dt>{t("results.mesh.cells")}</dt><dd class="mono">{compact(b().mesh.total_cells)}</dd>
-                  <dt>{t("results.mesh.smallest")}</dt><dd class="mono">{num(b().mesh.min_cell, 3)} mm</dd>
-                  <dt>{t("results.mesh.largest")}</dt><dd class="mono">{num(b().mesh.max_cell, 2)} mm</dd>
-                  <dt>{t("spec.lambdaPerCell")}</dt><dd class="mono">{num(299792458 / b().solver.excitation.f_max * 1e3 / b().mesh.max_cell, 1)}</dd>
+                  <dt>{t("results.mesh.smallest")}</dt><dd class="mono">{num(b().mesh.min_cell * toMm(), 3)} mm</dd>
+                  <dt>{t("results.mesh.largest")}</dt><dd class="mono">{num(b().mesh.max_cell * toMm(), 2)} mm</dd>
+                  <dt>{t("spec.lambdaPerCell")}</dt><dd class="mono">{num(299792458 / b().solver.excitation.f_max * 1e3 / (b().mesh.max_cell * toMm()), 1)}</dd>
                   <dt>{t("results.mesh.timestep")}</dt><dd class="mono">{timeUnit(dt())}</dd>
                 </dl>
               </section>

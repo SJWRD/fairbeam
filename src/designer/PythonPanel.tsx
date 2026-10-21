@@ -1,10 +1,11 @@
 import { createEffect, createSignal, lazy, on, onCleanup, Show } from "solid-js";
 import { Check, Copy, Download, Pencil, Play, X } from "lucide-solid";
 import { downloadFailedMessage, downloadMessage, saveDownload } from "../lib/download";
-import { applyPython, dirty, draft, exportPython, file, message, selection } from "./store";
+import { applyPython, defaultDesignerIO, dirty, draft, exportPython, file, message, selection } from "./store";
 import { serverState } from "../runner/store";
-import { api } from "../runner/api";
+import { api, type DesignFile } from "../runner/api";
 import { confirmDraftDiscard } from "../lib/ConfirmDialog";
+import { registerUnsavedWork } from "../lib/unsavedWork";
 import { t } from "../i18n";
 import "../styles/python-panel.css";
 
@@ -28,6 +29,29 @@ const [baseText, setBaseText] = createSignal("");
 const [scriptError, setScriptError] = createSignal<{ line: number; message: string } | null>(null);
 const [applying, setApplying] = createSignal(false);
 const unapplied = () => editing() && editText() !== baseText();
+type PythonDraft = { text: string; base: string; source: string | null };
+const retained = new Map<string, PythonDraft>();
+let panelOwner = "";
+const documentKey = (document: DesignFile | null) => JSON.stringify([document?.backup_scope, document?.id]);
+const ownerKey = () => documentKey(file());
+function retainEdits() {
+  if (panelOwner && unapplied()) retained.set(panelOwner, { text: editText(), base: baseText(), source: source() });
+}
+defaultDesignerIO.observeSavedDocumentReplacement((previous, next) => {
+  const before = documentKey(previous), after = documentKey(next);
+  const saved = retained.get(before);
+  if (saved) { retained.delete(before); retained.set(after, saved); }
+  if (panelOwner === before) panelOwner = after;
+});
+registerUnsavedWork("designer-python", {
+  snapshot: () => {
+    const drafts = new Map(retained);
+    if (panelOwner && unapplied()) drafts.set(panelOwner, { text: editText(), base: baseText(), source: source() });
+    return drafts.size ? JSON.stringify([...drafts]) : null;
+  },
+  busy: applying,
+  confirm: () => confirmDraftDiscard(t("python.edit.discardConfirm")),
+});
 
 function focusInspector(selectionFocus = false) {
   queueMicrotask(() => {
@@ -59,6 +83,23 @@ async function refreshSource(preserveSource = false) {
 }
 
 export async function openPythonPanel(): Promise<void> {
+  if (pythonPanelActive() && panelOwner === ownerKey() && editing()) return;
+  retainEdits();
+  panelOwner = ownerKey();
+  const recovered = retained.get(panelOwner);
+  if (recovered) {
+    retained.delete(panelOwner); // The restored editor now owns this draft.
+    ++request;
+    setSource(recovered.source);
+    setEditText(recovered.text);
+    setBaseText(recovered.base);
+    setScriptError(null);
+    setPanelError("");
+    setFeedback("");
+    setEditing(true);
+    setPythonPanelActive(true);
+    return;
+  }
   setEditing(false);
   setPythonPanelActive(true);
   setStale(false);
@@ -85,6 +126,7 @@ export async function openPythonPanel(): Promise<void> {
 }
 
 export function closePythonPanel(restoreFocus = true, selectionFocus = false): void {
+  retainEdits();
   ++request;
   setEditing(false);
   setScriptError(null);
@@ -95,9 +137,10 @@ export function closePythonPanel(restoreFocus = true, selectionFocus = false): v
 
 export function PythonPanel() {
   onCleanup(() => closePythonPanel(false));
-  // another design closes the panel; a save of this one (a new file object, same id) does not
+  // Another design closes the panel. Its own successful Save/Save As migrates
+  // panelOwner before this effect, keeping unapplied script text with the new document.
   // (not deferred: a deferred `on` passes no previous value on its first change)
-  createEffect(on(() => file()?.id, (id, prev) => { if (prev !== undefined && id !== prev) closePythonPanel(false); }));
+  createEffect(on(ownerKey, (key, prev) => { if (prev !== undefined && key !== prev && key !== panelOwner) closePythonPanel(false); }));
   // picking a part yields to the Inspector; the same selection set again (the save that the
   // export makes first re-selects it) does not close the panel
   createEffect(on(() => selection(), (s, prev) => {
@@ -120,25 +163,33 @@ export function PythonPanel() {
     setEditing(true);
   };
   const stopEdit = async () => {
+    const owner = panelOwner, text = editText();
     if (unapplied() && !(await confirmDraftDiscard(t("python.edit.discardConfirm")))) return;
+    if (owner !== panelOwner || text !== editText()) return;
+    retained.delete(panelOwner);
     setEditing(false);
     setScriptError(null);
     setPanelError("");
   };
   const closeRequest = async () => {
+    const owner = panelOwner, text = editText();
     if (unapplied() && !(await confirmDraftDiscard(t("python.edit.discardConfirm")))) return;
+    if (owner !== panelOwner || text !== editText()) return;
+    retained.delete(panelOwner);
+    setEditing(false);
     closePythonPanel();
   };
   const apply = async () => {
     if (!editing() || applying() || offline()) return;
     const sent = editText();
+    const owner = panelOwner, ticket = request;
     setApplying(true);
     setScriptError(null);
     setPanelError("");
     setFeedback("");
     try {
       const outcome = await applyPython(sent);
-      if (!pythonPanelActive() || !editing()) return;
+      if (!pythonPanelActive() || !editing() || owner !== panelOwner || ticket !== request) return;
       if (!outcome.ok) {
         if (outcome.stale) return;
         if (outcome.line) setScriptError({ line: outcome.line, message: outcome.message });
@@ -149,6 +200,7 @@ export function PythonPanel() {
       setStale(false);
       setSourceChanged(false);
       const untouched = editText() === sent;
+      if (untouched) retained.delete(panelOwner);
       if (outcome.normalized && untouched) {
         setEditText(outcome.python);
         setBaseText(outcome.python);

@@ -4,6 +4,7 @@ import ParamForm from "../runner/ParamForm";
 import ProgressCard from "../runner/ProgressCard";
 import RunHistory from "../runner/RunHistory";
 import { ApiError, isTerminal } from "../runner/api";
+import { runSlug } from "../lib/runSlug";
 import {
   attach,
   closeRunPanel,
@@ -48,15 +49,16 @@ import OptimizePanel from "../runner/OptimizePanel";
 import OptimizeProgress from "../runner/OptimizeProgress";
 import NewModelDialog from "../editor/NewModelDialog";
 import { radioGroupKeys } from "../lib/a11y";
-import { confirmDiscard, dialog, dirty, panelTab, setDialog, setPanelTab } from "../editor/store";
+import { confirmDiscard, dialog, dirty, panelTab, revokeDiscardApproval, setDialog, setPanelTab } from "../editor/store";
 import { confirmDiscard as confirmDesignDiscard, dirty as designDirty, enterDesign } from "../designer/store";
 import { appMode } from "../workspace";
 import { openPythonModelAsDesign } from "../designer/pythonModel";
 import { setStartedPythonModel } from "../runner/startPython";
 import { t } from "../i18n";
 import NumberField from "./NumberField";
+import { isDesktopShell } from "../lib/telemetry";
 
-const slug = (s: string) => s.replace(/[^A-Za-z0-9._-]+/g, "-").replace(/^[-.]+|[-.]+$/g, "").toLowerCase().slice(0, 100);
+
 
 /** One sweep axis: parameter, range or list, and the resulting values. */
 function AxisEditor(props: { index: number }) {
@@ -141,6 +143,9 @@ export default function RunPanel() {
     heading.focus();
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "Escape" || exportOpen() || dialog() || e.defaultPrevented) return;
+      // This listener mounts before most modal listeners. Leave their Escape untouched,
+      // including the native read-only example choice, so the preview behind them stays put.
+      if (document.querySelector('[aria-modal="true"], dialog[open]')) return;
       const target = e.target as HTMLElement | null;
       if (target?.tagName === "SELECT") return; // let an open select close first
       if (target?.closest(".cm-editor")) return; // Escape belongs to the editor (search panel, selection)
@@ -231,7 +236,7 @@ export default function RunPanel() {
     return d ? { total: d.seconds * n, each: d.seconds } : null;
   };
   const fileName = () => {
-    const s = slug(runName());
+    const s = runSlug(runName());
     if (!s) return null;
     return sweeping() ? `${s}--${axes.map((a) => `${a.key}-…`).join("--")}.json` : `${s}.json`;
   };
@@ -280,11 +285,11 @@ export default function RunPanel() {
           <section class="section stack">
             <Show when={serverState() === "checking" || serverState() === "unknown"} fallback={
               <>
-                <p>{t("runPanel.offline.before")}<span class="mono">fairbeam serve</span>{t("runPanel.offline.after")}</p>
-                <pre class="code code-inline">npm run serve</pre>
-                <p class="note">
-                  {t("runPanel.offline.or")}<span class="mono">~/opt/openEMS/venv/bin/fairbeam serve</span>{t("runPanel.offline.viewer")}
-                </p>
+                <Show when={isDesktopShell()} fallback={<>
+                  <p>{t("runPanel.offline.before")}<span class="mono">fairbeam serve</span>{t("runPanel.offline.after")}</p>
+                  <pre class="code code-inline">npm run serve</pre>
+                  <p class="note">{t("runPanel.offline.cli")}</p>
+                </>}><p>{t("runPanel.offline.desktop")}</p></Show>
                 <div class="cluster">
                   <button class="btn btn-ghost btn-sm" onClick={() => probeServer()}>
                     <RefreshCw size={14} aria-hidden="true" /> {t("runPanel.checkAgain")}
@@ -316,7 +321,11 @@ export default function RunPanel() {
             const select = e.currentTarget.value;
             e.currentTarget.value = modelKey();
             void (async () => {
-              if (!(await confirmDiscard()) || !(await confirmDesignDiscard())) return;
+              if (!(await confirmDiscard(select))) return;
+              if (!(await confirmDesignDiscard())) {
+                revokeDiscardApproval(select);
+                return;
+              }
               // choosing a model here (a bundled one too) keeps this panel open: it is the model the Run panel follows
               batch(() => { selectModel(select, bundle()); setStartedPythonModel(select); });
               resetAxes(); runPreview();

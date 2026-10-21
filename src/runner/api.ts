@@ -6,6 +6,7 @@ import type { Check as DesignCheck } from "../designer/checks";
 import type { ConvergenceStudy } from "../designer/convergence";
 import type { TemplateKey } from "../designer/templates";
 import { t } from "../i18n/index.ts";
+import { serverMessage } from "../lib/serverMessages";
 
 /** The optional managed Elmer package (python/fairbeam/elmer_runtime.py). */
 export interface ElmerRuntime {
@@ -187,7 +188,7 @@ export interface Validation {
   valid: boolean;
   model?: ModelEntry;
   build_s?: number;
-  error?: { message: string; stage: "load" | "build"; location?: ErrorLocation | null; traceback?: string };
+  error?: { message: string; stage: "load" | "build" | "timeout" | "worker"; location?: ErrorLocation | null; traceback?: string };
   /** design files: fairbeam.design_checks results (errors block a save) */
   checks?: DesignCheck[];
 }
@@ -397,6 +398,7 @@ export interface Job {
   kind?: "run" | "optimize" | "research";
   research?: { backend: "periodic" | "elmer"; path: string; settings: Record<string, unknown>; snapshot_sha256: string;
     source?: { model_id: string; workspace_hash: string; backup_scope: string; design_sha256: string } };
+  /** Omitted by polling summaries; explicit researchRun details include the result. */
   result?: ResearchResult | null;
   optimize?: { vary: OptVary[]; goals: OptGoal[]; max_evals: number; method: string; excite?: string } | null;
   /** display name given by the user (the bundle file name is its slug, `name`) */
@@ -433,6 +435,19 @@ export interface Job {
   info: RunInfo;
 }
 
+/** Terminal contacts in the drawn geometry, from the python floating-port check. */
+export interface EndpointContact {
+  path: string;
+  point: [number, number, number];
+  parts: string[];
+  boundary: boolean;
+  status: "touching" | "floating" | "unknown";
+  /** Indices refer to resolved checker geometry, not the rendered mesh array. */
+  primitives?: { part: string; index: number; path: string | null }[];
+  /** Matching primitive indices in the returned preview bundle. */
+  meshes?: { part: string; index: number }[];
+}
+
 export interface PreviewResult {
   model: string;
   params: Record<string, ParamValue>;
@@ -442,6 +457,7 @@ export interface PreviewResult {
   bundle: Bundle;
   /** design previews: fairbeam.design_checks results */
   checks?: DesignCheck[];
+  endpoint_contacts?: EndpointContact[];
 }
 
 export class ApiError extends Error {
@@ -455,7 +471,11 @@ export class ApiError extends Error {
      * next to the human message; empty when the server gave its own message */
     public detail = "",
   ) {
-    super(message);
+    super(serverMessage(data, message));
+    const details = data.field_details;
+    if (details && typeof details === "object" && !Array.isArray(details))
+      this.fields = Object.fromEntries(Object.entries(fields).map(([key, text]) =>
+        [key, serverMessage((details as Record<string, unknown>)[key], text)]));
   }
 }
 
@@ -491,8 +511,8 @@ async function call<T>(method: "GET" | "POST" | "PUT", path: string, body?: unkn
   if (!r.ok) {
     const d = (data ?? {}) as { error?: string; fields?: Record<string, string> };
     if (path !== "/health" && r.status >= 500) failureHook?.();
-    // the server's own message is shown as it is; a bare failure gets a human sentence, and the
-    // status and path go to a Details disclosure instead of standing alone ("HTTP 500")
+    // Known codes are localized by ApiError; older/unknown responses retain the server text.
+    // Bare failures keep status and path in Details instead of standing alone ("HTTP 500").
     throw new ApiError(d.error ?? t("api.serverError"), r.status, d.fields ?? {}, (data ?? {}) as Record<string, unknown>,
       d.error ? "" : `HTTP ${r.status} · ${method} /api${path}`);
   }
@@ -504,7 +524,7 @@ export const api = {
     call<{ backend: string; available: boolean; reason?: string }>("POST", "/research/probe", { backend, path }, signal),
   elmerRuntime: (signal?: AbortSignal) => call<ElmerRuntime>("GET", "/research/elmer/runtime", undefined, signal),
   elmerInstall: (signal?: AbortSignal) => call<ElmerRuntime>("POST", "/research/elmer/install", {}, signal),
-  researchRuns: (signal?: AbortSignal) => call<{ runs: Job[] }>("GET", "/research/runs", undefined, signal),
+  researchRuns: (signal?: AbortSignal) => call<{ runs: Job[] }>("GET", "/research/runs?summary=1", undefined, signal),
   researchRun: (id: string, signal?: AbortSignal) => call<Job>("GET", `/research/runs/${encodeURIComponent(id)}`, undefined, signal),
   researchStart: (body: { backend: "periodic" | "elmer"; path: string; settings: Record<string, unknown>; design?: Design;
     source?: { model_id: string; workspace_hash: string; backup_scope: string } }, signal?: AbortSignal) =>
@@ -520,7 +540,7 @@ export const api = {
   models: () => call<{ models: ModelEntry[] }>("GET", "/models").then((d) => d.models),
   preview: (model: string, params: Record<string, ParamValue>, signal?: AbortSignal) =>
     call<PreviewResult>("POST", "/preview", { model, params }, signal),
-  runs: () => call<{ runs: Job[] }>("GET", "/runs").then((d) => d.runs),
+  runs: () => call<{ runs: Job[] }>("GET", "/runs?summary=1").then((d) => d.runs),
   submit: (body: { model: string; params: Record<string, ParamValue>; threads: number; engine?: string; name?: string; end_criteria_db?: number; points?: number; cells?: number }) =>
     call<Job>("POST", "/runs", withThreads(body)),
   /** memory / CPU check of a planned run; level "unknown" means it could not be checked */

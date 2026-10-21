@@ -23,7 +23,7 @@ Endpoints (all JSON unless noted)::
                                     name?, end_criteria_db?} -> job
     (end_criteria_db: the energy end criterion in dB, passed on as --end-db; absent or null keeps the
     model's or design's own)
-    GET  /api/runs                  job history, newest first
+    GET  /api/runs                  job history, newest first; ?summary=1 omits result payloads
     GET  /api/runs/{id}             one job
     GET  /api/runs/{id}/events      Server-Sent Events: replay, then live; heartbeat every 15 s
     GET  /api/runs/{id}/log         plain-text log
@@ -76,10 +76,12 @@ import math
 import os
 import re
 import shutil
+import socket
 import subprocess
 import sys
 import threading
 import time
+import unicodedata
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
@@ -88,6 +90,7 @@ from .procutil import WINDOWS, popen_group, release_group
 from ._meta import __version__
 from . import blender_find, blender_job, documents, modelfiles, renders, resources, static, usermaterials
 from .jobs import PACKAGE_ROOT, JobManager, child_env
+from .messages import Message, descriptor
 
 LOOPBACK_HOSTS = {"127.0.0.1", "localhost", "::1", "[::1]"}
 LOOPBACK_PEERS = {"127.0.0.1", "::1", "::ffff:127.0.0.1"}
@@ -120,6 +123,17 @@ class ApiError(Exception):
     def __init__(self, status: int, message: str, **extra):
         super().__init__(message)
         self.status, self.message, self.extra = status, message, extra
+        if descriptor(message):
+            self.extra.update(descriptor(message))
+        fields = extra.get("fields")
+        if isinstance(fields, dict):
+            details = {key: descriptor(value) for key, value in fields.items() if descriptor(value)}
+            if details:
+                self.extra["field_details"] = details
+
+
+class PreviewWorkerError(ApiError):
+    """The preview worker failed independently of the saved file."""
 
 
 # ---------------------------------------------------------------------- helpers
@@ -235,14 +249,14 @@ def validate_params(specs: list[dict], values: dict) -> tuple[dict, dict, dict]:
     ``errors`` maps a key to a message and is empty when everything is valid.
     """
     if not isinstance(values, dict):
-        return {}, {}, {"_": "params must be an object"}
+        return {}, {}, {"_": Message("field.params_object", "params must be an object")}
     by_key = {s["key"]: s for s in specs}
     errors: dict[str, str] = {}
     resolved: dict = {}
     overrides: dict[str, str] = {}
     for key in values:
         if key not in by_key:
-            errors[key] = f"unknown parameter; available: {', '.join(by_key)}"
+            errors[key] = Message("field.available", f"unknown parameter; available: {', '.join(by_key)}", available=", ".join(by_key))
     for s in specs:
         key, kind, default = s["key"], s.get("type", "float"), s["default"]
         if key not in values or values[key] is None or values[key] == "":
@@ -251,20 +265,20 @@ def validate_params(specs: list[dict], values: dict) -> tuple[dict, dict, dict]:
         v = values[key]
         if kind in ("int", "float"):
             if isinstance(v, bool):
-                errors[key] = "must be a number"
+                errors[key] = Message("field.number", "must be a number")
                 continue
             if isinstance(v, str):
                 try:
                     v = float(v.strip())
                 except ValueError:
-                    errors[key] = "must be a number"
+                    errors[key] = Message("field.number", "must be a number")
                     continue
             if not isinstance(v, (int, float)) or not math.isfinite(v):
-                errors[key] = "must be a finite number"
+                errors[key] = Message("field.finite_number", "must be a finite number")
                 continue
             if kind == "int":
                 if float(v) != int(v):
-                    errors[key] = "must be a whole number"
+                    errors[key] = Message("field.integer", "must be a whole number")
                     continue
                 v = int(v)
             else:
@@ -272,19 +286,19 @@ def validate_params(specs: list[dict], values: dict) -> tuple[dict, dict, dict]:
             lo, hi = s.get("minimum"), s.get("maximum")
             unit = f" {s['unit']}" if s.get("unit") else ""
             if lo is not None and v < lo:
-                errors[key] = f"must be at least {lo:g}{unit}"
+                errors[key] = Message("field.minimum", f"must be at least {lo:g}{unit}", limit=f"{lo:g}{unit}")
                 continue
             if hi is not None and v > hi:
-                errors[key] = f"must be at most {hi:g}{unit}"
+                errors[key] = Message("field.maximum", f"must be at most {hi:g}{unit}", limit=f"{hi:g}{unit}")
                 continue
         elif kind == "bool":
             if not isinstance(v, bool):
-                errors[key] = "must be true or false"
+                errors[key] = Message("field.boolean", "must be true or false")
                 continue
         else:
             v = str(v)
             if "\n" in v or len(v) > 500:
-                errors[key] = "must be a single line of at most 500 characters"
+                errors[key] = Message("field.text_limit", "must be a single line of at most 500 characters")
                 continue
         resolved[key] = v
         if v != default:
@@ -294,6 +308,8 @@ def validate_params(specs: list[dict], values: dict) -> tuple[dict, dict, dict]:
 
 def slugify(text: str) -> str:
     """File-safe bundle name for a run name ("Dipole 60 mm" -> "dipole-60-mm")."""
+    text = unicodedata.normalize("NFKD", text).replace("ı", "i")
+    text = "".join(c for c in text if not unicodedata.category(c).startswith("M"))
     return re.sub(r"[^A-Za-z0-9._-]+", "-", text).strip("-.").lower()[:100]
 
 
@@ -313,39 +329,39 @@ def expand_sweep(specs: list[dict], base: dict, sweep, *, max_axes: int = MAX_SW
     """
     errors: dict[str, str] = {}
     if not isinstance(sweep, list) or not 1 <= len(sweep) <= max_axes:
-        return [], [], {"sweep": f"give one to {max_axes} parameters to sweep"}
+        return [], [], {"sweep": Message("field.axes", f"give one to {max_axes} parameters to sweep", max=max_axes)}
     by_key = {s["key"]: s for s in specs}
     axes: list[dict] = []
     for i, ax in enumerate(sweep):
         field = f"sweep.{i}"
         if not isinstance(ax, dict) or ax.get("key") not in by_key:
-            errors[field] = "unknown parameter"
+            errors[field] = Message("field.unknown_parameter", "unknown parameter")
             continue
         key = ax["key"]
         spec = by_key[key]
         if spec.get("type") not in ("int", "float"):
-            errors[key] = "only numeric parameters can be swept"
+            errors[key] = Message("field.numeric_sweep", "only numeric parameters can be swept")
             continue
         if any(a["key"] == key for a in axes):
-            errors[key] = "swept twice"
+            errors[key] = Message("field.duplicate_axis", "swept twice")
             continue
         if "values" in ax:
             values = ax["values"]
             if not isinstance(values, list) or not values:
-                errors[key] = "give at least one value"
+                errors[key] = Message("field.values_required", "give at least one value")
                 continue
         else:
             start, stop, steps = ax.get("start"), ax.get("stop"), ax.get("steps")
             nums = all(isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v) for v in (start, stop))
             if not nums or isinstance(steps, bool) or not isinstance(steps, int) or not 1 <= steps <= max_runs:
-                errors[key] = f"start and stop must be numbers and steps a whole number from 1 to {max_runs}"
+                errors[key] = Message("field.range_steps", f"start and stop must be numbers and steps a whole number from 1 to {max_runs}", max=max_runs)
                 continue
             values = [start] if steps == 1 else [_nice(start + (stop - start) * k / (steps - 1)) for k in range(steps)]
         clean = []
         for v in values:
             _, _, err = validate_params([spec], {key: v})
             if err:
-                errors[key] = f"{v}: {err[key]}"
+                errors[key] = Message("field.value", f"{v}: {err[key]}", value=str(v), reason=descriptor(err[key]) or err[key])
                 break
             v = int(round(float(v))) if spec.get("type") == "int" else float(v)
             if v not in clean:
@@ -358,7 +374,7 @@ def expand_sweep(specs: list[dict], base: dict, sweep, *, max_axes: int = MAX_SW
     for ax in axes:
         total *= len(ax["values"])
     if total > max_runs:
-        return [], axes, {"sweep": f"{total} runs; a sweep may have at most {max_runs}"}
+        return [], axes, {"sweep": Message("field.run_limit", f"{total} runs; a sweep may have at most {max_runs}", count=total, max=max_runs)}
     combos: list[dict] = [{}]
     for ax in axes:
         combos = [{**c, ax["key"]: v} for c in combos for v in ax["values"]]
@@ -368,23 +384,23 @@ def expand_sweep(specs: list[dict], base: dict, sweep, *, max_axes: int = MAX_SW
 def expand_sequences(specs: list[dict], sequences) -> tuple[list[dict], list[dict], dict]:
     """Expand named independent grids in order; return flattened combos with sequence metadata."""
     if not isinstance(sequences, list) or not sequences:
-        return [], [], {"sequences": "give at least one sequence"}
+        return [], [], {"sequences": Message("field.sequence_required", "give at least one sequence")}
     if len(sequences) > MAX_SEQUENCES:  # checked before any expansion: each sequence costs work
-        return [], [], {"sequences": f"{len(sequences)} sequences; a sweep may have at most {MAX_SEQUENCES}"}
+        return [], [], {"sequences": Message("field.sequence_limit", f"{len(sequences)} sequences; a sweep may have at most {MAX_SEQUENCES}", count=len(sequences), max=MAX_SEQUENCES)}
     combos, clean_sequences, errors = [], [], {}
     names = set()
     for i, sequence in enumerate(sequences):
         field = f"sequences.{i}"
         if not isinstance(sequence, dict):
-            errors[field] = "must be an object with name and sweep"
+            errors[field] = Message("field.sequence_object", "must be an object with name and sweep")
             continue
         name = sequence.get("name")
         if not isinstance(name, str) or not name.strip() or len(name.strip()) > 80 or any(ord(c) < 32 for c in name):
-            errors[f"{field}.name"] = "must be a non-empty single-line name of at most 80 characters"
+            errors[f"{field}.name"] = Message("field.sequence_name", "must be a non-empty single-line name of at most 80 characters")
             continue
         name = name.strip()
         if name in names:
-            errors[f"{field}.name"] = "sequence names must be unique"
+            errors[f"{field}.name"] = Message("field.unique_sequences", "sequence names must be unique")
             continue
         names.add(name)
         grid, axes, grid_errors = expand_sweep(specs, {}, sequence.get("sweep"), max_axes=MAX_SEQUENCE_AXES,
@@ -395,8 +411,8 @@ def expand_sequences(specs: list[dict], sequences) -> tuple[list[dict], list[dic
         # the running total is checked before this sequence's runs are added, and expansion stops there:
         # an oversized request never builds more than MAX_SWEEP_RUNS combinations
         if len(combos) + len(grid) > MAX_SWEEP_RUNS:
-            errors["sequences"] = (f"at least {len(combos) + len(grid)} runs; "
-                                   f"a sweep may have at most {MAX_SWEEP_RUNS}")
+            errors["sequences"] = Message("field.min_run_limit", f"at least {len(combos) + len(grid)} runs; "
+                                   f"a sweep may have at most {MAX_SWEEP_RUNS}", count=len(combos) + len(grid), max=MAX_SWEEP_RUNS)
             break
         clean_sequences.append({"name": name, "axes": axes, "total": len(grid)})
         combos.extend({"sequence_index": i, "sequence_name": name, "values": values} for values in grid)
@@ -540,7 +556,11 @@ class PreviewWorker:
     def request(self, payload: dict) -> dict:
         with self._lock:
             if self.proc is None or self.proc.poll() is not None:
-                self._start()
+                try:
+                    self._start()
+                except OSError as exc:
+                    self.stop()
+                    raise PreviewWorkerError(500, f"the preview worker could not start: {exc}") from None
             self._seq += 1
             payload = {**payload, "id": self._seq}
             proc = self.proc
@@ -560,14 +580,22 @@ class PreviewWorker:
             t.join(self.timeout)
             if t.is_alive():
                 self.stop()
-                raise ApiError(504, f"geometry build did not finish within {self.timeout:.0f} s")
+                raise PreviewWorkerError(504, Message("preview_timeout", f"geometry build did not finish within {self.timeout:.0f} s", seconds=f"{self.timeout:.0f}"))
             line = result.get("line")
             if not line:
                 tail = list(self.stderr_tail)[-5:]
                 self.stop()
-                raise ApiError(500, "the preview worker exited" + (": " + tail[-1] if tail else ""),
+                raise PreviewWorkerError(500, "the preview worker exited" + (": " + tail[-1] if tail else ""),
                                log_tail=tail)
-            return json.loads(line)
+            try:
+                response = json.loads(line)
+            except (UnicodeDecodeError, json.JSONDecodeError):
+                self.stop()
+                raise PreviewWorkerError(500, "the preview worker returned an invalid response") from None
+            if not isinstance(response, dict):
+                self.stop()
+                raise PreviewWorkerError(500, "the preview worker returned an invalid response")
+            return response
 
 
 # ---------------------------------------------------------------------- application
@@ -624,7 +652,12 @@ class App:
             if job.kind == "research" and not job.bundle:
                 return  # cavity/periodic results have no ordinary viewer bundle
             if self.projects_dir.exists():
-                rebuild_index(self.projects_dir)
+                try:
+                    rebuild_index(self.projects_dir)
+                except (OSError, ValueError) as exc:
+                    # The bundle already exists. An unavailable optional index must
+                    # not strand convergence or suppress the prior completion hook.
+                    print(f"fairbeam serve: result index was not updated: {type(exc).__name__}", flush=True)
             if job.kind != "research":
                 self.studies.on_finished(job)  # a mesh convergence study queues its next density
 
@@ -774,6 +807,20 @@ class App:
             out["build_s"] = r.get("build_s")
         return out
 
+    def _post_write_validation(self, model_id: str, *, design: bool = False) -> dict:
+        """A failed preview must not turn a committed write into a failed save.
+
+        Keep the new hash and backup in the successful response so the next save
+        uses the committed version. Disk, identity and unrelated API errors are
+        not preview warnings; only errors from the worker boundary are advisory.
+        """
+        try:
+            return self._validate_design(model_id) if design else self._validate_file(model_id)
+        except PreviewWorkerError as exc:
+            return {"valid": False, "error": {
+                "stage": "timeout" if exc.status == 504 else "worker", "message": exc.message,
+            }}
+
     def create_model(self, body: dict) -> dict:
         model_id = modelfiles.check_id(body.get("id"))
         modelfiles.check_free(self.models_dir, model_id)
@@ -791,7 +838,7 @@ class App:
         else:
             source = modelfiles.read_model(self.models_dir, origin)["source"]
         modelfiles.create_model(self.models_dir, model_id, source, name.strip() if name else None)
-        return {**modelfiles.read_model(self.models_dir, model_id), "validation": self._validate_file(model_id)}
+        return {**modelfiles.read_model(self.models_dir, model_id), "validation": self._post_write_validation(model_id)}
 
     def _example_source(self, source_id: str, project: str | None):
         source_id = modelfiles.check_id(source_id)
@@ -876,7 +923,7 @@ class App:
                 raise ApiError(422, "design model metadata is invalid", reason="design model metadata is invalid")
             design = {**design, "model": {**design["model"], "id": model_id.replace("_", "-"), "name": name.strip()}}
         modelfiles.create_design(root, model_id, design)
-        return {"id": model_id, "kind": "design", "validation": self._validate_design(model_id)}
+        return {"id": model_id, "kind": "design", "validation": self._post_write_validation(model_id, design=True)}
     # ---- design files (designer)
 
     def _validate_design(self, model_id: str) -> dict:
@@ -1004,7 +1051,7 @@ class App:
             except DesignError as e:
                 raise ApiError(422, str(e), fields={"template": e.detail}) from None
         modelfiles.create_design(self.models_dir, model_id, design)
-        out = {**self.design_file(model_id), "validation": self._validate_design(model_id)}
+        out = {**self.design_file(model_id), "validation": self._post_write_validation(model_id, design=True)}
         if report is not None:
             out["import_report"] = report
         return out
@@ -1218,7 +1265,8 @@ class App:
         block running it instead (_refuse_broken_design)."""
         self._require_backup_scope(body)
         res = modelfiles.save_design(self.models_dir, self.history_dir, model_id, body.get("design"), body.get("base_hash"))
-        return {"id": model_id, **res, "backup_scope": self.backup_scope, "validation": self._validate_design(model_id)}
+        return {"id": model_id, **res, "backup_scope": self.backup_scope,
+                "validation": self._post_write_validation(model_id, design=True)}
 
     def rename_design(self, model_id: str, body: dict) -> dict:
         """Change display metadata only, preserving file id and all result associations."""
@@ -1290,7 +1338,11 @@ class App:
         modelfiles.check_id(model_id)
         busy = [j for j in self.manager.list() if j.get("model") == model_id and j.get("status") not in TERMINAL]
         if busy:
-            raise ApiError(409, f"{model_id} has a run in progress; cancel it or wait for it to finish first")
+            try:
+                name = modelfiles.read_design_file(self.models_dir, model_id)["design"]["model"].get("name") or model_id
+            except (modelfiles.ModelFileError, OSError, ValueError, KeyError, TypeError, AttributeError):
+                name = model_id
+            raise ApiError(409, Message("run_in_progress", f"{name} has a run in progress; cancel it or wait for it to finish first", name=name))
         return {**modelfiles.delete_design(self.models_dir, self.history_dir, model_id), "backup_scope": self.backup_scope}
 
     def _refuse_broken_design(self, m: dict, *, overrides: dict | None = None,
@@ -1368,7 +1420,7 @@ class App:
 
     def save_source(self, model_id: str, body: dict) -> dict:
         res = modelfiles.save_model(self.models_dir, self.history_dir, model_id, body.get("source"), body.get("base_hash"))
-        return {"id": model_id, **res, "validation": self._validate_file(model_id)}
+        return {"id": model_id, **res, "validation": self._post_write_validation(model_id)}
 
     def _model(self, body: dict) -> dict:
         key = body.get("model")
@@ -1395,7 +1447,7 @@ class App:
                 raise ApiError(422, f"the design file cannot be read: {e}") from None
         resolved, overrides, errors = validate_params(m["params"], body.get("params") or {})
         if errors:
-            raise ApiError(422, "invalid parameters", fields=errors)
+            raise ApiError(422, Message("invalid_parameters", "invalid parameters"), fields=errors)
         return m, resolved, overrides
 
     def do_preview(self, body: dict) -> dict:
@@ -1423,7 +1475,7 @@ class App:
             raise ApiError(422, "design must be a JSON object", fields={"design": "not an object"})
         overrides = body.get("params") or {}
         if not isinstance(overrides, dict):
-            raise ApiError(422, "params must be an object", fields={"params": "not an object"})
+            raise ApiError(422, Message("field.params_object", "params must be an object"), fields={"params": "not an object"})
         t0 = time.time()
         resp = self.preview.request({"op": "preview_design", "design": design,
                                      "overrides": {str(k): str(v) for k, v in overrides.items()}})
@@ -1433,10 +1485,11 @@ class App:
             raise ApiError(status, resp.get("error") or "preview failed",
                            **({"fields": {loc.get("path") or "_": resp.get("detail") or resp.get("error")}} if status == 422 else {}),
                            **({"traceback": resp["traceback"]} if resp.get("traceback") else {}),
-                           checks=resp.get("checks") or [])
+                           checks=resp.get("checks") or [], endpoint_contacts=resp.get("endpoint_contacts", []))
         r = resp["result"]
         return {"model": design.get("model", {}).get("id"), "build_s": r["build_s"],
-                "elapsed_s": round(time.time() - t0, 3), "bundle": r["bundle"], "checks": r.get("checks", [])}
+                "elapsed_s": round(time.time() - t0, 3), "bundle": r["bundle"], "checks": r.get("checks", []),
+                "endpoint_contacts": r.get("endpoint_contacts", [])}
 
     def _settings(self, body: dict, errors: dict) -> dict:
         """threads / engine / end criterion / run name, shared by runs and sweeps."""
@@ -1445,32 +1498,32 @@ class App:
         if threads is None or threads == "auto":  # Auto: physical cores, capped by the grid size
             threads = resources.auto_threads(self.cpu, self.physical, cells if isinstance(cells, (int, float)) else None)
         elif isinstance(threads, bool) or not isinstance(threads, int) or not 1 <= threads <= self.cpu:
-            errors["threads"] = f"must be a whole number from 1 to {self.cpu}"
+            errors["threads"] = Message("field.threads", f"must be a whole number from 1 to {self.cpu}", max=self.cpu)
         # absent or null: the model's/design's own threshold (the child gets no --end-db)
         end_db = body.get("end_criteria_db")
         if end_db is not None and (isinstance(end_db, bool) or not isinstance(end_db, (int, float))
                                    or not -300 <= end_db < 0):
-            errors["end_criteria_db"] = "must be a negative number of dB"
+            errors["end_criteria_db"] = Message("field.negative_db", "must be a negative number of dB")
         engine = body.get("engine") or "cpu"
         if engine not in self.engines:
-            errors["engine"] = f"must be one of {', '.join(self.engines)}"
+            errors["engine"] = Message("field.engine", f"must be one of {', '.join(self.engines)}", engines=", ".join(self.engines))
         elif engine == "gpu":
             threads = 1
             errors.pop("threads", None)
         points = body.get("points")
         if points is not None and (isinstance(points, bool) or not isinstance(points, int) or not 11 <= points <= 20001):
-            errors["points"] = "must be a whole number from 11 to 20001"
+            errors["points"] = Message("field.points", "must be a whole number from 11 to 20001")
         label = body.get("name") or None
         slug = None
         if label is not None:
             if not isinstance(label, str) or "\n" in label or len(label.strip()) > 80:
-                errors["name"] = "a single line of at most 80 characters"
+                errors["name"] = Message("field.name_line", "a single line of at most 80 characters")
             else:
                 label = label.strip()
                 slug = slugify(label) if label else None
                 label = label or None
                 if label and (not slug or slug == "index" or not NAME_RE.match(slug)):
-                    errors["name"] = "needs at least one letter or digit"
+                    errors["name"] = Message("field.name_letters", "needs at least one letter or digit")
         return {"threads": threads,
                 "end_criteria_db": float(end_db) if end_db is not None and not errors.get("end_criteria_db") else None,
                 "engine": engine, "label": label, "name": slug, "points": points if not errors.get("points") else None}
@@ -1489,7 +1542,7 @@ class App:
         errors: dict = {}
         st = self._settings(admission_body, errors)
         if errors:
-            raise ApiError(422, "invalid run settings", fields=errors)
+            raise ApiError(422, Message("invalid_run", "invalid run settings"), fields=errors)
         pre = self.preflight({"cells": admission_body.get("cells"), "engine": st["engine"]})
         if cells is not None:
             pre = {**pre, "cells": cells, "source": "admitted-design-preview",
@@ -1518,7 +1571,7 @@ class App:
         """Memory and CPU-contention check before a run (fairbeam.resources.preflight)."""
         engine = body.get("engine") or "cpu"
         if engine not in self.engines:
-            raise ApiError(422, "invalid preflight", fields={"engine": f"must be one of {', '.join(self.engines)}"})
+            raise ApiError(422, "invalid preflight", fields={"engine": Message("field.engine", f"must be one of {', '.join(self.engines)}", engines=", ".join(self.engines))})
         return resources.preflight(body.get("cells"), engine, resources.free_memory_bytes(),
                                    busy=self.manager.current is not None, load=resources.host_load(), cpus=self.cpu,
                                    external=len(self.external_runs()))
@@ -1537,7 +1590,7 @@ class App:
                       for values in axes_combos]
         errors.update(sweep_errors)
         if errors:
-            raise ApiError(422, "invalid sweep", fields=errors)
+            raise ApiError(422, Message("invalid_sweep", "invalid sweep"), fields=errors)
         self._refuse_by_preflight(body, st)
         sweep_id = "sw-" + time.strftime("%Y%m%d-%H%M%S") + "-" + os.urandom(2).hex()
         model_name = (m.get("model") or {}).get("name") or m["key"]
@@ -1549,7 +1602,7 @@ class App:
             combo = item["values"]
             resolved, overrides, errs = validate_params(m["params"], {**base, **combo})
             if errs:
-                raise ApiError(422, "invalid sweep", fields=errs)
+                raise ApiError(422, Message("invalid_sweep", "invalid sweep"), fields=errs)
             file_name = None
             if st["name"]:
                 # the combination must survive slugify's length cap, or runs overwrite each other
@@ -1765,8 +1818,8 @@ class App:
         except OSError as exc:
             raise ApiError(409, str(exc)) from exc
 
-    def research_runs(self) -> dict:
-        return {"runs": [row for row in self.manager.list() if row.get("kind") == "research"]}
+    def research_runs(self, *, include_results: bool = True) -> dict:
+        return {"runs": [row for row in self.manager.list(include_results=include_results) if row.get("kind") == "research"]}
 
     def research_job(self, job_id: str):
         job = self.job(job_id)
@@ -1844,6 +1897,10 @@ class Handler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
     app: App  # set on the server class
 
+    def handle_one_request(self):
+        self._body_read = 0
+        return super().handle_one_request()
+
     def log_message(self, fmt, *args):  # quieter than the default; skip SSE/health noise
         if getattr(self.server, "quiet", False):
             return
@@ -1882,6 +1939,41 @@ class Handler(BaseHTTPRequestHandler):
         self.close_connection = True  # an unread request body must not leak into the next request
         self._send(status, json.dumps({"error": message, "status": status, **extra}, default=str).encode(),
                    "application/json; charset=utf-8", {"Connection": "close"})
+        self._finish_rejection()
+
+    def _finish_rejection(self):
+        """Deliver an early refusal before closing over an in-flight request body.
+
+        Windows can reset a socket closed with unread input, losing the already-sent
+        error response. Half-close the response first, then discard a bounded amount
+        of input. Nothing is parsed or authorized here, and slow/oversized bodies
+        cannot hold a handler indefinitely. Connections are never reused.
+        """
+        try:
+            remaining = int(self.headers.get("Content-Length") or 0) - getattr(self, "_body_read", 0)
+        except ValueError:
+            return
+        if remaining <= 0:
+            return
+        remaining = min(remaining, 64 * 1024)
+        deadline = time.monotonic() + 0.1
+        previous_timeout = self.connection.gettimeout()
+        try:
+            self.wfile.flush()
+            self.connection.shutdown(socket.SHUT_WR)
+            while remaining > 0:
+                budget = deadline - time.monotonic()
+                if budget <= 0:
+                    break
+                self.connection.settimeout(budget)
+                chunk = self.rfile.read1(min(remaining, 8192))
+                if not chunk:
+                    break
+                remaining -= len(chunk)
+        except OSError:
+            pass  # response is already sent; a vanished/slow peer needs no retry
+        finally:
+            self.connection.settimeout(previous_timeout)
 
     def _guard(self) -> bool:
         peer = self.client_address[0] if self.client_address else ""
@@ -1913,6 +2005,7 @@ class Handler(BaseHTTPRequestHandler):
         if n > limit:
             raise ApiError(413, "request body too large")
         raw = self.rfile.read(n) if n else b"{}"
+        self._body_read = n
         try:
             body = json.loads(raw or b"{}")
         except (json.JSONDecodeError, UnicodeDecodeError):
@@ -1953,6 +2046,8 @@ class Handler(BaseHTTPRequestHandler):
             return
         app = self.app
         path = urlsplit(self.path).path
+        # List summaries are opt-in; old API clients still receive complete rows.
+        summary = parse_qs(urlsplit(self.path).query).get("summary") == ["1"]
         if app.ui_dir is not None and not (path == "/api" or path.startswith("/api/")):
             try:
                 return self._static()
@@ -1976,10 +2071,10 @@ class Handler(BaseHTTPRequestHandler):
             ("GET", r"/api/research/elmer/runtime", lambda: self._json(200, app.elmer_runtime_status())),
             ("POST", r"/api/research/elmer/install", lambda: self._json(202, app.elmer_runtime_install())),
             ("POST", r"/api/research/runs", lambda: self._json(201, app.research_submit(self._body()))),
-            ("GET", r"/api/research/runs", lambda: self._json(200, app.research_runs())),
+            ("GET", r"/api/research/runs", lambda: self._json(200, app.research_runs(include_results=not summary))),
             ("GET", r"/api/research/runs/([\w.-]+)", lambda i: self._json(200, app.research_detail(i))),
             ("POST", r"/api/research/runs/([\w.-]+)/cancel", self._cancel_research),
-            ("GET", r"/api/runs", lambda: self._json(200, {"runs": app.manager.list()})),
+            ("GET", r"/api/runs", lambda: self._json(200, {"runs": app.manager.list(include_results=not summary)})),
             ("POST", r"/api/runs", lambda: self._json(201, app.submit(self._body()))),
             ("GET", r"/api/runs/([\w.-]+)", lambda i: self._json(200, app.job(i).to_dict())),
             ("GET", r"/api/runs/([\w.-]+)/events", self._events),
@@ -2079,7 +2174,7 @@ class Handler(BaseHTTPRequestHandler):
             self.app._require_backup_scope(body)
             model_id = modelfiles.check_id(body["model_id"])
             if any(j.get("model") == model_id and j.get("status") not in TERMINAL for j in self.app.manager.list()):
-                raise ApiError(409, "This project has a run in progress; wait for it to finish first")
+                raise ApiError(409, Message("project_running", "This project has a run in progress; wait for it to finish first"))
             try:
                 result = archive(self.app.documents, model_id, body["path"], body["results_directory"])
             except (documents.DocumentError, OSError) as exc:
@@ -2122,7 +2217,9 @@ class Handler(BaseHTTPRequestHandler):
         except Exception as exc:
             # The document may already be committed. Return its new revision so a later
             # Save remains usable; result-index refresh is recoverable independently.
-            result["warnings"].append(f"The result index could not be refreshed: {type(exc).__name__}")
+            warning = Message("warning.index_refresh", f"The result index could not be refreshed: {type(exc).__name__}", detail=type(exc).__name__)
+            result.setdefault("warning_details", [None] * len(result["warnings"])).append(descriptor(warning))
+            result["warnings"].append(warning)
         self._json(200, result)
 
     def _shutdown(self):
@@ -2219,7 +2316,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def _cancel_sweep(self, sweep_id: str):
         self._body()
-        jobs = self.app.manager.cancel_sweep(sweep_id)
+        jobs = self.app.studies.cancel(sweep_id)
         if not jobs:
             raise ApiError(404, f"no sweep {sweep_id}")
         self._json(202, {"runs": [j.to_dict() for j in jobs]})

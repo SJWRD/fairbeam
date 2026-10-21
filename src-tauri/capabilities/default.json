@@ -9,6 +9,9 @@
     "allow-retry",
     "allow-install-runtime",
     "allow-use-managed",
+    "allow-use-default-workspace",
+    "allow-pick-workspace-folder",
+    "allow-set-workspace-folder",
     "allow-set-prefer-gpu",
     "allow-choose-python"
   ]

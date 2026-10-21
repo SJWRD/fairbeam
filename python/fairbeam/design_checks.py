@@ -181,7 +181,7 @@ def _time_text(seconds: float) -> str:
 
 
 class _Lint:
-    def __init__(self, design: dict, values: dict | None, bundle: dict | None):
+    def __init__(self, design: dict, values: dict | None, bundle: dict | None, endpoint_contacts: list | None = None):
         self.d, self.bundle = design, bundle
         self.values = values or {}
         self.out: list[dict] = []
@@ -193,6 +193,7 @@ class _Lint:
         self.thin_volume: list[dict] = []   # thin metal kept as a volume (mesh.thin_metal volume)
         self._boxes: dict[int, tuple] = {}   # id(resolved primitive) -> prim_bbox, for this run
         self.partial = False   # some geometry did not resolve (see _resolve)
+        self.endpoint_contacts = endpoint_contacts
 
     def _bbox(self, p: dict):
         box = self._boxes.get(id(p))
@@ -878,7 +879,6 @@ class _Lint:
         """Checks on the resolved, transformed geometry: floating feeds, hidden parts and misplaced
         metal (overhanging its substrate, floating in the air)."""
         parts = self._resolve()
-        metal = [p for part in parts if part["metal"] for p in part["prims"]]
         for path, message in sheet_transform_issues(self.d, self.names):
             self.error(path, "sheet-transform-angle", message)
         self.sheets = thin_sheets(parts, thin_metal_limit(self.d, self.names))
@@ -915,7 +915,11 @@ class _Lint:
         inside = self._solid_probe(parts, flat)
         voids = [v for part in parts for v in part["voids"]]
         self._no_port_fix(parts, tol)
-        for w, po in (entry for i, p in enumerate(self.d.get("ports", [])) for entry in port_feeds(p, f"ports[{i}]")):
+        feeds = [(w, feed, True) for i, p in enumerate(self.d.get("ports", []))
+                 for w, feed in port_feeds(p, f"ports[{i}]")]
+        if self.endpoint_contacts is not None:
+            feeds += [(f"resistors[{i}]", element, False) for i, element in enumerate(self.d.get("resistors", []))]
+        for w, po, is_port in feeds:
             if po.get("type") in ("waveguide", "coaxial", "microstrip", "cpw"):
                 continue   # a guide's cross-section, not a feed between two conductors
             try:
@@ -929,15 +933,16 @@ class _Lint:
             for end, name in ((a, "start"), (c, "stop")):
                 q = [(a[m] + c[m]) / 2 for m in range(3)]
                 q[k] = end[k]
-                if any(self._holds(p, q, tol) and not self._carved(p, q, voids) for p in metal) or any(
-                        abs(q[ax] - pos) <= tol for ax, pos in pec):
+                contact = self._endpoint_contact(parts, voids, pec, q, tol, f"{w}.{name}")
+                if not is_port or contact["parts"] or contact["boundary"]:
                     continue
                 at = ", ".join(f"{x:g}" for x in q)
                 self.warn(f"{w}.{name}", "port-floating",
                           f"the {name} end of port {po['number']} at ({at}) touches no metal: a floating feed",
                           self._snap_fix(f"{w}.{name}", a, c, k, name == "start", parts, inside, tol))
-            self._port_in_metal(po, w, a, c, k, parts, inside, tol)
-            self._port_at_null(po, w, a, c, k, parts, tol)
+            if is_port:
+                self._port_in_metal(po, w, a, c, k, parts, inside, tol)
+                self._port_at_null(po, w, a, c, k, parts, tol)
         self.cut_checks()
         self.void_checks(parts)
         containers: dict = {}   # id(part) -> _BoxIndex of its primitives, shared by every part's test
@@ -1066,6 +1071,36 @@ class _Lint:
     def _carved(self, p: dict, q, voids: list) -> bool:
         """Whether a void carver (vacuum of a higher priority) erases the metal shape p at point q."""
         return any(v.get("priority", 0) > p.get("priority", 10) and self._holds(v, q, 0.0) for v in voids)
+
+    def _endpoint_contact(self, parts, voids, pec, point, tol, path):
+        """Terminal contact for port warnings and overlays, BEFORE thin-metal conversion or meshing."""
+        names = []
+        primitives = []
+        for part in parts:
+            if not part["metal"]:
+                continue
+            contacts = []
+            for i, primitive in enumerate(part["prims"]):
+                if not self._holds(primitive, point, tol):
+                    continue
+                if self._carved(primitive, point, voids):
+                    continue
+                contacts.append({"part": part["name"], "index": i, "path": primitive.get("where"),})
+            if contacts:
+                names.append(part["name"])
+                primitives.extend(contacts)
+        boundary = any(abs(point[axis] - position) <= tol for axis, position in pec)
+        if self.partial:
+            status = "unknown"
+        elif names or boundary:
+            status = "touching"
+        else:
+            status = "floating"
+        result = {"path": path, "point": point, "parts": names, "boundary": boundary,
+            "status": status, "primitives": primitives,}
+        if self.endpoint_contacts is not None:
+            self.endpoint_contacts.append(result)
+        return result
 
     def _solid_probe(self, parts, flat: set):
         """``inside(q)``: ``(part name, primitive)`` of the metal volume holding point q, else None.
@@ -2342,13 +2377,15 @@ def _segments_cross(p1, p2, p3, p4) -> bool:
             or (o3 == 0 and on_seg(p3, p4, p1)) or (o4 == 0 and on_seg(p3, p4, p2)))
 
 
-def lint(design: dict, values: dict | None = None, bundle: dict | None = None) -> list[dict]:
+def lint(design: dict, values: dict | None = None, bundle: dict | None = None,
+         *, endpoint_contacts: list | None = None) -> list[dict]:
     """Checks for a design (see the module docstring). ``values``: independent parameter values
-    (defaults when omitted); ``bundle``: its preview bundle, for the mesh checks."""
+    (defaults when omitted); ``bundle``: its preview bundle, for the mesh checks.
+    ``endpoint_contacts``: optional list filled with terminal contacts for the preview overlays."""
     if not isinstance(design, dict):
         return [{"severity": "error", "path": "", "code": "structure", "message": "a design is a JSON object",
                  "explain": EXPLANATIONS["structure"]}]
-    return _Lint(design, values, bundle).run()
+    return _Lint(design, values, bundle, endpoint_contacts).run()
 
 
 def errors(checks: list[dict]) -> list[dict]:

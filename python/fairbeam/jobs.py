@@ -41,6 +41,7 @@ from pathlib import Path
 from typing import Callable
 
 from .jsonutil import finite_json
+from .modelfiles import _write_atomic
 from .procutil import WINDOWS, kill_tree, popen_group, release_group, terminate_group, windows_process_info
 from .progress import TERMINAL, ProgressParser
 from .simdata import remove_inside
@@ -236,11 +237,16 @@ class Job:
         self.cancel_requested = False
         self.lock = threading.RLock()
         self.cond = threading.Condition(self.lock)
+        # Study callbacks may save another job while holding the study lock.
+        # Never acquire job.lock here: _finish takes job.lock before that lock.
+        self._save_lock = threading.Lock()
 
     # ------------------------------------------------------------------ persistence
 
-    def to_dict(self, events: bool = False) -> dict:
-        d = {k: getattr(self, k) for k in self.PUBLIC}
+    def to_dict(self, events: bool = False, *, include_results: bool = True) -> dict:
+        # Polling lists need status/provenance metadata, not every historic research
+        # result's arrays. Persistence and explicit details retain the full default.
+        d = {k: getattr(self, k) for k in self.PUBLIC if include_results or k != "result"}
         for k in ("created", "started", "finished"):
             d[k + "_iso"] = now_iso(d[k]) if d[k] else None
         d["duration_s"] = self.duration()
@@ -258,10 +264,12 @@ class Job:
         return round((self.finished or time.time()) - self.started, 2)
 
     def save(self):
-        self.dir.mkdir(parents=True, exist_ok=True)
-        tmp = self.dir / "job.json.tmp"
-        tmp.write_text(json.dumps(self.to_dict(), indent=2, allow_nan=False, default=str), encoding="utf-8", newline="\n")
-        os.replace(tmp, self.dir / "job.json")
+        # Keep snapshot and commit together so concurrent saves cannot commit an
+        # older snapshot last. Unique staging files also avoid collisions with a
+        # separately loaded record; Windows busy renames use the shared retry.
+        with self._save_lock:
+            _write_atomic(self.dir / "job.json",
+                          json.dumps(self.to_dict(), indent=2, allow_nan=False, default=str))
 
     @classmethod
     def load(cls, root: Path, job_dir: Path) -> "Job":
@@ -553,10 +561,10 @@ class JobManager:
         with self.lock:
             return sum(1 for j in self.jobs.values() if j.status == "queued")
 
-    def list(self) -> list[dict]:
+    def list(self, *, include_results: bool = True) -> list[dict]:
         with self.lock:
             jobs = sorted(self.jobs.values(), key=lambda j: j.created, reverse=True)
-            return [j.to_dict() for j in jobs]
+            return [j.to_dict(include_results=include_results) for j in jobs]
 
     def get(self, job_id: str) -> Job | None:
         return self.jobs.get(job_id)

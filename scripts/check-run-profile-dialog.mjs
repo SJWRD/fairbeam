@@ -63,8 +63,10 @@ try {
     await page.evaluate(async () => { const run = await import("/src/runner/designRun.ts"); run.setSimSettingsSection("solver"); run.setSimSettingsOpen(true); });
     await page.waitForSelector("#ss-solver input");
     await page.click("#ss-solver input");
-    await page.keyboard.down("Control"); await page.keyboard.press("a"); await page.keyboard.up("Control");
+    // Native Select All shortcuts are not reliably dispatched by Puppeteer on macOS.
+    await page.$eval("#ss-solver input", e => e.select());
     await page.keyboard.type("-45");
+    assert.equal(await page.$eval("#ss-solver input", e => e.value), "-45", `${language}: requested stop criterion entered`);
     await page.keyboard.press("Enter");
     await page.waitForSelector(".ss-dialog", { hidden: true });
     assert.equal(JSON.parse((await mark()).text).simulation.end_criteria_db, -45, `${language}: Enter keeps the edit and closes`);

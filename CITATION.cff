@@ -1,0 +1,27 @@
+cff-version: 1.2.0
+message: "If Fairbeam contributes to published work, please cite it as below."
+type: software
+title: "Fairbeam: an open electromagnetic workbench"
+abstract: >-
+  Fairbeam is a free and open-source desktop workbench for designing and
+  simulating antennas and RF circuits on the openEMS FDTD solver. It provides
+  a parametric 3D designer and Python models, automatic meshing with design
+  checks, CPU and GPU solver engines, sweeps and optimization, far-field,
+  array and material analysis, and reproducible run bundles with exports to
+  Touchstone, CSV, STL, glTF, Gerber and CST-compatible VBA macros.
+authors:
+  - given-names: Ismail
+    family-names: Akdag
+    affiliation: Izmir Kâtip Çelebi University
+    orcid: "https://orcid.org/0000-0001-6470-5892"
+repository-code: "https://github.com/ismailakdag/fairbeam"
+url: "https://fairbeam.org"
+license: GPL-3.0-or-later
+keywords:
+  - antenna design
+  - computational electromagnetics
+  - FDTD
+  - openEMS
+  - microwave engineering
+  - GPU
+  - reproducible research

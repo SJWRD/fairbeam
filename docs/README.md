@@ -18,6 +18,8 @@ build also rejects changed code examples or heading structure. Missing translati
 English body with a Turkish note; the completeness check requires every published page to be
 translated. To check a locally served site in Chrome, run `npm run check:docs-language` with
 `FAIRBEAM_DOCS_URL` pointing to it; `FAIRBEAM_SCREENSHOT_DIR` optionally saves the screenshots.
+See [focused check prerequisites](CHECKS.md) for Node checks, isolated browser checks and
+the separately opted-in Elmer integration.
 
 ## Using Fairbeam
 

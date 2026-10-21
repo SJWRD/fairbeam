@@ -2,6 +2,8 @@ import { createSignal, untrack } from "solid-js";
 import type { DesignFile } from "../runner/api";
 import type { Design } from "../designer/types";
 import { t } from "../i18n";
+import { nativeErrorMessage } from "./nativeErrors";
+import { serverWarnings, type ServerMessage } from "./serverMessages";
 
 export interface DocumentResult {
   file: string; sha256: string; design_sha256: string; provenance: "source-design";
@@ -10,7 +12,7 @@ export interface DocumentResult {
 export interface NativeDocument {
   status: "opened" | "saved"; handle: string; path: string; file: DesignFile;
   document: { id: string; path: string; revision: string; results_directory: string };
-  results: DocumentResult[]; warnings: string[];
+  results: DocumentResult[]; warnings: string[]; warning_details?: (ServerMessage | null)[];
 }
 export type NativeDocumentBinding = Omit<NativeDocument, "file" | "status"> & {
   file: Pick<DesignFile, "id" | "backup_scope">;
@@ -24,7 +26,7 @@ export const nativeDocumentsAvailable = () => !!native();
 export type ProjectRemoval = { path: string; results_directory: string };
 export async function archiveNativeProject(modelId: string, project: ProjectRemoval, backupScope?: string) {
   if (!native() || !backupScope) throw new Error(t("home.designs.archiveDesktop"));
-  return native()!.invoke<{ id: string; file: string; moved_to: string; backup_scope: string; recovery_path: string }>(
+  return invoke<{ id: string; file: string; moved_to: string; backup_scope: string; recovery_path: string }>(
     "native_document_archive", { modelId, path: project.path, resultsDirectory: project.results_directory, backupScope });
 }
 const key = (f: Pick<DesignFile, "id" | "backup_scope">) => JSON.stringify([f.backup_scope ?? "", f.id]);
@@ -132,13 +134,13 @@ async function invoke<T>(command: string, args?: Record<string, unknown>): Promi
   if (!shell) throw new Error(t("document.desktopRequired"));
   try { return await shell.invoke<T>(command, args); }
   catch (error) {
-    const value = error as { error?: unknown; message?: unknown; status?: number };
-    const message = typeof value?.error === "string" ? value.error : typeof value?.message === "string" ? value.message : String(error);
-    throw new Error(value?.status === 409 ? t("document.conflict", { error: message }) : message);
+    throw new Error(nativeErrorMessage(error, true));
   }
 }
 export const pickNativeDocument = (handle?: string) => invoke<DocumentOpen>("native_document_open", { handle });
 export const pendingNativeDocument = (exclude: string[] = []) => invoke<{ handle: string; displayName: string } | null>("native_document_next_open", { exclude });
+/** Consume a canceled/failed OS request without revoking an opened document's grant. */
+export const dismissPendingNativeDocument = (handle: string) => invoke<boolean>("native_document_dismiss_pending", { handle });
 
 /** A renderer reload may recover an existing shell grant. Never replace the current workspace
  * design with a cached file, and never infer authorization from a saved browser path. */
@@ -169,5 +171,5 @@ export async function persistNativeDocument(file: DesignFile, hash: string, save
     acknowledgeResults(file, candidates);
     if (result.file.id !== file.id) resetNativeDocumentResults(result.file, observedJobs, observedScope);
   }
-  return { ...(result.file.id === file.id ? {} : { file: result.file }), warnings: result.warnings };
+  return { ...(result.file.id === file.id ? {} : { file: result.file }), warnings: serverWarnings(result.warnings, result.warning_details) };
 }

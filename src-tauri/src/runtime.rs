@@ -423,8 +423,29 @@ pub fn install_available(res: &Res) -> Result<Value, String> {
     if oems["url"].as_str().is_none() {
         return Err(oems["note"].as_str().map(|n| format!("no prebuilt openEMS for {key} yet: {n}")).unwrap_or_else(|| format!("{key} is not supported")));
     }
+    #[cfg(target_os = "macos")]
+    {
+        let mut command = Command::new("/usr/bin/sw_vers");
+        command.arg("-productVersion");
+        let version = run_with_timeout(command, Duration::from_secs(3))
+            .filter(|(ok, _)| *ok).map(|(_, text)| text);
+        check_macos_min(oems, version.as_deref())?;
+    }
     let mb = oems["size"].as_f64().map(|b| b / 1e6).unwrap_or(0.0) + 90.0; // + uv, CPython, packages
     Ok(json!({"openems": pins["openems"]["version"], "downloadMB": mb.round()}))
+}
+
+/// Refuse an incompatible download before offering Install/Repair. Unknown OS versions are not
+/// treated as compatible; an external installation remains available through the setup picker.
+#[cfg(any(target_os = "macos", test))]
+fn check_macos_min(pin: &Value, version: Option<&str>) -> Result<(), String> {
+    let Some(required) = pin["macos_min"].as_u64() else { return Ok(()) };
+    let major = version.and_then(|value| value.trim().split('.').next()?.parse::<u64>().ok());
+    match major {
+        Some(current) if current >= required => Ok(()),
+        Some(_) => Err(format!("macos_runtime_requires:{required}")),
+        None => Err("macos_version_unknown".into()),
+    }
 }
 
 /// Run the runtime installer (stage 1, or stage 2 alone with `app_only`), reporting its
@@ -517,6 +538,21 @@ fn install_kind(runtime: &Path, res: &Res, repair: bool, app_only: bool, log: &P
 mod tests {
     use super::*;
     use std::ffi::OsStr;
+
+    #[test]
+    fn managed_runtime_macos_gate_matches_the_pinned_minimum() {
+        let pin = json!({"macos_min":27});
+        for version in ["13.0", "26.9.2\n"] {
+            assert_eq!(check_macos_min(&pin, Some(version)), Err("macos_runtime_requires:27".into()));
+        }
+        for version in ["27", "27.0.1\n", "28.0"] {
+            assert_eq!(check_macos_min(&pin, Some(version)), Ok(()));
+        }
+        for version in [None, Some(""), Some("invalid")] {
+            assert_eq!(check_macos_min(&pin, version), Err("macos_version_unknown".into()));
+        }
+        assert_eq!(check_macos_min(&json!({}), None), Ok(()));
+    }
 
     fn res(root: &Path) -> Res {
         Res { root: root.into(), ui: None, models: root.join("models"), templates: root.join("templates"), projects: root.join("projects"), dev: false }

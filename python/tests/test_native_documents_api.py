@@ -4,9 +4,11 @@ import http.client
 import io
 import json
 import os
+import socket
 from pathlib import Path
 import tempfile
 import threading
+import time
 from types import SimpleNamespace
 import unittest
 from contextlib import redirect_stdout
@@ -153,6 +155,50 @@ class NativeDocumentsAPI(unittest.TestCase):
                 self.assertEqual(self.request(headers=headers)[0], 403)
         self.assertEqual(list(self.models.glob("*.design.json")), [])
 
+    def test_rejection_delivers_response_when_body_arrives_after_headers(self):
+        # http.client normally sends headers/body separately. Delaying the second
+        # write deterministically exposed the Windows reset seen intermittently in CI.
+        data = json.dumps({"path": str(self.path)}).encode()
+        with mock.patch.object(self.app.documents, "open", side_effect=AssertionError("must not access files")):
+            for _ in range(5):
+                conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=2)
+                try:
+                    conn.putrequest("POST", "/api/native-document/open")
+                    for name, value in {"Content-Type": "application/json", "Content-Length": str(len(data)),
+                                        "X-Fairbeam-Token": self.token, "Sec-Fetch-Mode": "cors"}.items():
+                        conn.putheader(name, value)
+                    conn.endheaders()
+                    time.sleep(0.02)
+                    conn.send(data)
+                    response = conn.getresponse()
+                    self.assertEqual(response.status, 403)
+                    self.assertEqual(json.loads(response.read())["status"], 403)
+                    self.assertEqual(response.getheader("Connection"), "close")
+                finally:
+                    conn.close()
+        self.assertEqual(list(self.models.glob("*.design.json")), [])
+
+    def test_rejection_does_not_wait_for_an_unsent_oversized_body(self):
+        completed = threading.Event()
+        handler = self.server.RequestHandlerClass
+        finish = handler._finish_rejection
+
+        def observe(request):
+            try:
+                return finish(request)
+            finally:
+                completed.set()
+
+        with mock.patch.object(handler, "_finish_rejection", observe), \
+                socket.create_connection(("127.0.0.1", self.port), timeout=2) as conn:
+            conn.sendall((f"POST /api/native-document/open HTTP/1.1\r\nHost: 127.0.0.1:{self.port}\r\n"
+                          f"Content-Length: {1 << 30}\r\n\r\n").encode())
+            response = conn.recv(4096)
+            self.assertIn(b"403", response.split(b"\r\n", 1)[0])
+            # Keep the raw peer open without sending the promised body. The handler
+            # must still return instead of consuming an unbounded stream or waiting.
+            self.assertTrue(completed.wait(2), "rejection waited for the missing request body")
+
     def test_body_limit_content_type_json_and_http_method(self):
         self.assertEqual(self.request(raw=b" " * (16 * 1024 + 1))[0], 413)
         self.assertEqual(self.request(headers={"Content-Type": "text/plain"})[0], 415)
@@ -289,6 +335,16 @@ class NativeDocumentsAPI(unittest.TestCase):
         studies.assert_called_once_with(job)
         self.previous_finished.assert_called_once_with(job)
         self.assertIn("TypeError", log.getvalue())
+
+    def test_index_io_failure_does_not_skip_studies_or_prior_callback(self):
+        job = SimpleNamespace(kind="run", bundle="run.json")
+        with mock.patch.object(self.app.documents, "record_completed"), \
+                mock.patch("fairbeam.cli.os.replace", side_effect=OSError("read-only index")), \
+                mock.patch.object(self.app.studies, "on_finished") as studies, redirect_stdout(io.StringIO()) as log:
+            self.manager.on_finished(job)
+        studies.assert_called_once_with(job)
+        self.previous_finished.assert_called_once_with(job)
+        self.assertIn("result index was not updated", log.getvalue())
 
 
 if __name__ == "__main__":

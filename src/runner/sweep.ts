@@ -96,9 +96,9 @@ export async function startSweep() {
   setSubmitError(null);
   setSubmitting(true);
   try {
-    const sweep: SweepAxisRequest[] = axes.map((a) =>
-      a.kind === "list" ? { key: a.key, values: axisValues(a).values } : { key: a.key, start: Number(a.start), stop: Number(a.stop), steps: Number(a.steps) },
-    );
+    // Submit the reviewed values, including integer rounding and deduplication.
+    // Re-expanding a range on the server can otherwise introduce fractional int values.
+    const sweep: SweepAxisRequest[] = axes.map((a, index) => ({ key: a.key, values: plan.per[index].values }));
     const base = paramPayload();
     for (const a of axes) delete base[a.key];
     const res = await api.submitSweep({ model: m.key, params: base, sweep, ...runSettings() });

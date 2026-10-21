@@ -47,13 +47,15 @@ export default function ExportDialog() {
   const [perSolid, setPerSolid] = createSignal(false);
 
   const isCst = () => format() === "cst";
+  // Preserve the edit buffer (and caret); only the generated macro uses the sanitized name.
+  const componentName = () => opt.component.replace(/[^A-Za-z0-9_]/g, "_") || DEFAULT_CST_OPTIONS.component;
   const macroBase = () => cstFileStem(source()?.model.id);
   const fileName = () => `${macroBase()}.bas`;
   // the macro carries independent discrete ports only: grouped ports are refused, geometry alone can still go
   const groupedPortsBlocked = () => isCst() && opt.includePorts && !!source()?.ports.some((p) => p.group);
   const result = createMemo(() => {
     const b = source();
-    return b && isCst() && !groupedPortsBlocked() ? cstMacro(b, { ...opt }, { macroBase: cstFileStem(b.model.id), ...(design ? { inserts: cstInsertPairs(design), parametric: design } : {}) }) : null;
+    return b && isCst() && !groupedPortsBlocked() ? cstMacro(b, { ...opt, component: componentName() }, { macroBase: cstFileStem(b.model.id), ...(design ? { inserts: cstInsertPairs(design), parametric: design } : {}) }) : null;
   });
   const previewText = () => result()?.text ?? "";
   const warningText = (warning: string) => {
@@ -177,7 +179,8 @@ export default function ExportDialog() {
             <Show when={isCst()}>
             <label class="field">
               <span>{t("export.componentName")}</span>
-              <input autocomplete="off" type="text" value={opt.component} onInput={(e) => setOpt("component", e.currentTarget.value.replace(/[^A-Za-z0-9_]/g, "_") || "fairbeam")} />
+              <input autocomplete="off" type="text" value={opt.component} aria-describedby="export-component-name" onInput={(e) => setOpt("component", e.currentTarget.value)} />
+              <span class="note" id="export-component-name" style={{ "overflow-wrap": "anywhere" }}>{t("export.componentEffective", { name: componentName() })}</span>
             </label>
             <div class="toggle-list">
               <For each={OPTIONS}>

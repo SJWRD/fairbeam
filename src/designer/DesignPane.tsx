@@ -94,6 +94,7 @@ export function ExprField(props: {
   issue?: Check;
   /** Keep dock cells on one line; expose validation on focus or hover. */
   inline?: boolean;
+  placeholder?: string;
 }) {
   const r = () => tryEvaluate(props.value, names().names);
   const issue = () => props.issue ?? issues()[props.path];
@@ -131,13 +132,25 @@ export function ExprField(props: {
   });
   const onBlur = () => { setText(null); offer(); };
   const onFocus = () => { dismissed = false; offer(); };
+  const onEscape = (e: KeyboardEvent) => {
+    if (e.key !== "Escape" || e.defaultPrevented) return;
+    const hasOffer = offering() && unknown().some((key) => paramOfferOwners()[key] === offerEntry.id);
+    const hasTypedFormat = text() !== null && text() !== String(props.value ?? "");
+    if (!hasOffer && !hasTypedFormat) return; // an unchanged field leaves Cancel to its dialog
+    e.preventDefault();
+    e.stopPropagation();
+    // An offer control is about to disappear. Restore its owning field first; its focus
+    // handler may offer again, so the dismissal below must happen afterwards.
+    input.focus();
+    setText(null); setOffering(false); offerEntry.active = false; dismissed = true; refreshParamOfferOwners();
+  };
   return (
-    <div class="dz-field" classList={{ "dz-compact": props.compact, "dz-inline": props.inline }}>
+    <div class="dz-field" classList={{ "dz-compact": props.compact, "dz-inline": props.inline }} onKeyDown={onEscape}>
       <label class="dz-label" for={id()}>{props.label}{props.unit ? <span class="dz-unit"> {props.unit}</span> : null}</label>
-      <input autocomplete="off" ref={input} id={id()} title={props.inline ? detail() || String(props.value ?? "") : undefined} class="rp-input dz-input mono" type="text" spellcheck={false} value={text() ?? props.value ?? ""}
+      <input autocomplete="off" ref={input} id={id()} placeholder={props.placeholder} title={props.inline ? detail() || String(props.value ?? "") : undefined} class="rp-input dz-input mono" type="text" spellcheck={false} value={text() ?? props.value ?? ""}
         aria-invalid={bad()} aria-describedby={describedBy()} classList={{ "dz-input-warn": !bad() && issue()?.severity === "warning" }}
         onFocus={onFocus} onInput={(e) => { setText(e.currentTarget.value); props.onChange(toExpr(e.currentTarget.value)); }} onBlur={onBlur}
-        onKeyDown={(e) => { if (e.key === "Enter" && offer()) e.preventDefault(); if (e.key === "Escape") { setText(null); setOffering(false); offerEntry.active = false; dismissed = true; refreshParamOfferOwners(); } }} />
+        onKeyDown={(e) => { if (e.key === "Enter" && offer()) e.preventDefault(); }} />
       <span id={messageId} class="dz-value" classList={{ "dz-bad": bad(), "dz-warn": !bad() && issue()?.severity === "warning" }}>{detail()}</span>
       <Show when={offering()}><For each={unknown().filter((key) => paramOfferOwners()[key] === offerEntry.id)}>{(key) =>
         <InlineParam ask={{ key, unit: props.unit, insertAt: props.newParamAt }} onCreated={() => input.focus()} />
@@ -1080,7 +1093,9 @@ function ResistorInspector(props: { i: number }) {
       <VecField label={t("props.start")} value={r().start} path={`${base()}.start`} onChange={(k, v) => set((q) => { q.start[k] = v; }, `start${k}`)} onPicked={(v) => set((q) => { q.start = v; }, "start")} />
       <VecField label={t("props.stop")} value={r().stop} path={`${base()}.stop`} onChange={(k, v) => set((q) => { q.stop[k] = v; }, `stop${k}`)} onPicked={(v) => set((q) => { q.stop = v; }, "stop")} />
       <p class="note">{t("feed.rlcNote")}</p><Show when={r().topology === "series" && (r().L !== undefined || r().C !== undefined)}><p class="note" role="note">{t("feed.seriesLimitation")}</p></Show>
-      <For each={["R", "L", "C"] as const}>{(key) => <label class="dz-field"><span class="dz-label">{key} ({key === "R" ? "Ω" : key === "L" ? "H" : "F"})</span><input autocomplete="off" placeholder={key === "L" ? "1e-9 (1 nH)" : key === "C" ? "1e-12 (1 pF)" : undefined} class="rp-input dz-input mono" value={r()[key] ?? ""} onChange={(e) => { const v = e.currentTarget.value.trim(); set((q) => { if (v) q[key] = v; else delete q[key]; }, key); }} /></label>}</For>
+      <For each={["R", "L", "C"] as const}>{(key) => <ExprField optional label={key} unit={key === "R" ? "Ω" : key === "L" ? "H" : "F"}
+        path={`${base()}.${key}`} value={r()[key]} placeholder={key === "L" ? "1e-9 (1 nH)" : key === "C" ? "1e-12 (1 pF)" : undefined}
+        onChange={(v) => set((q) => { if (String(v).trim()) q[key] = v; else delete q[key]; }, key)} />}</For>
       <label class="dz-field"><span class="dz-label">{t("feed.topology")}</span><select class="rp-input" value={r().topology ?? "parallel"} onChange={(e) => { const v = e.currentTarget.value as "parallel" | "series"; set((q) => { q.topology = v; }, "topology"); }}><option value="parallel">{t("feed.parallel")}</option><option value="series">{t("feed.series")}</option></select></label>
       <SelectField label={t("props.direction")} value={r().direction} options={AXES} onChange={(v) => set((q) => { q.direction = v; }, "direction")} />
     </div>

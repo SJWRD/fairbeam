@@ -92,5 +92,8 @@ export default { root: ${JSON.stringify(root)}, publicDir: ${JSON.stringify(pub)
     await waitFor(`http://127.0.0.1:${vitePort}/`, 'vite', 60000, () => !vite.exited);
     log(`stack up: viewer :${vitePort}, run server :${apiPort}, folder ${dir}`);
   } catch (e) { const out = kids.map((k) => `--- ${k.name}\n${k.out}`).join('\n'); await stop(); throw new Error(`${e.message}\n${out}`); }
-  return { url: `http://127.0.0.1:${vitePort}/`, apiUrl: `http://127.0.0.1:${apiPort}`, dir, projects, pids: kids.map((k) => k.child.pid), stop };
+  const diagnostics = () => kids.map(({ name, child, out, exited }) => ({
+    name, pid: child.pid, exited, exitCode: child.exitCode, signalCode: child.signalCode, output: out,
+  }));
+  return { url: `http://127.0.0.1:${vitePort}/`, apiUrl: `http://127.0.0.1:${apiPort}`, dir, projects, pids: kids.map((k) => k.child.pid), diagnostics, stop };
 }

@@ -4,7 +4,7 @@ import { X } from "lucide-solid";
 import { useModal } from "../lib/dialog";
 import { closeDesign, defaultDesignerSession, dirty, draft, file, message, releaseDraft, replaceRequest, type ReplaceRequest, saveAndCloseDesign, saveBeforeLeaving, saving } from "./store";
 
-import { answerWindowClose, decideWindowClose, windowClose, type WindowLeave } from "./windowClose";
+import { answerWindowClose, approveUpdateDiscard, decideWindowClose, finishUpdate, updateApproved, windowClose, type WindowLeave } from "./windowClose";
 import { modifierShortcut } from "../lib/shortcut";
 import { t } from "../i18n";
 
@@ -135,18 +135,24 @@ function WindowCloseDialog(props: { kind: WindowLeave }) {
   const [ownSave, setOwnSave] = createSignal(false);
   // a save running when the question came finished cleanly: nothing is at stake any more
   createEffect(() => { if (!ownSave() && (!file() || (file()?.id === owner?.id && defaultDesignerSession.asyncState.isDocumentCurrent(ownerTicket) && !saving() && !dirty()))) decideWindowClose("close"); });
-  const quitting = () => props.kind === "quit";
+  const title = () => props.kind === "update" ? "closeProject.update.title"
+    : props.kind === "quit" ? "closeProject.quit.title" : "closeProject.window.title";
+  const description = () => props.kind === "update" ? "closeProject.update.description"
+    : props.kind === "quit" ? "closeProject.quit.description" : "closeProject.window.description";
   return (
     <UnsavedChangesDialog
-      title={t(quitting() ? "closeProject.quit.title" : "closeProject.window.title")}
-      description={t(quitting() ? "closeProject.quit.description" : "closeProject.window.description", { name: draftName() })}
+      title={t(title())}
+      description={t(description(), { name: draftName() })}
       save={async () => {
         setOwnSave(true);
         try { return await saveBeforeLeaving(() => decideWindowClose("close")); }
         finally { setOwnSave(false); }
       }}
-      // Don't save: like Close project, the draft and its local backup go
-      discard={() => { closeDesign(); decideWindowClose("close"); }}
+      // Update consent keeps the draft until install; Later can still cancel the update.
+      discard={() => {
+        if (props.kind === "update") approveUpdateDiscard();
+        else { closeDesign(); decideWindowClose("close"); }
+      }}
       cancel={() => decideWindowClose("cancel")}
       captureEscape
     />
@@ -165,9 +171,20 @@ export default function CloseProjectHost() {
     window.addEventListener("fairbeam:close-project", onClose);
     onCleanup(() => window.removeEventListener("fairbeam:close-project", onClose));
     // the desktop shell asks before its window closes or the app quits (src-tauri/src/main.rs)
-    const w = window as Window & { fairbeamWindowClose?: typeof answerWindowClose };
+    const w = window as Window & { fairbeamWindowClose?: typeof answerWindowClose; fairbeamUpdateFinished?: typeof finishUpdate };
     w.fairbeamWindowClose = answerWindowClose;
-    onCleanup(() => { if (w.fairbeamWindowClose === answerWindowClose) delete w.fairbeamWindowClose; });
+    w.fairbeamUpdateFinished = finishUpdate;
+    const block = (event: Event) => {
+      if (updateApproved() === null) return;
+      event.preventDefault(); event.stopImmediatePropagation();
+    };
+    const blockedEvents = ["keydown", "beforeinput", "pointerdown", "click", "paste", "drop"];
+    for (const event of blockedEvents) window.addEventListener(event, block, true);
+    onCleanup(() => {
+      if (w.fairbeamWindowClose === answerWindowClose) delete w.fairbeamWindowClose;
+      if (w.fairbeamUpdateFinished === finishUpdate) delete w.fairbeamUpdateFinished;
+      for (const event of blockedEvents) window.removeEventListener(event, block, true);
+    });
   });
   // closing the window replaces an open "Save changes before closing?" about the project
   createEffect(() => { if (windowClose()) setRequested(false); });
@@ -177,6 +194,11 @@ export default function CloseProjectHost() {
       <Show when={windowClose()}>{(request) => <Portal><WindowCloseDialog kind={request().kind} /></Portal>}</Show>
       {/* in <body>, after every other modal: the New model dialog stays behind it */}
       <Show when={replaceRequest()} keyed>{(request) => <Portal><ReplaceProjectDialog request={request} /></Portal>}</Show>
+      <Show when={updateApproved() !== null}><Portal>
+        <div class="scrim" style={{ "z-index": 10000 }}>
+          <div class="dialog dialog-sm" role="status" aria-live="polite">{t("closeProject.update.waiting")}</div>
+        </div>
+      </Portal></Show>
     </>
   );
 }

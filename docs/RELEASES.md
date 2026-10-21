@@ -130,6 +130,18 @@ receipt outside the checkout or remove the generated receipt before building the
    links (`landing/index.html`, section `#download`: file names, sizes and minimum OS versions)
    through the repository workflow. Git-triggered website deployments are disabled. Publish one
    locally built, reviewed batch using the prebuilt workflow in [CI.md](CI.md).
+6. Publish the matching source release in this repository, so that Zenodo archives the tagged
+   source and gives the version a DOI. All versions also share one concept DOI.
+
+   ```bash
+   gh release create v<version> -R ismailakdag/fairbeam --verify-tag --title "Fairbeam <version>" \
+     --notes "Installers and update files: https://github.com/ismailakdag/fairbeam-releases/releases/tag/v<version>"
+   ```
+
+   The archive is permanent, so create the source release only for the final tag. Zenodo takes
+   the authors and the description from [CITATION.cff](../CITATION.cff) in the tagged commit, so
+   update that file before tagging when the author list changes. The updater reads only
+   `fairbeam-releases`, so source releases never reach installed apps.
 
 ## Issues and feedback
 
@@ -177,6 +189,28 @@ editing them, or the prefill stops working.
 
 One entry per release, newest first. The installers are on the
 [release page](https://github.com/ismailakdag/fairbeam-releases/releases) of each version.
+
+### 0.8.3, 2026-10-19
+
+- Fix the desktop permission error when choosing to remove a portable `.fb` document and
+  its results folder. The native archive command now has an app-manifest entry and viewer
+  permission. In 0.8.2 the blocked action left files intact; list-only removal was unaffected.
+- Add command-registration/manifest and capability checks to prevent missing native permissions.
+- Ask before native window close or Quit discards unsaved Python editor text. Retain unapplied
+  designer Python text across Start, design switches and reopening the panel within the session.
+- Keep unapplied designer Python text attached to its document after first native Save or
+  Save As. Switching Python models also checks unsaved editor text and waits for pending saves.
+- Check unsaved work again after an update finishes downloading, before installation stops
+  the app. Cancel or Later keeps drafts intact; edits made during download are included.
+- Preserve decimal points while typing automatic mesh overrides in Simulation settings.
+- Protect shared result folders even when sibling documents use different case or Unicode
+  spellings for the same directory. Linked result folders remain protected.
+- Skip malformed or unrelated result-index and workspace metadata files without blocking
+  healthy projects. Failed index publication no longer prevents completed-run callbacks;
+  concurrent index writers use separate temporary files and Windows file retries.
+- Deliver rejected local API requests reliably when their body arrives after the headers.
+  Isolate Windows bootstrap proxy tests with exclusive, OS-assigned ports.
+- Removal remains recoverable through `Fairbeam Deleted`; this does not permanently erase files.
 
 ### 0.8.2, 2026-10-19
 

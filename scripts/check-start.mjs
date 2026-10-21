@@ -122,7 +122,8 @@ try {
   const home = readFileSync(`${root}src/home/Home.tsx`, 'utf8');
   assert.match(picker, /void openUserProject\(file\)/, 'header picker uses the guard');
   assert.match(header, /if \(f\) void openUserProject\(f\)/, 'header Open uses the guard');
-  assert.match(app, /\? openUserProject\(f\) : importReferenceFile\(f\)/, 'JSON drop uses the guard');
+  assert.match(app, /fileDropHandlers\(setDragging, \(file\) => void openDroppedFile\(file\)\)/, 'file drops use the feedback router');
+  assert.match(readFileSync(`${root}src/runner/dropFile.ts`, 'utf8'), /if \(\/\\\.\(json\|fb\)\$\/i\.test\(file\.name\)\) \{ await openUserProject\(file\); return; \}/, 'JSON and native document drops use the open guard');
   assert.match(home, /openUserProject\(p.file\)/, 'Start examples use the guard');
 
   for (const path of ['Start example', 'header picker', 'header Open', 'JSON drop']) {
@@ -238,7 +239,7 @@ try {
   assert.match(home, /models\(\)\.filter\(\(m\) => !m\.readonly && \(m\.error \? m\.file\?\.endsWith\("\.design\.json"\) : m\.kind === "design"\)\)/);
   assert.match(app, /<p>\{t\(DEMO \|\| isDesktopShell\(\) \? "app\.noProjects\.body" : "app\.noProjects\.bodyServer"\)\}<\/p>/, 'Examples without any project: a user-oriented text');
   assert.doesNotMatch(app, /fairbeam run python\/models\/patch_antenna\.py/, 'no source-tree command in the empty Examples screen');
-  assert.match(app, /<Show when=\{bundle\(\)\}>\s*<PanelBoundary name="Results dock" class="dock">/, 'no empty dock tabs without a project');
+  assert.match(app, /<Show when=\{bundle\(\)\}>\s*<PanelBoundary name=\{t\("panel\.name\.results"\)\} class="dock">/, 'no empty dock tabs without a project');
   // the Run panel follows the model it is showing: choosing a bundled model in its own picker keeps it open
   const runPanel = read('src/components/RunPanel.tsx');
   assert.match(runPanel, /batch\(\(\) => \{ selectModel\(select, bundle\(\)\); setStartedPythonModel\(select\); \}\)/, 'the Run panel stays open when its model picker chooses a bundled model');

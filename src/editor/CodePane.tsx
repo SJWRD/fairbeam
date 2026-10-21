@@ -1,4 +1,4 @@
-import { createEffect, For, lazy, onCleanup, onMount, Show, Suspense } from "solid-js";
+import { createEffect, For, lazy, on, onCleanup, onMount, Show, Suspense } from "solid-js";
 import { CircleAlert, CircleCheck, Copy, FilePlus2, History, LoaderCircle, Lock, RefreshCw, Save, TriangleAlert } from "lucide-solid";
 import { modelKey, models, selectModel, runPreview } from "../runner/store";
 import { bundle } from "../state";
@@ -18,7 +18,6 @@ import {
   syncToModel,
   validation,
   versions,
-  confirmDiscard,
   SAVE_KEY,
 } from "./store";
 
@@ -29,11 +28,7 @@ const CodeEditor = lazy(() => import("./CodeEditor"));
 /** The Code tab of the Run panel: the model file in an editor, save + validate + preview,
  * errors with their line, new / duplicate, and the saved-version history. */
 export default function CodePane(props: { newDisabled?: boolean } = {}) {
-  onMount(syncToModel);
-  createEffect(() => {
-    modelKey();
-    syncToModel();
-  });
+  createEffect(on(modelKey, () => { void syncToModel(); }));
 
   // leaving the page with unsaved edits
   onMount(() => {
@@ -46,7 +41,7 @@ export default function CodePane(props: { newDisabled?: boolean } = {}) {
 
   const pick = async (key: string) => {
     if (key === modelKey()) return;
-    if (!(await confirmDiscard())) return;
+    if (!(await openSource(key))) return;
     selectModel(key, bundle());
     runPreview();
   };
@@ -109,7 +104,7 @@ export default function CodePane(props: { newDisabled?: boolean } = {}) {
             {conflict() ? t("editor.code.saveAnyway") : t("editor.code.savePreview")}
           </button>
           <Show when={dirty()}>
-            <button class="btn btn-ghost btn-sm" onClick={async () => { const f = file(); if (f && await confirmDiscard()) openSource(f.id); }}>
+            <button class="btn btn-ghost btn-sm" onClick={() => { const f = file(); if (f) void openSource(f.id); }}>
               <RefreshCw size={14} aria-hidden="true" /> {t("editor.code.discard")}
             </button>
           </Show>

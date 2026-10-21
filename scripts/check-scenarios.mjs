@@ -17,6 +17,13 @@ import { createRequire } from 'node:module';
 import { chromePath, root, startStack } from './scenarios/stack.mjs';
 import { Session, auditSelfTest, failureDir } from './scenarios/harness.mjs';
 import { interactionSelfTest } from './scenarios/harness-self-test.mjs';
+import { withStartupDiagnostics } from './scenarios/startup-diagnostics.mjs';
+import { scenarioAttemptDirectory, withScenarioAttemptDiagnostics } from './scenarios/attempt-diagnostics.mjs';
+import { scenarioAttemptDiagnosticsSelfTest } from './check-scenario-attempt-diagnostics.mjs';
+import { startupDiagnosticsSelfTest } from './check-scenario-startup-diagnostics.mjs';
+import { selfTestArtifactsSelfTest } from './check-scenario-self-test-artifacts.mjs';
+import { launchWithEvidence } from './scenarios/launch-evidence.mjs';
+import { browserLaunchEvidenceSelfTest } from './check-browser-launch-evidence.mjs';
 
 const args = process.argv.slice(2);
 const langs = args.includes('--lang') ? [args[args.indexOf('--lang') + 1]] : ['en', 'tr'];
@@ -31,7 +38,7 @@ const t0 = Date.now();
 const stamp = t0.toString(36).slice(-4); // design names stay unique when a dev stack is reused
 
 const SCENARIOS = [];
-for (const file of ['s1-build-patch', 's2-import', 's3-sweep-optimize', 's4-results', 's5-python-edit', 's6-python-design', 's7-designer-workflow', 's8-ports-fieldmap', 's8-appearance-export', 's9-context-export', 's10-rf-workflows', 's11-python-folders', 's12-single-solid-tree', 's13-appearance-presets', 's14-home-design-actions', 's16-cross-project-overlays', 's18-planar-ports']) {
+for (const file of ['s1-build-patch', 's2-import', 's3-sweep-optimize', 's4-results', 's5-python-edit', 's6-python-design', 's7-designer-workflow', 's8-ports-fieldmap', 's8-appearance-export', 's9-context-export', 's10-rf-workflows', 's11-python-folders', 's12-single-solid-tree', 's13-appearance-presets', 's14-home-design-actions', 's16-cross-project-overlays', 's18-planar-ports', 's20-escape-ownership', 's22-designer-input-feedback', 's23-viewer-feedback']) {
   SCENARIOS.push((await import(`./scenarios/${file}.mjs`)).default);
 }
 
@@ -155,21 +162,27 @@ for (const sig of ['SIGINT', 'SIGTERM']) process.once(sig, async () => { await c
 
 const results = [];
 try {
+  await browserLaunchEvidenceSelfTest(); console.log('Browser launch evidence checks passed (no browser started).');
   const puppeteerModule = process.env.FAIRBEAM_PUPPETEER
     ? await import(pathToFileURL(process.env.FAIRBEAM_PUPPETEER).href)
     : await import(pathToFileURL(createRequire(import.meta.url).resolve('puppeteer-core')).href);
   const puppeteer = puppeteerModule.default ?? puppeteerModule;
   const reuse = process.env.FAIRBEAM_SCENARIO_STACK ? JSON.parse(process.env.FAIRBEAM_SCENARIO_STACK) : null;
   stack = reuse ? { ...reuse, stop: async () => {} } : await startStack({ log: (m) => console.log(m) });
-  browser = await puppeteer.launch({ headless: true, executablePath: await chromePath(), args: ['--no-sandbox', '--enable-unsafe-swiftshader', '--use-angle=swiftshader'] });
+  browser = await launchWithEvidence(puppeteer, { headless: true, executablePath: await chromePath(), args: ['--no-sandbox', '--enable-unsafe-swiftshader', '--use-angle=swiftshader'] }, { directory: failureDir, stack });
+  await selfTestArtifactsSelfTest(); console.log('Startup self-test evidence retention checks passed.');
+  await scenarioAttemptDiagnosticsSelfTest(); console.log('Scenario attempt evidence retention checks passed.');
+  await startupDiagnosticsSelfTest(browser); console.log('Startup diagnostics self-test passed.');
   {
     const page = await browser.newPage();
-    await auditSelfTest(page); console.log('Visual audit self-test passed.');
-    await interactionSelfTest(page); console.log('Pointer interaction self-test passed.');
-    // Vite's first request transforms the app's module graph. Check actual app readiness once,
-    // before the scenario contexts, instead of spending a step's 15s wait on a cold dev server.
-    await page.goto(stack.url, { waitUntil: 'domcontentloaded', timeout: 45000 });
-    await page.waitForSelector('.home', { visible: true, timeout: 45000 });
+    await withStartupDiagnostics(page, { directory: join(failureDir, 'startup'), stack }, async () => {
+      await auditSelfTest(page); console.log('Visual audit self-test passed.');
+      await interactionSelfTest(page); console.log('Pointer interaction self-test passed.');
+      // Vite's first request transforms the app's module graph. Check actual app readiness once,
+      // before the scenario contexts, instead of spending a step's 15s wait on a cold dev server.
+      await page.goto(stack.url, { waitUntil: 'domcontentloaded', timeout: 45000 });
+      await page.waitForSelector('.home', { visible: true, timeout: 45000 });
+    });
     await page.close();
   }
   console.log(`Scenario checks (${langs.join(', ')}); failing screenshots go to ${failureDir}`);
@@ -188,12 +201,15 @@ try {
       // Keep waits bounded at 20s while allowing that initial dev-server navigation to finish.
       page.setDefaultNavigationTimeout(45000);
       await page.evaluateOnNewDocument((l) => { try { const saved=JSON.parse(localStorage.getItem('fairbeam.generalSettings')||'{}'); localStorage.setItem('fairbeam.generalSettings', JSON.stringify({ ...saved, language: l })); } catch { /* blocked */ } }, lang);
-      const s = new Session(page, { lang, scenario: scenario.id, url: stack.url });
-      try {
-        await scenario.run(s, { stack, root, skipRun, takeSimLock, stamp: attempt > 1 ? `${stamp}r${attempt}` : stamp, compact, ribbonFileAudit });
-      } catch (e) {
-        if (!e.fatalStep) { console.log(`  FAIL ${scenario.id}/${lang} scenario error: ${e.message}`); s.results.push({ scenario: scenario.id, lang, step: 'scenario', ok: false, problems: [e.stack ?? e.message], ms: 0 }); }
-      }
+      const directory = scenarioAttemptDirectory(failureDir, scenario.id, lang, attempt);
+      const s = new Session(page, { lang, scenario: scenario.id, url: stack.url, artifactDirectory: directory });
+      await withScenarioAttemptDiagnostics(page, { directory, stack, scenario: scenario.id, lang, attempt, results: s.results }, async () => {
+        try {
+          await scenario.run(s, { stack, root, skipRun, takeSimLock, stamp: attempt > 1 ? `${stamp}r${attempt}` : stamp, compact, ribbonFileAudit });
+        } catch (e) {
+          if (!e.fatalStep) { console.log(`  FAIL ${scenario.id}/${lang} scenario error: ${e.message}`); s.results.push({ scenario: scenario.id, lang, step: 'scenario', ok: false, problems: [e.stack ?? e.message], ms: 0 }); }
+        }
+      });
       await context.close();
       const failed = s.results.some((r) => !r.ok);
       if (failed && attempt < ATTEMPTS) { retried.push(`${scenario.id}/${lang}`); continue; }

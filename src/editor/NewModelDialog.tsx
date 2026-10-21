@@ -73,6 +73,7 @@ export default function NewModelDialog(props: { onPythonCreated?: (id: string) =
         setPanelTab("design");
       } else {
         const created = await createModel({ id: id(), name: name().trim() || undefined, ...(duplicate() ? { from: source()!.id } : { template: template() }) });
+        if (!created) return;
         if (!duplicate() && kind() === "python") pythonCreatedId = created.id;
       }
       close();

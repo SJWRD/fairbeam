@@ -4,7 +4,7 @@
 // against absurd states (instant ones from checks.ts, the rest from the server with each preview).
 import { batch, createEffect, createMemo, createRoot, createSignal, on } from "solid-js";
 import { reconcile, unwrap } from "solid-js/store";
-import { api, type PcbFile, type PcbOptions } from "../runner/api";
+import { api, type EndpointContact, type PcbFile, type PcbOptions } from "../runner/api";
 import { applyModelEntry, draftPreview, forgetPreviewFailure, restoreProject, invalidatePreview, previewActive, previewFailure, previewIsCurrent, previewState, health, jobs, jobsScope, modelKey, models, refreshModels, runDesignPreview, selectModel, serverState, setUnsavedDesignCheck, showEmptyDesign, showQuickPreview } from "../runner/store";
 import { loadIndex, openCount, setCenterView, setHiddenParts, setOpeningView } from "../state";
 import { openUserProject } from "../runner/openProject";
@@ -18,7 +18,7 @@ import { parameterUses, pathOwner, renameParameter } from "./paramRefs";
 import { openParametersTab, setParameterRanges } from "./dockState";
 import { appMode, setAppMode } from "../workspace";
 import { designChecks, mergeChecks, type Check, type CheckFix } from "./checks";
-import { checkMessage } from "./checkText";
+import { checkMessage, parameterErrorTitle } from "./checkText";
 import { validColor, validOpacity } from "./colors";
 import { designMaterial, type LibraryMaterial } from "./materials";
 import { designMaterialFromUser, type UserMaterial } from "./userMaterials";
@@ -38,8 +38,8 @@ import { createDocumentResultAutosave } from "../lib/documentResultAutosave";
 import { showToast } from "../lib/toast";
 
 export const defaultDesignerSession = createDesignerSession({
-  edited: () => { quickPreview(); schedulePreview(); },
-  restored: () => { quickPreview(); schedulePreview(0); },
+  edited: (previewChanged) => { if (previewChanged) { quickPreview(); schedulePreview(); } },
+  restored: (previewChanged) => { if (previewChanged) { quickPreview(); schedulePreview(0); } },
 });
 export const { file, setFile, draft, setDraft, selection, setSelection, loading, setLoading, saving, setSaving,
   message, setMessage, serverErrors, setServerErrors, conflict, setConflict, serverChecks, setServerChecks,
@@ -187,6 +187,16 @@ export function quickPreview() {
 // ------------------------------------------------------------------ preview
 
 let timer: ReturnType<typeof setTimeout> | undefined;
+const [contactPreview, setContactPreview] = createSignal<{
+  ticket: ReturnType<typeof asyncState.ticket>;
+  contacts: EndpointContact[];
+} | null>(null);
+
+/** Contact feedback is valid only for the document and draft that produced the server preview. */
+export function endpointContacts(): EndpointContact[] {
+  const result = contactPreview();
+  return result && asyncState.isPreviewCurrent(result.ticket) ? result.contacts : [];
+}
 
 /** The Checks entry for a preview the server gave no verdict on (offline, a network failure, a
  * server error): without it the list would show only the browser-side checks, an all-clear the
@@ -203,6 +213,7 @@ export function previewUnavailableCheck(reason: string): Check {
 
 function stopPreview() {
   clearTimeout(timer);
+  setContactPreview(null);
   asyncState.invalidatePreview();
   return invalidatePreview();
 }
@@ -224,6 +235,7 @@ export function schedulePreview(delay = 250) {
     batch(() => {
       setServerErrors(r.fields);
       setServerChecks(r.unavailable ? [previewUnavailableCheck(r.unavailable)] : r.checks);
+      setContactPreview(r.contacts ? { ticket, contacts: r.contacts } : null);
     });
     setChecksTicket(r.unavailable ? null : ticket);
   }, delay);
@@ -268,7 +280,7 @@ export const defaultDesignerIO = createDesignerIO(defaultDesignerSession, {
     setOpeningView(pose && draft.model?.id ? { modelId: draft.model.id, ...pose } : null);
   },
 });
-export const { openDesign, save, saveExplicit, saveBeforeLeaving } = defaultDesignerIO;
+export const { openDesign, save, saveExplicit, saveBeforeLeaving, prepareSavedDesign } = defaultDesignerIO;
 export const saveNativeDocumentAs = defaultDesignerIO.saveAs;
 const { take, applyValidation, isReleased } = defaultDesignerIO;
 
@@ -858,7 +870,7 @@ export const fieldId = (path: string) => `dz-${path.replace(/[^\w]/g, "-")}`;
 export function applyFix(set: CheckFix["set"]) {
   // the paths come from the server's last check; after an edit (or with the server offline) they
   // may point at another item, so the fix waits for the checks of the current draft
-  if (!checksTicket() || !asyncState.isDraftCurrent(checksTicket()!)) {
+  if (!checksTicket() || !asyncState.isPreviewCurrent(checksTicket()!)) {
     setMessage({ tone: "warn", text: t("store.checksCatchingUp") });
     return;
   }
@@ -1150,7 +1162,7 @@ export function setOpacity(kind: "parts" | "materials", indices: number[], opaci
 /** Why `key` cannot be the new key of parameter `i` (the inline error under the key cell), or null. */
 export function paramKeyProblem(i: number, key: string): string | null {
   const bad = paramKeyError(key);
-  if (bad) return `${bad[0].toUpperCase()}${bad.slice(1)}.`;
+  if (bad) return `${parameterErrorTitle(bad)}.`;
   return (draft.params ?? []).some((q, j) => j !== i && q.key === key) ? t("params.keyTwice") : null;
 }
 

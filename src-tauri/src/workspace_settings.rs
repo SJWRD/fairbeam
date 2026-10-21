@@ -20,6 +20,15 @@ impl WorkspaceError {
     }
 }
 
+/// A remembered custom workspace is user data, not a request to create a new workspace.
+/// In particular, a renamed directory or an absent volume must never be silently re-seeded.
+pub fn check_saved(path: &Path) -> Result<(), String> {
+    if !path.is_dir() {
+        return Err("workspace_not_folder".into());
+    }
+    fs::read_dir(path).map(|_| ()).map_err(|e| e.to_string())
+}
+
 /// Validate a folder before saving it as the workspace for the next app start.
 /// The workspace must be an existing writable directory outside app resources and runtime data.
 pub fn validate(
@@ -99,7 +108,7 @@ fn probe_writable(directory: &Path) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{canonical, validate, WorkspaceError};
+    use super::{canonical, check_saved, validate, WorkspaceError};
     use std::fs;
     use std::path::PathBuf;
 
@@ -170,5 +179,21 @@ mod tests {
             validate(&temp.0.join("app-data"), &resources, &runtime),
             Err(WorkspaceError::ProtectedPath)
         );
+    }
+
+    #[test]
+    fn missing_saved_workspace_is_not_created_and_existing_files_are_untouched() {
+        let temp = TempRoot::new();
+        let old = temp.0.join("Research");
+        let moved = temp.0.join("Research-old");
+        fs::create_dir(&old).unwrap();
+        fs::write(old.join("my-design.fb"), b"user data").unwrap();
+        fs::rename(&old, &moved).unwrap();
+        assert_eq!(check_saved(&old), Err("workspace_not_folder".into()));
+        assert!(!old.exists());
+        assert!(check_saved(&moved).is_ok());
+        assert_eq!(fs::read(moved.join("my-design.fb")).unwrap(), b"user data");
+        assert_eq!(fs::read_dir(&moved).unwrap().count(), 1);
+        assert_eq!(check_saved(&moved.join("my-design.fb")), Err("workspace_not_folder".into()));
     }
 }

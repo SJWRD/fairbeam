@@ -1,5 +1,7 @@
 import copy
 import os
+import posixpath
+import subprocess
 from pathlib import Path
 import tempfile
 import unittest
@@ -60,6 +62,73 @@ class ProjectRemovalTests(unittest.TestCase):
             self.remove()
         self.assertTrue(self.path.exists())
         self.assertTrue(self.folder.exists())
+
+    def _shared_results_alias(self, name, *, posix_comparison=False):
+        alias = self.root / name
+        if not alias.exists() or not os.path.samefile(alias, self.folder):
+            self.skipTest("filesystem does not resolve this case/Unicode directory alias")
+        other = doc.create(blank_design("other_patch", "Other"), name)
+        sibling = self.root / "other.fb"
+        doc.save(sibling, other)
+        before = {p: p.read_bytes() for p in (self.path, sibling, self.folder / "S11.csv")}
+        # NTFS can exercise the Darwin string-comparison failure without claiming
+        # native macOS coverage. The alias still has a real filesystem identity.
+        comparator = posixpath.normcase if posix_comparison else os.path.normcase
+        with mock.patch("fairbeam.project_removal.os.path.normcase", comparator):
+            with self.assertRaisesRegex(doc.DocumentConflict, "shares"):
+                self.remove()
+        for path, raw in before.items():
+            self.assertEqual(path.read_bytes(), raw)
+        self.assertFalse((self.root / "Fairbeam Deleted").exists())
+
+    def test_shared_results_case_alias_uses_physical_identity(self):
+        self._shared_results_alias(self.folder.name.swapcase(), posix_comparison=True)
+
+    def test_shared_results_native_case_alias(self):
+        self._shared_results_alias(self.folder.name.swapcase())
+
+    def test_shared_results_native_nfd_alias(self):
+        self._shared_results_alias(unicodedata.normalize("NFD", self.folder.name))
+
+    def test_distinct_physical_results_are_not_shared(self):
+        other = doc.create(blank_design("other_patch", "Other"), "other.results")
+        doc.save(self.root / "other.fb", other)
+        other_folder = self.root / other["results_directory"]
+        other_folder.mkdir()
+        (other_folder / "keep.txt").write_bytes(b"other project")
+        self.remove()
+        self.assertEqual((other_folder / "keep.txt").read_bytes(), b"other project")
+        self.assertTrue((self.root / "other.fb").is_file())
+
+    def test_linked_sibling_results_are_not_followed_or_moved(self):
+        alias = self.root / "linked.results"
+        try:
+            alias.symlink_to(self.folder, target_is_directory=True)
+        except OSError:
+            self.skipTest("symlink creation unavailable")
+        other = doc.create(blank_design("other_patch", "Other"), alias.name)
+        doc.save(self.root / "other.fb", other)
+        with self.assertRaises(doc.DocumentConflict):
+            self.remove()
+        self.assertEqual((self.folder / "S11.csv").read_bytes(), b"preserve results")
+        self.assertTrue(self.path.is_file())
+        self.assertTrue(alias.is_symlink())
+
+    @unittest.skipUnless(os.name == "nt", "Windows junction behavior")
+    def test_junction_sibling_results_are_not_followed_or_moved(self):
+        alias = self.root / "junction.results"
+        created = subprocess.run(["cmd", "/c", "mklink", "/J", str(alias), str(self.folder)],
+                                 capture_output=True, check=False)
+        if created.returncode:
+            self.skipTest("junction creation unavailable")
+        self.addCleanup(lambda: os.rmdir(alias) if alias.exists() else None)
+        other = doc.create(blank_design("other_patch", "Other"), alias.name)
+        doc.save(self.root / "other.fb", other)
+        with self.assertRaises(doc.DocumentConflict):
+            self.remove()
+        self.assertTrue(doc._linked(alias.lstat()))
+        self.assertEqual((self.folder / "S11.csv").read_bytes(), b"preserve results")
+        self.assertTrue(self.path.is_file())
 
     def _remove_with_directory_alias(self, alias_name):
         alias = self.root / alias_name

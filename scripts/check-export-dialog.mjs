@@ -173,8 +173,8 @@ assert.deepEqual(logged, Array(2).fill("[fairbeam] Geometry export failed to ren
 
 // the dialogs are wired to close from their error panel, and navigation closes them
 const app = read("src/App.tsx");
-for (const [name, setter] of [["Geometry export", "setExportOpen"], ["Render image", "setRenderDialogOpen"], ["Package export", "setPackageOpen"]]) {
-  assert.match(app, new RegExp(`<PanelBoundary name="${name}".*onClose=\\{\\(\\) => ${setter}\\(false\\)\\}`), `${name}: its error panel closes the dialog`);
+for (const [name, setter] of [["geometryExport", "setExportOpen"], ["render", "setRenderDialogOpen"], ["packageExport", "setPackageOpen"]]) {
+  assert.match(app, new RegExp(`<PanelBoundary name=\\{t\\("panel\\.name\\.${name}"\\)\\}.*onClose=\\{\\(\\) => ${setter}\\(false\\)\\}`), `${name}: its error panel closes the dialog`);
 }
 assert.match(app, /createEffect\(on\(appMode, \(\) => \{ setExportOpen\(false\); if \(!renderBusy\(\)\) setRenderDialogOpen\(false\); setPackageOpen\(false\); \}, \{ defer: true \}\)\)/,
   "going to another screen (Start, Design, Examples) closes the export dialogs and their error panels");
