@@ -1,6 +1,7 @@
 // Evidence before a page exists. Never retry launch or change its options, timeout or cleanup.
 import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { channel } from 'node:diagnostics_channel';
 
 const LIMIT = 64;
 const text = (value, limit = 4000) => {
@@ -25,6 +26,95 @@ const errorText = error => {
 };
 const pid = value => Number.isSafeInteger(value) && value > 0 ? value : null;
 const knownArgs = new Set(['--no-sandbox', '--enable-unsafe-swiftshader', '--use-angle=swiftshader']);
+const childProcessChannel = channel('child_process'); // Public, experimental in supported Node versions.
+
+/** Observe this launch only. The channel publishes before spawnfile, PID and stdio exist. */
+export function observeLaunchOutput(executablePath, getOwnedPid, processChannel = childProcessChannel) {
+  const state = { available: false, matched: false, candidateLimit: 16, candidates: 0, ignoredCandidates: 0,
+    observerErrors: 0, droppedLines: 0, omittedLines: 0, partialLines: 0, records: [], childEvents: [] };
+  const cleanups = new Set(), frames = [];
+  let stopped = false, matchedPid = null, retainedBytes = 0;
+  const guarded = callback => (...args) => {
+    if (stopped) return;
+    try { callback(...args); } catch { state.observerErrors++; }
+  };
+  const cleanup = action => {
+    const remove = () => { cleanups.delete(remove); try { action(); } catch { state.observerErrors++; } };
+    cleanups.add(remove);
+    return remove;
+  };
+  const listen = (emitter, event, callback, once = false) => {
+    const handler = guarded(callback);
+    const remove = cleanup(() => emitter.removeListener(event, handler));
+    try { emitter[once ? 'once' : 'on'](event, handler); } catch { remove(); state.observerErrors++; }
+    return remove;
+  };
+  const retain = (stream, line) => {
+    // Deliberately omit whole URL-bearing lines, including paths and DevTools endpoints.
+    // These are bounded pattern-based protections, not a guarantee for arbitrary secret formats.
+    if (/DevTools|\b(?:[a-z][a-z\d+.-]*:\/\/|(?:about|data|blob|file|mailto|javascript|chrome|edge|devtools|urn):)|(?:^|\s)(?:\/\/|www\.)/i.test(line)) { state.omittedLines++; return; }
+    const safe = text(line, 4096), bytes = Buffer.byteLength(safe);
+    if (state.records.length >= LIMIT || retainedBytes + bytes > 16384) { state.droppedLines++; return; }
+    state.records.push({ stream, text: safe }); retainedBytes += bytes;
+  };
+  const observeStream = (stream, name) => {
+    if (!stream) return;
+    const frame = { pending: Buffer.alloc(0), oversized: false };
+    frames.push(frame);
+    listen(stream, 'data', chunk => {
+      if (getOwnedPid() !== matchedPid) return; // Fail closed if ownership becomes ambiguous.
+      if (!Buffer.isBuffer(chunk)) { state.droppedLines++; frame.pending = Buffer.alloc(0); frame.oversized = true; return; }
+      for (let start = 0; start < chunk.length;) {
+        const newline = chunk.indexOf(10, start), end = newline === -1 ? chunk.length : newline;
+        if (!frame.oversized && frame.pending.length + end - start > 4096) {
+          frame.pending = Buffer.alloc(0); frame.oversized = true; state.droppedLines++;
+        }
+        if (!frame.oversized) frame.pending = Buffer.concat([frame.pending, chunk.subarray(start, end)]);
+        if (newline === -1) break;
+        if (!frame.oversized) retain(name, frame.pending.toString('utf8').replace(/\r$/, ''));
+        frame.pending = Buffer.alloc(0); frame.oversized = false; start = end + 1;
+      }
+    }); // Observe only: never read, pause, resume, destroy or change the stream encoding.
+  };
+  try {
+    if (!processChannel?.subscribe || !processChannel?.unsubscribe) throw new Error('Unavailable channel');
+    const subscriber = guarded(message => {
+      if (state.matched) return;
+      if (state.candidates >= state.candidateLimit) { state.ignoredCandidates++; return; }
+      const child = message.process;
+      state.candidates++;
+      const removeSpawn = listen(child, 'spawn', () => {
+        removeSpawn();
+        if (state.matched || child.spawnfile !== executablePath || !pid(child.pid) || child.pid !== getOwnedPid()) return;
+        matchedPid = child.pid; state.matched = true;
+        observeStream(child.stdout, 'stdout'); observeStream(child.stderr, 'stderr');
+        for (const event of ['exit', 'close']) listen(child, event, (code, signal) => {
+          if (state.childEvents.length < 2) state.childEvents.push({ event,
+            code: Number.isInteger(code) ? code : null,
+            signal: typeof signal === 'string' && /^[A-Z0-9]{1,16}$/.test(signal) ? signal : null });
+        }, true); // ChildProcess observations only; they do not establish OS liveness.
+      }, true);
+    });
+    cleanup(() => processChannel.unsubscribe(subscriber));
+    processChannel.subscribe(subscriber); state.available = true;
+  } catch { state.observerErrors++; }
+  return { finish() {
+    if (!stopped) {
+      stopped = true;
+      for (const remove of [...cleanups]) remove();
+      for (const frame of frames) {
+        if (frame.pending.length || frame.oversized) state.partialLines++;
+        frame.pending = Buffer.alloc(0);
+      }
+      try {
+        if (state.matched && getOwnedPid() !== matchedPid) {
+          state.matched = false; state.records = []; state.childEvents = [];
+        }
+      } catch { state.observerErrors++; state.matched = false; state.records = []; state.childEvents = []; }
+    }
+    return state;
+  } };
+}
 
 async function installedVersion(name) {
   try {
@@ -34,9 +124,9 @@ async function installedVersion(name) {
 }
 
 /** Returns the exact browser or rethrows the exact launch error. The logger accepts no payloads. */
-export async function launchWithEvidence(puppeteer, options, { directory, stack, report = console.error } = {}) {
+export async function launchWithEvidence(puppeteer, options, { directory, stack, report = console.error, processChannel = childProcessChannel } = {}) {
   const started = Date.now(), lifecycle = [];
-  let ownedPid = null, dropped = 0, outputDirectory;
+  let ownedPid = null, ambiguousPid = false, dropped = 0, outputDirectory;
   const logger = channel => channel === 'puppeteer:browsers:launcher' ? message => {
     if (typeof message !== 'string') return;
     const match = /^(?:Launched (\d+)|Trying to kill (\d+)|Browser process (\d+) (onExit|exists))$/.exec(message);
@@ -44,6 +134,7 @@ export async function launchWithEvidence(puppeteer, options, { directory, stack,
     const processId = pid(Number(match[1] ?? match[2] ?? match[3]));
     if (!processId) return;
     if (match[1] && ownedPid === null) ownedPid = processId;
+    if (match[1] && processId !== ownedPid) ambiguousPid = true;
     if (processId !== ownedPid) return;
     if (lifecycle.length === LIMIT) { dropped++; return; }
     lifecycle.push({ atMs: Date.now() - started, pid: processId,
@@ -72,13 +163,15 @@ export async function launchWithEvidence(puppeteer, options, { directory, stack,
     explicitTimeout: Object.hasOwn(options, 'timeout'), explicitTransport: Object.hasOwn(options, 'pipe'),
   };
   await write('prelaunch.json', intent);
+  const observer = observeLaunchOutput(options.executablePath, () => ambiguousPid ? null : ownedPid, processChannel);
   try {
     const browser = await puppeteer.launch({ ...options, logger });
-    await write('launched.json', { schema: intent.schema, phase: 'launched', elapsedMs: Date.now() - started, ownedPid, lifecycle, dropped });
+    const browserOutput = observer.finish(); // Detach before any asynchronous evidence write or caller cleanup.
+    await write('launched.json', { schema: intent.schema, phase: 'launched', elapsedMs: Date.now() - started, ownedPid, ambiguousPid, lifecycle, dropped, browserOutput });
     return browser;
   } catch (error) {
     const failure = { schema: intent.schema, phase: 'launch-failed', elapsedMs: Date.now() - started,
-      error: errorText(error), ownedPid, lifecycle, dropped, processes: [], captureErrors: [] };
+      error: errorText(error), ownedPid, ambiguousPid, lifecycle, dropped, browserOutput: observer.finish(), processes: [], captureErrors: [] };
     try {
       const children = stack?.diagnostics?.() ?? [];
       if (!Array.isArray(children)) throw new Error('Stack diagnostics did not return a process list');
@@ -91,5 +184,7 @@ export async function launchWithEvidence(puppeteer, options, { directory, stack,
     } catch (captureError) { failure.captureErrors.push(errorText(captureError)); }
     await write('failure.json', failure); // Separate from intent: a failed write cannot erase prelaunch evidence.
     throw error;
+  } finally {
+    observer.finish();
   }
 }
