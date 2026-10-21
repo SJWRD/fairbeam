@@ -262,11 +262,21 @@ export function lumpedObject(start: Vec3, stop: Vec3, color: string, minT: numbe
     geometry.setAttribute("position", new THREE.Float32BufferAttribute(points.flat(), 3));
     const stroke = new THREE.Line(geometry, lineMat);
     stroke.renderOrder = 61;
+    stroke.quaternion.copy(symbolRotation);
     return stroke;
   });
+  const leadGeometry = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), Z]);
+  const leads = [-1, 1].map(() => {
+    const lead = new THREE.Line(leadGeometry, lineMat);
+    lead.name = "element-lead";
+    lead.renderOrder = 61;
+    lead.quaternion.copy(symbolRotation);
+    return lead;
+  });
+  const currentAxis = Z.clone().applyQuaternion(symbolRotation);
   const out = new THREE.LineSegments(unit().boxEdges, lineMat);
   out.renderOrder = 61;
-  g.add(body, ...strokes, out);
+  g.add(body, ...strokes, ...leads, out);
   const mid = new THREE.Vector3(...(b.mid as Vec3));
   const labelAnchor = mid.clone();
   let boost = 1;
@@ -276,10 +286,18 @@ export function lumpedObject(start: Vec3, stop: Vec3, color: string, minT: numbe
     body.position.copy(mid); body.scale.set(size[0], size[1], size[2]);
     out.position.copy(mid); out.scale.copy(body.scale);
     const w = Math.max(px(6), ...size.filter((_, i) => i !== n));
+    // Keep a 2:1 symbol length/width ratio; only the leads fill a longer footprint.
+    const symbolWidth = Math.min(w, size[n] / 2);
+    const symbolLength = symbolWidth * 2;
     for (const stroke of strokes) {
       stroke.position.copy(mid);
-      stroke.scale.set(w, w, size[n]);
-      stroke.quaternion.copy(symbolRotation);
+      stroke.scale.set(symbolWidth, symbolWidth, symbolLength);
+    }
+    for (let i = 0; i < leads.length; i++) {
+      const side = i === 0 ? -1 : 1;
+      leads[i].position.copy(mid).addScaledVector(currentAxis, side * symbolLength / 2);
+      leads[i].scale.set(1, 1, side * (size[n] - symbolLength) / 2);
+      leads[i].visible = size[n] > symbolLength;
     }
     labelAnchor.set(mid.x, mid.y, mid.z + size[2] / 2 + px(10));
   };
