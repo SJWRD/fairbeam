@@ -65,23 +65,44 @@ export function visibleFigureSvg(root:HTMLElement):string|null {
       // Legend labels can contain arbitrary run/reference names. Only the chart that created
       // a localized numeric suffix can supply its export spelling; never rewrite the raw name.
       const literal=item.classList.contains("legend-item"), explicit=item.dataset.figureText;
-      let offset=0;
+      const nodes:{node:Node;start:number;end:number}[]=[];
+      let value="";
       for(let node=walker.nextNode();node;node=walker.nextNode()) {
         if(key?.contains(node))continue;
-        const value=node.textContent ?? "";
-        for(let i=0;i<value.length;i++,offset++) {
-          range.setStart(node,i);range.setEnd(node,i+1);
-          const box=range.getBoundingClientRect();
-          if(!box.width || !box.height) {
-            // A collapsed space at a wrap still separates the words in the exported text.
-            if(/\s/.test(value[i]) && lines.length)lines[lines.length-1].value+=value[i];
-            continue;
-          }
-          let line=lines.at(-1);
-          if(!line || Math.abs(line.top-box.top)>1)lines.push(line={left:box.left,top:box.top,height:box.height,value:""});
-          line.value+=explicit?.[offset] ?? value[i];
+        const parent=node.parentElement;
+        if(!parent || parent.closest("[hidden],[inert]"))continue;
+        const visibility=getComputedStyle(parent).visibility;
+        if(visibility==="hidden" || visibility==="collapse")continue;
+        let rendered=true;
+        for(let ancestor:Element|null=parent;ancestor && ancestor!==item.parentElement;ancestor=ancestor.parentElement) {
+          if(getComputedStyle(ancestor).display==="none") {rendered=false;break;}
         }
+        if(!rendered)continue; // display:contents and visible zero-advance text still participate.
+        const part=node.textContent ?? "";
+        if(part.length)nodes.push({node,start:value.length,end:value.length+part.length});
+        value+=part;
       }
+      // Measure whole graphemes, including those split across DOM text nodes. Keep the original
+      // UTF-16 spelling and offsets: normalization would change raw names and suffix positions.
+      let first=0,last=0,pending="";
+      for(const {segment,index} of new Intl.Segmenter(undefined,{granularity:"grapheme"}).segment(value)) {
+        const end=index+segment.length;
+        while(nodes[first].end<=index)first++;
+        while(nodes[last].end<end)last++;
+        range.setStart(nodes[first].node,index-nodes[first].start);range.setEnd(nodes[last].node,end-nodes[last].start);
+        const box=range.getBoundingClientRect();
+        const replacement=explicit?.slice(index,end);
+        const exported=replacement===undefined ? segment : replacement+segment.slice(replacement.length);
+        if(!box.width || !box.height) {
+          // Zero-advance marks/controls and collapsed wrap spaces still belong to the raw label.
+          if(lines.length)lines[lines.length-1].value+=exported;else pending+=exported;
+          continue;
+        }
+        let line=lines.at(-1);
+        if(!line || Math.abs(line.top-box.top)>1)lines.push(line={left:box.left,top:box.top,height:box.height,value:""});
+        line.value+=pending+exported;pending="";
+      }
+      if(pending) {const box=item.getBoundingClientRect();lines.push({left:box.left,top:box.top,height:box.height,value:pending});}
       for(const line of lines) {
         const span=document.createElementNS("http://www.w3.org/2000/svg","tspan");
         span.setAttribute("x",String(line.left-rect.left));span.setAttribute("y",String(line.top+line.height/2-rect.top));

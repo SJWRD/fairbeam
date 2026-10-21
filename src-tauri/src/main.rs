@@ -24,6 +24,7 @@ mod account;
 // the one-time import from the previous app and its removal (Help › Remove …)
 mod antenlab_import;
 mod i18n;
+mod leave_reply;
 #[cfg(target_os = "macos")]
 mod macos_update;
 #[cfg(target_os = "macos")]
@@ -43,7 +44,7 @@ use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
-use std::sync::mpsc::{self, RecvTimeoutError};
+use std::sync::mpsc;
 use std::sync::Mutex;
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
@@ -101,7 +102,7 @@ enum Leave {
 struct LeaveRequest {
     id: u64,
     leave: Leave,
-    /// the viewer did not answer (hung page, script error): the next request leaves without asking
+    /// the live callback did not answer (hung page): the next request leaves without asking
     silent: bool,
     /// Updates obtain consent without destroying the window or exiting the process.
     update_reply: Option<mpsc::Sender<bool>>,
@@ -203,50 +204,16 @@ fn ask_viewer(app: AppHandle, id: u64) {
             finish_leave(&app, id, leave != Leave::Update);
             return;
         }
-        let answer = match rx.recv_timeout(Duration::from_secs(2)) {
-            Ok(answer) => answer,
-            Err(RecvTimeoutError::Timeout) => {
-                if leave == Leave::Update {
-                    finish_leave(&app, id, false);
-                    return;
-                }
-                // the page is busy or hung: keep waiting, but a second request leaves
-                set_silent(true);
-                match rx.recv() {
-                    Ok(answer) => {
-                        set_silent(false);
-                        answer
-                    }
-                    Err(_) => return,
-                }
-            }
-            Err(RecvTimeoutError::Disconnected) => {
-                if leave == Leave::Update {
-                    finish_leave(&app, id, false);
-                    return;
-                }
-                set_silent(true);
-                return;
-            }
-        };
-        // the answer comes as JSON (a quoted string)
-        match answer.trim().trim_matches('"') {
-            "pending" => thread::sleep(Duration::from_millis(150)),
-            "cancel" => {
+        match leave_reply::wait(rx, leave == Leave::Update, &set_silent) {
+            leave_reply::Reply::Pending => thread::sleep(Duration::from_millis(150)),
+            leave_reply::Reply::Cancel => {
+                // A terminal callback failure must also settle a pending AppKit termination.
+                // finish_leave checks ownership before clearing the request or replying NO.
                 finish_leave(&app, id, false);
                 return;
             }
-            "close" => {
+            leave_reply::Reply::Close => {
                 finish_leave(&app, id, true);
-                return;
-            }
-            _ => {
-                if leave == Leave::Update {
-                    finish_leave(&app, id, false);
-                    return;
-                }
-                // a script error: stay open this time, a second request leaves
-                set_silent(true);
                 return;
             }
         }

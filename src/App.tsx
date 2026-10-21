@@ -85,7 +85,7 @@ export default function App() {
   };
   // The export dialogs belong to the screen they were opened on: going to another one (Start, Design,
   // Examples) closes them, and with them a dialog's error panel. A running render
-  // keeps its dialog: closing it would cancel the render (e.g. File > Open from the native menu mid-render).
+  // keeps its dialog: closing it on a screen change would cancel the render.
   createEffect(on(appMode, () => { setExportOpen(false); if (!renderBusy()) setRenderDialogOpen(false); setPackageOpen(false); }, { defer: true }));
   // The Run panel belongs to the Examples screen (a Python model opened from Start). Leaving it closes
   // the panel, so Design gets its Properties back instead of another model's Run panel; it is only
@@ -130,8 +130,12 @@ export default function App() {
       action: { label: t("common.retry"), run: () => void loadIndex() } });
   });
   let openInput: HTMLInputElement | undefined;
+  // Native menu accelerators bypass the page's key handlers. Use the same modal
+  // boundary as queued OS opens so neither can replace the screen behind a dialog.
+  const hasOpenModal = () => !!document.querySelector(".scrim, [aria-modal='true'], dialog[open]");
   const menuAction = createMenuActionRouter({
-    "file-new": () => setAppMode("home"), "file-open": () => { if (nativeDocumentsAvailable()) void openNativeDocument(); else openInput?.click(); },
+    "file-new": () => { if (!hasOpenModal()) setAppMode("home"); },
+    "file-open": () => { if (hasOpenModal()) return; if (nativeDocumentsAvailable()) void openNativeDocument(); else openInput?.click(); },
     "file-import-cst": () => { if (DEMO) notice(t("app.notice.cstImportDesktop")); else setCstImportOpen(true); },
     "file-import-pcb": () => { if (DEMO) notice(t("app.notice.pcbImportDesktop")); else setPcbImportOpen(true); },
     "file-save": () => { if (appMode() === "design" && designFile()) void saveDesign(); else window.dispatchEvent(new Event("fairbeam:menu-notice")); },
@@ -268,7 +272,6 @@ export default function App() {
     if (await probe && !disposed) {
       let ready = false, busy = false, receivedOpenRequest = false;
       const attempted = new Set<string>();
-      const hasOpenModal = () => !!document.querySelector(".scrim, [aria-modal='true'], dialog[open]");
       const openPending = async () => {
         if (!ready || busy || !nativeDocumentsAvailable() || hasOpenModal()) return false;
         busy = true;

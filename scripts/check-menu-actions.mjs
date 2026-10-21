@@ -20,6 +20,42 @@ assert.equal(route(JSON.stringify("not-allowed")), false); assert.match(reported
 assert.equal(route("not json"), false);
 const app = readFileSync(new URL("../src/App.tsx", import.meta.url), "utf8");
 const shell = readFileSync(new URL("../src-tauri/src/main.rs", import.meta.url), "utf8");
+// Exercise the App's actual handlers through the native action router, not a second
+// implementation of New/Open. A text field alone must not block these menu actions.
+const modalPredicate = app.match(/const hasOpenModal = \(\) => [^;]+;/)?.[0];
+assert.ok(modalPredicate, "App shares one modal boundary for native menu and OS opens");
+assert.equal((app.match(/const hasOpenModal =/g) ?? []).length, 1);
+const appRouter = app.slice(app.indexOf("const menuAction = createMenuActionRouter("), app.indexOf("  const notice ="));
+assert.ok(appRouter.endsWith("\n"), "the actual App menu router is available");
+let modal = "", mode = "design", nativeOpens = 0, browserOpens = 0, native = true;
+const modalDocument = {
+  activeElement: { tagName: "INPUT" },
+  querySelector(selector) { return selector.split(",").map(value => value.trim()).includes(modal) ? {} : null; },
+};
+const dispatch = Function("createMenuActionRouter", "document", "nativeDocumentsAvailable", "openNativeDocument", "setAppMode", "openInput", "showShortcutHelp",
+  `${modalPredicate}\n${appRouter}\nreturn menuAction;`)(createMenuActionRouter, modalDocument, () => native,
+  () => { nativeOpens++; }, value => { mode = value; }, { click() { browserOpens++; } }, () => {});
+for (const marker of [".scrim", "[aria-modal='true']", "dialog[open]"]) {
+  modal = marker;
+  for (native of [true, false]) {
+    for (const action of ["file-new", "file-open"]) {
+      assert.equal(dispatch(action), true, `${marker}: native action remains recognized`);
+      assert.equal(dispatch(JSON.stringify(action)), true, `${marker}: legacy encoded action is also guarded`);
+    }
+  }
+  assert.equal(mode, "design", `${marker}: New cannot navigate behind the modal`);
+  assert.equal(nativeOpens, 0, `${marker}: no native picker or replace prompt starts`);
+  assert.equal(browserOpens, 0, `${marker}: no browser picker starts`);
+}
+modal = "";
+native = true;
+dispatch("file-open");
+assert.equal(nativeOpens, 1, "after dismissal, Open dispatches once despite text-field focus");
+native = false;
+dispatch("file-open");
+assert.equal(browserOpens, 1, "browser fallback also dispatches once after dismissal");
+dispatch("file-new");
+assert.equal(mode, "home", "New works from a text field outside a modal");
 // Execute the real effect body: only the saved snapshot supplies the menu title.
 const rememberEffect = app.match(/createEffect\(\(\) => \{\s*(const saved = designFile\(\);[\s\S]*?)\n  \}\);/)?.[1];
 assert.ok(rememberEffect, "App remembers saved designs in the native recent menu");

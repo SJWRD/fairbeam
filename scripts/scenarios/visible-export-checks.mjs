@@ -130,6 +130,91 @@ export async function checkVisibleExports(page, lang, artifacts) {
     check(textCases.comma.includes('<tspan'), `${lang}: normalization preserves nested SVG markup`);
     check(textCases.height>=textCases.noteBottom&&textCases.height>120,`${lang}: notes below the chart enlarge the exported paper`);
     check(!/HIDDEN NOTE|INERT NOTE|INVISIBLE NOTE/.test(textCases.comma), `${lang}: invisible notes stay excluded`);
+    const unicode = await page.evaluate(async () => {
+      const {visibleFigureSvg}=await import('/src/components/visibleFigure.ts');
+      const {svgToPng}=await import('/src/drawing/render.ts');
+      const host=document.querySelector('#visible-export-fixture');
+      host.style.width='650px';host.style.height='auto';host.style.background='#fff';
+      host.innerHTML='<div class="chart" style="width:620px"><svg width="620" height="30" style="position:static;display:block"><path d="M0 20H620" stroke="#777"/></svg></div>';
+      const chart=host.querySelector('.chart');
+      const cases=[
+        {id:'nfd',parts:['S','\u0327u','\u0308 1,2'],marks:true},
+        {id:'noncomposable',parts:['q','\u0327\u0308 3,4'],marks:true},
+        {id:'leading-mark',parts:['\u0308','A\u0327 5,6'],marks:true},
+        {id:'zero-advance',parts:['Zero','\u200b','width','\u2060',' name']},
+        {id:'astral-zwj',parts:['\u{1d11e} ','\u{1f469}','\u200d','\u{1f4bb} ','\u{1f468}\u200d\u{1f469}\u200d\u{1f467} 7,8']},
+        {id:'wrapped',parts:['S\u0327u\u0308 q\u0327\u0308 words with spaces ', '\u{1f469}','\u200d','\u{1f4bb}', ' S\u0327u\u0308 more wrapped words 9,1'],width:170},
+        {id:'explicit-suffix',parts:['S','\u0327u','\u0308 \u{1f469}','\u200d','\u{1f4bb} 1,2',' · 2,45 GHz'],width:190,
+          explicit:'S\u0327u\u0308 \u{1f469}\u200d\u{1f4bb} 1,2 · 2.45 GHz'},
+        {id:'inline-visibility',parts:['S','\u0327u','\u0308 \u{1f469}\u200d\u{1f4bb} 1,2',' · 2,45 GHz'],marks:true,
+          explicit:'S\u0327u\u0308 \u{1f469}\u200d\u{1f4bb} 1,2 · 2.45 GHz'},
+      ];
+      for(const test of cases) {
+        const label=document.createElement('span');label.className='legend-item';label.dataset.case=test.id;
+        label.style.cssText=`display:block;width:${test.width??600}px;margin-top:8px;white-space:normal;overflow-wrap:anywhere;font:20px/28px "IBM Plex Sans",Arial,sans-serif;color:#111`;
+        // Marks and ZWJ sequences deliberately cross inline element/text-node boundaries.
+        for(const [i,part] of test.parts.entries()) {
+          const span=document.createElement('span');span.textContent=part;
+          if(test.id==='inline-visibility') {
+            if(i===1)span.style.display='contents';
+            if(i===3) {const wrapper=document.createElement('span');wrapper.style.visibility='hidden';span.style.visibility='visible';wrapper.append(span);label.append(wrapper);}
+            else label.append(span);
+            const invisible=document.createElement('span'),child=document.createElement('span');
+            child.textContent=['INLINE_HIDDEN','INLINE_INERT','INLINE_DISPLAY_NONE','INLINE_VISIBILITY_HIDDEN'][i];
+            if(i===0)invisible.hidden=true;
+            if(i===1)invisible.inert=true;
+            if(i===2) {invisible.style.display='none';child.style.display='inline';}
+            if(i===3)invisible.style.visibility='hidden';
+            invisible.append(child);label.append(invisible);
+          } else label.append(span);
+        }
+        if(test.explicit)label.dataset.figureText=test.explicit;
+        chart.append(label);
+      }
+      await document.fonts.ready;
+      await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
+      const before=host.innerHTML,svg=visibleFigureSvg(host);
+      const parsed=new DOMParser().parseFromString(svg,'image/svg+xml').documentElement;
+      const labels=[...parsed.querySelectorAll(':scope > text')];
+      const stripped=parsed.cloneNode(true);
+      for(const text of stripped.querySelectorAll('tspan'))text.textContent=text.textContent.replace(/\p{Mark}/gu,'');
+      const png=await svgToPng(svg,96),withoutMarks=await svgToPng(new XMLSerializer().serializeToString(stripped),96);
+      const pixels=async blob=>{
+        const url=URL.createObjectURL(blob),image=new Image();
+        try {image.src=url;await image.decode();const canvas=document.createElement('canvas');canvas.width=image.width;canvas.height=image.height;
+          const ctx=canvas.getContext('2d');ctx.drawImage(image,0,0);return{width:image.width,height:image.height,data:ctx.getImageData(0,0,image.width,image.height).data};}
+        finally{URL.revokeObjectURL(url);}
+      };
+      const actual=await pixels(png),control=await pixels(withoutMarks);
+      const [,,vw,vh]=parsed.getAttribute('viewBox').split(/\s+/).map(Number),origin=host.getBoundingClientRect();
+      const measured=cases.map((test,i)=>{
+        const box=chart.querySelector(`[data-case="${test.id}"]`).getBoundingClientRect();
+        const x0=Math.max(0,Math.floor((box.left-origin.left)*actual.width/vw)),x1=Math.min(actual.width,Math.ceil((box.right-origin.left)*actual.width/vw));
+        const y0=Math.max(0,Math.floor((box.top-origin.top)*actual.height/vh)),y1=Math.min(actual.height,Math.ceil((box.bottom-origin.top)*actual.height/vh));
+        let ink=0,markDifference=0;
+        for(let y=y0;y<y1;y++)for(let x=x0;x<x1;x++){const p=(y*actual.width+x)*4;
+          if(actual.data[p]<230&&actual.data[p+1]<230&&actual.data[p+2]<230)ink++;
+          if(Math.abs(actual.data[p]-control.data[p])+Math.abs(actual.data[p+1]-control.data[p+1])+Math.abs(actual.data[p+2]-control.data[p+2])>30)markDifference++;
+        }
+        return{id:test.id,raw:test.parts.join(''),expected:test.explicit??test.parts.join(''),text:labels[i]?.textContent,
+          lines:labels[i]?.children.length,marks:test.marks===true,ink,markDifference};
+      });
+      return{svg,png:Array.from(new Uint8Array(await png.arrayBuffer())),unchanged:before===host.innerHTML,measured};
+    });
+    check(unicode.unchanged,`${lang}: Unicode export leaves the DOM spelling unchanged`);
+    check(!/INLINE_HIDDEN|INLINE_INERT|INLINE_DISPLAY_NONE|INLINE_VISIBILITY_HIDDEN/.test(unicode.svg),`${lang}: nonrendered inline descendants stay excluded`);
+    for(const test of unicode.measured) {
+      check(test.text===test.expected,`${lang}/${test.id}: SVG keeps exact raw UTF-16 text and explicit suffix offsets`);
+      check(test.ink>10,`${lang}/${test.id}: PNG contains visible label ink`);
+      if(test.marks)check(test.markDifference>5,`${lang}/${test.id}: PNG retains combining-mark pixels versus the stripped control`);
+      if(test.id==='wrapped')check(test.lines>1,`${lang}: Unicode label retains its wrapped lines`);
+    }
+    if(artifacts) {
+      await writeFile(join(artifacts,`${lang}-unicode.svg`),unicode.svg);
+      await writeFile(join(artifacts,`${lang}-unicode.png`),Buffer.from(unicode.png));
+      await writeFile(join(artifacts,`${lang}-unicode-metrics.json`),JSON.stringify(unicode.measured,null,2));
+      await page.screenshot({path:join(artifacts,`${lang}-unicode-ui.png`)});
+    }
     const csv = await page.evaluate(async () => {
       const b=await(await fetch('/projects/patch-antenna.json')).json();
       const data=await import('/src/designer/resultData.ts');
