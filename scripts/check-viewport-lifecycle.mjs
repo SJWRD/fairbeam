@@ -1,7 +1,7 @@
 // Deterministic checks for the viewport's queued work and preview glyph bounds.
 // Run with: node --experimental-strip-types scripts/check-viewport-lifecycle.mjs
 import assert from "node:assert/strict";
-import { checkFrameDistance, clearOwnedDebugReference, frameTask, portMarkerRadius, watchPixelRatio } from "../src/scene/viewportLifecycle.ts";
+import { checkFrameDistance, clearOwnedDebugReference, frameTask, frameTransition, portMarkerRadius, watchPixelRatio } from "../src/scene/viewportLifecycle.ts";
 import { poseToSave, validPose } from "../src/scene/cameraViews.ts";
 
 // A design's opening view (Design.view): the poses the viewport takes, and the pose it saves.
@@ -18,6 +18,40 @@ const schedule = (callback) => {
   return handle;
 };
 const cancel = (handle) => frames.delete(handle);
+
+let animationTime = 0;
+const transition = frameTransition(schedule, cancel, () => animationTime);
+const advance = (time) => {
+  animationTime = time;
+  const pending = [...frames.values()];
+  frames.clear();
+  pending.forEach(callback => callback(time));
+};
+const progress = [];
+transition.start(value => progress.push(value), 400);
+assert.deepEqual(progress, [], "animated focus does not snap to its destination");
+advance(100);
+assert.ok(progress.at(-1) > 0 && progress.at(-1) < 0.25, "movement eases in");
+advance(200);
+assert.equal(progress.at(-1), 0.5, "passes through an intermediate pose");
+advance(400);
+assert.equal(progress.at(-1), 1, "finishes exactly at the requested pose");
+assert.equal(frames.size, 0, "completed transitions leave no animation loop");
+transition.start(value => progress.push(value), 400);
+advance(500);
+transition.cancel();
+const stopped = progress.length;
+advance(1000);
+assert.equal(progress.length, stopped, "user input cancels pending movement");
+transition.start(() => assert.fail("superseded transition ran"), 400);
+transition.start(value => progress.push(value), 0);
+assert.equal(progress.at(-1), 1, "reduced motion and additions apply immediately");
+assert.equal(frames.size, 0, "replacing a transition cancels its old frame");
+transition.start(() => assert.fail("disposed transition ran"), 400);
+transition.dispose();
+advance(2000);
+transition.start(() => assert.fail("unmounted viewport scheduled movement"), 400);
+assert.equal(frames.size, 0, "unmount cancels and prevents further animation");
 
 // Small targets retain more context, distances scale with model size, and both viewport
 // dimensions contain the target even on a narrow display.

@@ -27,6 +27,35 @@ export function frameTask(
   return { request, runNow, dispose };
 }
 
+/** One cancellable, eased transition; replacing it starts from the caller's current state. */
+export function frameTransition(
+  schedule: (callback: FrameRequestCallback) => number = requestAnimationFrame,
+  unschedule: (handle: number) => void = cancelAnimationFrame,
+  now: () => number = () => performance.now(),
+) {
+  let handle: number | null = null;
+  let disposed = false;
+  const cancel = () => {
+    if (handle !== null) unschedule(handle);
+    handle = null;
+  };
+  const start = (update: (progress: number) => void, duration: number) => {
+    cancel();
+    if (disposed) return;
+    if (duration <= 0) { update(1); return; }
+    const began = now();
+    const tick: FrameRequestCallback = (time) => {
+      handle = null;
+      const progress = Math.min(1, Math.max(0, (time - began) / duration));
+      // Smootherstep gives zero velocity and acceleration at both ends of the movement.
+      update(progress * progress * progress * (progress * (progress * 6 - 15) + 10));
+      if (progress < 1) handle = schedule(tick);
+    };
+    handle = schedule(tick);
+  };
+  return { start, cancel, dispose: () => { cancel(); disposed = true; } };
+}
+
 /** Re-arm the resolution query after each monitor/zoom change, even without a CSS resize. */
 export function watchPixelRatio(
   update: () => void,

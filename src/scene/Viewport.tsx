@@ -43,7 +43,7 @@ import { booleanPreviewGeometry } from "../designer/booleanPreview";
 import { booleanKeysActive } from "../designer/booleanUi";
 import { faceBoundary } from "./faceHighlight";
 import { attachDrawOverlay } from "./drawOverlay";
-import { checkFrameDistance, clearOwnedDebugReference, frameTask, portMarkerRadius, watchPixelRatio } from "./viewportLifecycle";
+import { checkFrameDistance, clearOwnedDebugReference, frameTask, frameTransition, portMarkerRadius, watchPixelRatio } from "./viewportLifecycle";
 import { renderPixelRatio } from "./renderBudget";
 import { localCpuRunActive } from "../runner/designRun";
 import { attachVertexOverlay } from "./vertexOverlay";
@@ -320,6 +320,8 @@ export default function Viewport() {
     let glyphLabels: { glyph: PortGlyph; label: CSS2DObject }[] = [];
     const renderTask = frameTask(render);
     const requestRender = renderTask.request;
+    const cameraTransition = frameTransition();
+    controls.addEventListener("start", cameraTransition.cancel);
     const onControlsChange = () => {
       const direction = camera.position.clone().sub(controls.target).normalize();
       setView(CAMERA_VIEWS.find(({ id }) => direction.dot(VIEW_DIRS[id]) > 1 - 1e-8)?.id ?? null);
@@ -414,6 +416,7 @@ export default function Viewport() {
     const motionQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
     const stopPhaseTimer = () => { clearInterval(phaseTimer); phaseTimer = undefined; };
     const onMotionChange = () => {
+      if (motionQuery.matches || document.hidden) cameraTransition.cancel();
       if (motionQuery.matches || document.hidden) setPhasePlaying(false);
       requestRender();
     };
@@ -436,6 +439,7 @@ export default function Viewport() {
     });
 
     function orientView(v: ViewName) {
+      cameraTransition.cancel();
       const dist = camera.position.distanceTo(controls.target);
       camera.position.copy(controls.target).addScaledVector(VIEW_DIRS[v], dist);
       controls.update();
@@ -456,6 +460,7 @@ export default function Viewport() {
       if (ratio > 3 || ratio < 1 / 3 || moved > 1.5) { fitCurrentView(); say(t("viewport.say.refitted")); }
     }
     function fitCurrentView() {
+      cameraTransition.cancel();
       const b = bundle();
       if (!b) return;
       let { center, radius, box } = sceneRadius(b);
@@ -483,6 +488,7 @@ export default function Viewport() {
     function frameView(v: ViewName) { orientView(v); fitCurrentView(); }
     /** Put the camera at a saved pose (a design's opening view), with the near and far planes of a fit at that distance. */
     function applyPose(pose: CameraPose) {
+      cameraTransition.cancel();
       controls.target.set(...pose.target);
       camera.position.set(...pose.camera);
       const dist = camera.position.distanceTo(controls.target);
@@ -517,14 +523,14 @@ export default function Viewport() {
     };
     host.addEventListener("fairbeam:view", onViewEvent);
 
-    // An explicit addition gets one immediate fit, before its quick preview's next frame. Keep
-    // the user's viewing direction; there is no delayed animation, restore, or server refit to
-    // compete with subsequent orbit/pan/zoom input (including trackpad gestures in WKWebView).
+    // Checks ease into their framing; additions fit immediately before their quick preview.
+    // Camera input cancels a transition so subsequent orbit/pan/zoom always takes priority.
     const onFrameAdded = (e: Event) => {
       const { bounds, label, reason } = (e as CustomEvent<{ bounds: Part["bbox"]; label: string; reason?: "check" }>).detail;
       if (!bounds.flat().every(Number.isFinite)) return;
       const box = new THREE.Box3(new THREE.Vector3(...bounds[0]), new THREE.Vector3(...bounds[1]));
       if (box.isEmpty()) return;
+      cameraTransition.cancel();
       const center = box.getCenter(new THREE.Vector3());
       const radius = Math.max(box.getSize(new THREE.Vector3()).length() / 2, 0.01);
       const direction = camera.position.clone().sub(controls.target).normalize();
@@ -542,12 +548,20 @@ export default function Viewport() {
       const dist = reason === "check"
         ? checkFrameDistance(radius, current ? sceneRadius(current).radius : radius, camera.fov, camera.aspect, cameraCorners)
         : radius / Math.sin(THREE.MathUtils.degToRad(camera.fov) / 2) * 2.5 * Math.max(1, 1 / camera.aspect);
-      camera.position.copy(center).addScaledVector(direction, dist);
-      camera.near = dist / 500;
-      camera.far = dist * 200;
-      camera.updateProjectionMatrix();
-      controls.target.copy(center);
-      controls.update();
+      const fromPosition = camera.position.clone();
+      const fromTarget = controls.target.clone();
+      const toPosition = center.clone().addScaledVector(direction, dist);
+      const travelNear = Math.min(camera.near, dist / 500);
+      const travelFar = Math.max(camera.far, dist * 200);
+      cameraTransition.start((progress) => {
+        camera.position.lerpVectors(fromPosition, toPosition, progress);
+        controls.target.lerpVectors(fromTarget, center, progress);
+        camera.near = progress === 1 ? dist / 500 : travelNear;
+        camera.far = progress === 1 ? dist * 200 : travelFar;
+        camera.updateProjectionMatrix();
+        controls.update();
+        requestRender();
+      }, reason === "check" && !motionQuery.matches && !document.hidden ? 450 : 0);
       framedByAddition = true;
       say(reason === "check" ? t("viewport.say.showingChecked", { label }) : t("viewport.say.added", { label }));
       requestRender();
@@ -1115,6 +1129,7 @@ export default function Viewport() {
     const ORBIT = THREE.MathUtils.degToRad(7.5);
     const Z = new THREE.Vector3(0, 0, 1);
     function orbit(dAz: number, dPol: number) {
+      cameraTransition.cancel();
       const off = camera.position.clone().sub(controls.target);
       off.applyAxisAngle(Z, dAz);
       if (dPol) {
@@ -1128,6 +1143,7 @@ export default function Viewport() {
       controls.update();
     }
     function pan(dx: number, dy: number) {
+      cameraTransition.cancel();
       const dist = camera.position.distanceTo(controls.target);
       const right = new THREE.Vector3().setFromMatrixColumn(camera.matrix, 0).multiplyScalar(dx * dist * 0.06);
       const up = new THREE.Vector3().setFromMatrixColumn(camera.matrix, 1).multiplyScalar(dy * dist * 0.06);
@@ -1136,6 +1152,7 @@ export default function Viewport() {
       controls.update();
     }
     function zoom(factor: number) {
+      cameraTransition.cancel();
       const off = camera.position.clone().sub(controls.target).multiplyScalar(factor);
       camera.position.copy(controls.target).add(off);
       controls.update();
@@ -1386,6 +1403,7 @@ export default function Viewport() {
     onCleanup(() => {
       if (import.meta.env.DEV) clearOwnedDebugReference(window as unknown as { __fairbeam?: unknown }, debugViewport);
       renderTask.dispose();
+      cameraTransition.dispose();
       pickTask.dispose();
       announceTask?.dispose();
       announceTask = undefined;
@@ -1418,6 +1436,7 @@ export default function Viewport() {
       host.removeEventListener("keydown", onContextKey, true);
       renderer.domElement.removeEventListener("pointerleave", onLeave);
       controls.removeEventListener("change", onControlsChange);
+      controls.removeEventListener("start", cameraTransition.cancel);
       controls.dispose();
       disposeGroup(scene);
       disposeGroup(gizmo);

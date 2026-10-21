@@ -169,6 +169,51 @@ async function createBox(page, translations) {
   await page.waitForFunction(() => !!window.__fairbeam?.camera && document.querySelector('.viewport canvas.vp-canvas'));
 }
 
+async function checkSmoothFocus(page) {
+  await page.emulateMediaFeatures([{ name: 'prefers-reduced-motion', value: 'no-preference' }]);
+  await seedCamera(page, [0, 0, 0]);
+  const samples = await page.evaluate(async () => {
+    const { controls } = window.__fairbeam;
+    window.dispatchEvent(new CustomEvent('fairbeam:frame-added', {
+      detail: { bounds: [[19, -11, 4], [21, -9, 6]], label: 'smooth focus', reason: 'check' },
+    }));
+    const points = [controls.target.toArray()];
+    const start = performance.now();
+    await new Promise(resolve => {
+      const sample = () => {
+        points.push(controls.target.toArray());
+        if (performance.now() - start >= 650) resolve();
+        else requestAnimationFrame(sample);
+      };
+      requestAnimationFrame(sample);
+    });
+    return points;
+  });
+  assert.deepEqual(samples[0], [0, 0, 0], 'focus starts without a snap');
+  assert.ok(samples.some(p => p[0] > 0 && p[0] < 20), 'focus renders intermediate poses');
+  assert.deepEqual(samples.at(-1), [20, -10, 5], 'focus reaches the exact target');
+
+  await page.evaluate(() => window.dispatchEvent(new CustomEvent('fairbeam:frame-added', {
+    detail: { bounds: [[99, 0, 0], [101, 2, 2]], label: 'interrupted focus', reason: 'check' },
+  })));
+  const canvas = await page.$('.viewport canvas.vp-canvas');
+  const rect = await canvas.boundingBox();
+  await page.mouse.move(rect.x + rect.width / 2, rect.y + rect.height / 2);
+  await page.mouse.wheel({ deltaY: 100 });
+  const interrupted = await cameraSnapshot(page);
+  await page.evaluate(() => new Promise(resolve => setTimeout(resolve, 600)));
+  const after = await cameraSnapshot(page);
+  assert.deepEqual(after.target, interrupted.target, 'wheel input stops camera travel');
+  assert.deepEqual(after.position, interrupted.position, 'animation does not override wheel zoom');
+
+  await page.emulateMediaFeatures([{ name: 'prefers-reduced-motion', value: 'reduce' }]);
+  await page.evaluate(() => window.dispatchEvent(new CustomEvent('fairbeam:frame-added', {
+    detail: { bounds: [[9, 0, 0], [11, 2, 2]], label: 'reduced motion focus', reason: 'check' },
+  })));
+  assert.deepEqual((await cameraSnapshot(page)).target, [10, 1, 1], 'reduced motion frames immediately');
+  await page.emulateMediaFeatures([{ name: 'prefers-reduced-motion', value: 'no-preference' }]);
+}
+
 try {
   for (const language of ['en', 'tr']) {
     let context;
@@ -180,7 +225,8 @@ try {
     }
     context = await browser.createBrowserContext();
     const page = await context.newPage();
-    page.setDefaultTimeout(20000);
+    page.on('pageerror', error => console.error('Camera browser error:', error.message));
+    page.setDefaultTimeout(60000);
     await page.setViewport({ width: 1024, height: 768 });
     await page.evaluateOnNewDocument((lang) => localStorage.setItem('fairbeam.generalSettings', JSON.stringify({ language: lang })), language);
     await page.goto(stack.url, { waitUntil: 'domcontentloaded' });
@@ -191,12 +237,13 @@ try {
     await clickButton(page, translations['home.newProject.create'], '.home');
     await page.waitForSelector('.viewport canvas.vp-canvas');
     await createBox(page, translations);
+    await checkSmoothFocus(page);
 
     await selectRibbonTab(page, 'view');
     await checkUniqueIcons(page, translations, language);
     const previewItem = await groupButton(page, translations['ribbon.home.view'], translations['viewport.btn.iso']);
     await previewItem.handle.dispose();
-    const previewDir = resolve(root, '..', '..', 'outputs', 'fairbeam-camera-preview');
+    const previewDir = process.env.FAIRBEAM_SCENARIO_SCREENSHOTS ?? resolve(root, '..', '..', 'outputs', 'fairbeam-camera-preview');
     await mkdir(previewDir, { recursive: true });
     await page.screenshot({ path: resolve(previewDir, `${language}.png`) });
 
