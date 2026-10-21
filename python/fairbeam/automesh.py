@@ -460,13 +460,17 @@ def generate(sim, f_max: float | None = None, cells_per_wavelength: float = 20, 
              max_ratio: float = 1.4, min_cell: float | None = None, dielectric_cells: int = 4,
              pad: float | None = None, metal_cells: int = 6, edge_res: float | None = None,
              keep_existing: bool = True, air_cells_per_wavelength: float | None = None,
-             refine_features: bool = False) -> dict:
+             refine_features: bool = False, feature_cells: int | None = None) -> dict:
     """Mesh ``sim`` (an :class:`fairbeam.Simulation`) and return a report dict.
 
     Lengths are in drawing units (``sim.unit`` metres). ``f_max`` defaults to the simulation's.
     ``edge_res`` overrides the metal edge cell (default: half the local maximum cell).
     ``refine_features`` (off by default) refines the mesh locally across narrow gaps, notches and
     thin strips; the report lists the fine features either way (``fine_features``).
+    ``feature_cells`` explicitly sets their conservative cells-across target for
+    a local refinement study. None preserves the default admission targets
+    (three cells, or connectivity for slanted strips). Increase this target as
+    well as wavelength density when testing convergence of narrow features.
     """
     if edge_rule not in ("thirds", "edge"):
         raise ValueError("edge_rule must be 'thirds' or 'edge'")
@@ -477,6 +481,9 @@ def generate(sim, f_max: float | None = None, cells_per_wavelength: float = 20, 
     if air_cells_per_wavelength is not None and (not np.isfinite(air_cells_per_wavelength)
                                                   or not 0 < air_cells_per_wavelength <= cells_per_wavelength):
         raise ValueError("air_cells_per_wavelength must be finite, > 0 and <= cells_per_wavelength")
+    if feature_cells is not None and (isinstance(feature_cells, bool)
+            or not isinstance(feature_cells, (int, np.integer)) or feature_cells < 3):
+        raise ValueError("feature_cells must be an integer >= 3, or None for default admission targets")
     requested_min_cell = min_cell
     f_max = float(f_max or sim.f_max)
     unit = sim.unit
@@ -551,6 +558,14 @@ def generate(sim, f_max: float | None = None, cells_per_wavelength: float = 20, 
                 L.add(a, [st[a], sp[a]], PRIO_HARD, f"port {p.get('number', p.get('name', ''))}")
             else:
                 L.add(a, [st[a], sp[a]], PRIO_SOFT, "port side")
+
+    from .mesh_refinement import (collect_features, measure_features, refinement_caps, cap_sizes,
+                                  refinement_cell_lower_bound, refine_axis)
+    features = collect_features(metals, feeds + list(getattr(sim, "lumped_elements", [])), 2 * res_feature)
+    if feature_cells is not None:
+        features = [{**feature, "target_cells": int(feature_cells)} for feature in features]
+    explicit_local_target = refine_features and feature_cells is not None
+    edge_caps = refinement_caps(features, requested_min_cell) if explicit_local_target else [[], [], []]
 
     # ---- 2. metal: sheet planes, edges, narrow features ----------------------------------------
     edge_list = []   # (axis, coord, inside_sign, d, tag) candidates for the thirds rule
@@ -705,6 +720,13 @@ def generate(sim, f_max: float | None = None, cells_per_wavelength: float = 20, 
     tips = []   # (axis, coord, inside_sign, cell) at the free ends of thin cylinders
     for (a, c, m, mid, seg, along) in edge_list:
         d_loc = edge_res or local_res_pt(mid) / 2
+        if edge_caps[a]:
+            # Anchor the thirds cell at the requested LOCAL size. Otherwise a
+            # later gap refinement subdivides the original coarse thirds cell
+            # and moves the free edge to an arbitrary fraction of its final
+            # cell, even though the reported cells-across target is fulfilled.
+            d_loc = float(cap_sizes(np.asarray(c), lambda t: np.full_like(t, d_loc),
+                                    edge_caps[a], 1 + 0.9 * (max_ratio - 1)))
         eps = max(1e-6, 1e-4 * d_loc)
         # sample along the edge; an edge is free if metal is missing just outside at any sample
         samples = []
@@ -736,7 +758,7 @@ def generate(sim, f_max: float | None = None, cells_per_wavelength: float = 20, 
             if w_tip is not None:
                 tips.append((a, c, sign, TIP_CELL * w_tip))
             continue
-        if m.kind not in ("polygon", "linpoly") and 0 < m.hi[a] - m.lo[a] <= 2 * local_res(a, m.lo[a], m.hi[a]):
+        if not explicit_local_target and m.kind not in ("polygon", "linpoly") and 0 < m.hi[a] - m.lo[a] <= 2 * local_res(a, m.lo[a], m.hi[a]):
             d_loc = 0.0   # narrow feature (already subdivided across): exact edge lines, no thirds
         elif w_tip is not None:
             d_loc = min(d_loc, TIP_CELL * w_tip)   # the end of a thin arm: a cell as wide as the arm
@@ -837,13 +859,12 @@ def generate(sim, f_max: float | None = None, cells_per_wavelength: float = 20, 
         "pad": pads if len(set(pads)) > 1 else pad_air, "min_cell": min_cell, "edge_res": edge_res}
     if air_cells_per_wavelength is not None:
         settings["air_cells_per_wavelength"] = air_cells_per_wavelength
+    if feature_cells is not None:
+        settings["feature_cells"] = int(feature_cells)
     # Measure the original grid first. Features already resolved keep exactly the
     # same mesh, and this also gives the cell-count impact without a solver run.
-    from .mesh_refinement import (collect_features, measure_features, refinement_caps, cap_sizes,
-                                  refinement_cell_lower_bound, refine_axis)
     # The features are measured even when refinement is off, so the checks can say that some are
     # under-resolved and suggest turning the setting on.
-    features = collect_features(metals, feeds + list(getattr(sim, "lumped_elements", [])), 2 * res_feature)
     baseline_lines = [np.asarray(grid.GetLines(a), float) for a in range(3)]
     before = measure_features(features, baseline_lines)
     unresolved = [f for f in before if not f["resolved"]]

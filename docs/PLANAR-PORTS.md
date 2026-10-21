@@ -67,6 +67,22 @@ These are admission checks, not a convergence certificate. Verify uniform cross-
 all probes, refine both sheet-normal and transverse resolution, and check source distance and
 absorbing-boundary clearance separately.
 
+Increasing wavelength density alone does not necessarily refine a previously
+admitted narrow slot: the default feature target remains an admission minimum.
+For a Python-level local convergence study, request explicit increasing targets,
+for example `sim.auto_mesh(refine_features=True, feature_cells=6, ...)`, followed
+by 9 and 12. This optional Python API setting is not a Design/editor field.
+It applies to detected narrow features, not to every curved edge. Inspect the
+reported `required_cells`, `cells_across`, dropped features and cell-limit flags
+at every level. An unresolved/dropped request is not a successful refinement;
+even a fulfilled request must pass full-response and source/boundary checks.
+With an explicit target, free-edge thirds anchors use the local target cell
+size before refinement; refining a coarse thirds cell later would leave the
+edge at an arbitrary fraction of its final cell. Required geometry and user
+planes still take precedence. The detector finds parallel-edge gaps, not every
+clearance between a curved rim and another conductor; resolve those features
+with a separate geometric mesh control as well.
+
 A native CPW port sums its two gap-voltage observations. It is not a general multiconductor
 modal solver: unequal ground potentials or asymmetric loads may excite additional slotline or
 common-mode fields. A single S11 trace or a symmetric through-line test does not establish mode
