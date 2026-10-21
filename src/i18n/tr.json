@@ -584,6 +584,7 @@
   "checks.sub.run-too-long.time.min": "{n} dk",
   "checks.sub.run-too-long.time.h": "{n} sa",
   "closeRuns.description": "{count} simülasyon çalışıyor veya sırada. Çıkarsanız iptal edilir.",
+  "closeRuns.description.one": "{count} simülasyon çalışıyor veya sırada. Çıkarsanız iptal edilir.",
   "closeRuns.quit": "Çık ve çalıştırmaları iptal et",
   "closeRuns.title": "Simülasyonlar sürüyor",
   "closeRuns.unknown.description": "Fairbeam çalıştırma sunucusunu kontrol edemedi. Çıkarsanız çalışan veya sıradaki simülasyonlar iptal edilir. İptal, uygulamayı açık tutar.",
