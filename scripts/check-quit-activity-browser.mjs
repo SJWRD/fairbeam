@@ -52,10 +52,25 @@ try {
       assert.equal(await page.evaluate(() => window.__quitAnswer), expected);
     };
 
+    const runningDescription = count => lang === "en"
+      ? (count === 1 ? "1 simulation is running or queued. Quitting cancels it." : `${count} simulations are running or queued. Quitting cancels them.`)
+      : `${count} simülasyon çalışıyor veya sırada. Çıkarsanız iptal edilir.`;
+    await page.evaluate(() => { window.__queuedForQuit = window.__activeForQuit.splice(1, 1)[0]; });
+    await begin(26200);
+    await page.waitForSelector("#close-runs-title");
+    assert.equal(await page.$eval("#close-runs-description", e => e.textContent), runningDescription(1), `${lang}: one active run uses singular wording`);
+    if (process.env.FAIRBEAM_SCREENSHOT_DIR) {
+      mkdirSync(process.env.FAIRBEAM_SCREENSHOT_DIR, { recursive: true });
+      await page.screenshot({ path: join(process.env.FAIRBEAM_SCREENSHOT_DIR, `quit-runs-one-${lang}.png`) });
+    }
+    await page.keyboard.press("Escape");
+    await answered("cancel");
+    assert.equal(await page.evaluate(() => window.__activeForQuit.length), 4, "Cancel preserves the single run and terminal history");
+    await page.evaluate(() => { window.__activeForQuit.splice(1, 0, window.__queuedForQuit); });
     await begin(26201);
     await page.waitForSelector("#close-runs-title");
     assert.equal(await page.$eval("#close-runs-title", e => e.textContent), await text("closeRuns.title"));
-    assert.match(await page.$eval("#close-runs-description", e => e.textContent), /2/);
+    assert.equal(await page.$eval("#close-runs-description", e => e.textContent), runningDescription(2), `${lang}: running and queued runs use plural wording`);
     assert.equal(await page.evaluate(() => document.activeElement.textContent), await text("common.cancel"), "Cancel has safe initial focus");
     assert.equal(await page.$eval("#close-runs-title", e => {
       const dialog = e.closest(".dialog");
@@ -82,7 +97,7 @@ try {
     await page.evaluate(() => window.__activeForQuit.push({ id: "new-during-save", status: "queued" }));
     await page.click(".close-project-dialog .dialog-actions button:first-child"); // Don't save
     await page.waitForSelector("#close-runs-title");
-    assert.match(await page.$eval("#close-runs-description", e => e.textContent), /3/);
+    assert.equal(await page.$eval("#close-runs-description", e => e.textContent), runningDescription(3));
     await page.keyboard.press("Escape");
     await answered("cancel");
     assert.equal(await page.evaluate(async () => (await import("/src/designer/store.ts")).draft.model.description), "Keep this after Cancel");
@@ -92,13 +107,14 @@ try {
     await begin(26203);
     await page.waitForSelector("#close-runs-title");
     assert.equal(await page.$eval("#close-runs-title", e => e.textContent), await text("closeRuns.unknown.title"));
+    assert.equal(await page.$eval("#close-runs-description", e => e.textContent), await text("closeRuns.unknown.description"));
     await page.keyboard.press("Escape");
     await answered("cancel");
     await page.evaluate(() => { window.__quitUnavailable = false; window.__activeForQuit = []; });
     await begin(26204);
     await answered("close");
-    assert.ok(await page.evaluate(() => window.__quitReads >= 6), "every new exit obtains fresh server activity");
-    console.log(`${lang}: fresh active/queued runs, Escape, deferred discard, new-run recheck and unavailable status pass`);
+    assert.ok(await page.evaluate(() => window.__quitReads >= 7), "every new exit obtains fresh server activity");
+    console.log(`${lang}: exact singular/plural run descriptions, fresh active/queued runs, Escape, deferred discard, new-run recheck and unavailable status pass`);
     await context.close();
   }
 } catch (error) {
