@@ -41,21 +41,22 @@ try {
     await page.waitForSelector(".ss-dialog");
     const snapshot = () => page.evaluate(async () => {
       const store = await import("/src/designer/store.ts");
-      return { mode: (await import("/src/workspace.ts")).appMode(), draft: JSON.stringify(store.draft),
+      const workspace = await import("/src/workspace.ts");
+      return { mode: workspace.appMode(), revision: workspace.appModeRevision(), draft: JSON.stringify(store.draft),
         dirty: store.dirty(), replace: !!store.replaceRequest(),
         picker: window.__nativeCalls.filter(call => call.command === "native_document_open").length,
         peek: window.__nativeCalls.filter(call => call.command === "native_document_next_open" && call.pending).length,
         dismissed: window.__nativeCalls.filter(call => call.command === "native_document_dismiss_pending").length };
     });
     const initial = await snapshot();
-    await page.evaluate(() => {
+    await page.evaluate(lang => {
       document.querySelector(".ss-dialog input")?.focus();
-      for (const action of ["file-new", "file-open", "file-new", "file-open"]) {
+      for (const action of ["file-new", "file-open", "view-start", "view-design", "view-examples", `file-open-recent:other_${lang}`]) {
         window.fairbeamMenuAction(action);
         window.dispatchEvent(new CustomEvent("fairbeam:menu-action", { detail: JSON.stringify(action) }));
       }
       window.dispatchEvent(new Event("fairbeam:native-document-open"));
-    });
+    }, lang);
     assert.deepEqual(await snapshot(), initial, `${lang}: modal keeps screen/draft and blocks picker, replace and OS queue reads`);
     assert.ok(await page.$(".ss-dialog"), `${lang}: original modal remains open`);
 
@@ -75,19 +76,35 @@ try {
 
     // All three modal markers are honored by the real router, independent of focus.
     for (const marker of ["scrim", "aria", "dialog"]) {
-      await page.evaluate(marker => {
+      await page.evaluate((marker, lang) => {
         const element = document.createElement(marker === "dialog" ? "dialog" : "div");
         element.id = "native-modal-fixture";
         if (marker === "scrim") element.className = "scrim";
         if (marker === "aria") element.setAttribute("aria-modal", "true");
         if (marker === "dialog") element.setAttribute("open", "");
         document.body.append(element);
-        window.fairbeamMenuAction("file-new");
-        window.fairbeamMenuAction("file-open");
-      }, marker);
-      assert.deepEqual(await snapshot(), { ...initial, peek: 1, dismissed: 1 }, `${lang}: ${marker} independently blocks native New/Open`);
+        for (const action of ["file-new", "file-open", "view-start", "view-design", "view-examples", `file-open-recent:other_${lang}`])
+          window.fairbeamMenuAction(action);
+      }, marker, lang);
+      assert.deepEqual(await snapshot(), { ...initial, peek: 1, dismissed: 1 }, `${lang}: ${marker} independently blocks native document navigation`);
       await page.evaluate(() => document.getElementById("native-modal-fixture").remove());
     }
+
+    // Recent is usable again after dismissal, but repeated navigation cannot replace
+    // the first dirty-draft question. Cancel keeps both the document and its route.
+    await page.evaluate(lang => {
+      window.fairbeamMenuAction(`file-open-recent:other_${lang}`);
+      window.fairbeamMenuAction(`file-open-recent:other_${lang}`);
+      window.fairbeamMenuAction("view-start");
+      window.fairbeamMenuAction("view-design");
+      window.fairbeamMenuAction("view-examples");
+    }, lang);
+    await page.waitForSelector("#close-project-title");
+    assert.equal(await page.$$eval("#close-project-title", nodes => nodes.length), 1, `${lang}: one Recent replacement question after dismissal`);
+    assert.deepEqual(await snapshot(), { ...initial, peek: 1, dismissed: 1, replace: true });
+    await page.keyboard.press("Escape");
+    await page.waitForSelector("#close-project-title", { hidden: true });
+    assert.deepEqual(await snapshot(), { ...initial, peek: 1, dismissed: 1 }, `${lang}: Recent Cancel preserves the dirty draft and route`);
 
     // Outside a modal, text-field focus still permits Open; existing single-flight
     // ownership covers repeated commands both during the question and the picker.
@@ -118,7 +135,20 @@ try {
     });
     assert.equal((await snapshot()).mode, "home", `${lang}: New works from a field outside a modal`);
     assert.equal((await snapshot()).draft, initial.draft);
-    console.log(`${lang}: real modal/router, unchanged dirty draft, deferred OS Open, single question/picker and outside-modal field commands pass`);
+    for (const [action, mode] of [["view-examples", "results"], ["view-design", "design"], [`file-open-recent:modal_${lang}`, "design"], ["view-start", "home"]]) {
+      const revision = (await snapshot()).revision;
+      await page.evaluate(action => {
+        document.getElementById("native-field-fixture").focus();
+        window.fairbeamMenuAction(action);
+      }, action);
+      const after = await snapshot();
+      assert.equal(after.mode, mode, `${lang}: ${action} works from a field after dismissal`);
+      assert.equal(after.revision, revision + 1, `${lang}: ${action} dispatches navigation once`);
+      assert.equal(after.draft, initial.draft, `${lang}: ${action} preserves the dirty draft`);
+      assert.equal(after.dirty, true);
+      assert.equal(after.replace, false);
+    }
+    console.log(`${lang}: modal guards New/Open/Start/Design/Examples/Recent, unchanged dirty draft, deferred OS Open, single question/picker and post-dismissal navigation pass`);
     await context.close();
   }
   assert.deepEqual(errors, [], "no page errors");

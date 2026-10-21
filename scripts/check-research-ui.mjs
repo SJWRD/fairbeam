@@ -141,6 +141,31 @@ try {
     await page.click(".research-results details summary");
     assert.equal(await page.$$eval(".research-table tbody tr", rows => rows.length), 3);
     assert.ok(requests.includes(`/api/research/runs/${jobs[0].id}`), "the selected chart loads its full result from the detail route");
+    // The main integration must retain both compact polling and the caller's
+    // cancellation signal. Exercise the real API method/call chain with one
+    // controlled fetch rejection; unrelated browser requests keep their fetch.
+    assert.deepEqual(await page.evaluate(async () => {
+      const { api } = await import("/src/runner/api.ts");
+      const controller = new AbortController();
+      const originalFetch = window.fetch;
+      let observed = null;
+      window.fetch = (input, init) => {
+        if (init?.signal !== controller.signal) return originalFetch(input, init);
+        observed = { url: String(input), method: init.method, body: init.body ?? null };
+        return new Promise((_, reject) => {
+          controller.signal.addEventListener("abort", () => reject(controller.signal.reason), { once: true });
+          controller.abort();
+        });
+      };
+      try {
+        await api.runs(controller.signal);
+        return { observed, rejected: false };
+      } catch (error) {
+        return { observed, rejected: true, name: error.name, originalReason: error === controller.signal.reason };
+      } finally { window.fetch = originalFetch; }
+    }), { observed: { url: "/api/runs?summary=1", method: "GET", body: null }, rejected: true, name: "AbortError", originalReason: true },
+    "ordinary summary polling forwards the caller's AbortSignal and preserves its abort reason");
+    assert.ok(await page.$(".research-chart svg"), "cancelled ordinary API request leaves the selected full result visible");
     if (screenshots) await page.screenshot({ path: new URL(`research-${language}-desktop.png`, evidence).pathname.replace(/^\/(\w:)/, "$1") });
     await page.keyboard.press("Escape");
     await page.waitForSelector(".research-dialog", { hidden: true });
@@ -188,5 +213,5 @@ try {
     assert.ok(historyQueries.length > 0 && historyQueries.every(query => query === "?summary=1"), "research history polls opt into summaries while detail stays full");
     await context.close();
   }
-  console.log("check-research-ui: EN/TR capability gates, queue/cancel, summary polling/error retention, selected full results, reopening, isolation, result warnings, tables, mobile layout and unavailable server passed (synthetic API)");
+  console.log("check-research-ui: EN/TR capability gates, queue/cancel, summary polling/AbortSignal/error retention, selected full results, reopening, isolation, result warnings, tables, mobile layout and unavailable server passed (synthetic API)");
 } finally { await browser?.close(); await server.close(); }

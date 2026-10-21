@@ -1,4 +1,4 @@
-//! A missing or invalid callback cancels consent; only a live callback can stay pending.
+//! Missing callbacks cancel consent. Invalid script answers retain an explicit-quit escape hatch.
 use std::sync::mpsc::{Receiver, RecvTimeoutError};
 use std::time::Duration;
 
@@ -6,6 +6,7 @@ use std::time::Duration;
 pub enum Reply {
     Pending,
     Cancel,
+    ScriptError,
     Close,
 }
 
@@ -31,7 +32,8 @@ pub fn wait(receiver: Receiver<String>, update: bool, mut set_silent: impl FnMut
         "pending" => Reply::Pending,
         "cancel" => Reply::Cancel,
         "close" => Reply::Close,
-        _ => Reply::Cancel,
+        _ if update => Reply::Cancel,
+        _ => Reply::ScriptError,
     }
 }
 
@@ -56,12 +58,13 @@ mod tests {
     }
 
     #[test]
-    fn missing_or_invalid_script_answers_cancel() {
+    fn invalid_script_answers_are_distinct_from_user_cancel() {
         for update in [false, true] {
             for answer in ["", "\"\"", "undefined", "null", "\"script error\""] {
                 let (send, receive) = mpsc::channel();
                 send.send(answer.into()).unwrap();
-                assert_eq!(wait(receive, update, |_| panic!("an invalid answer is terminal")), Reply::Cancel);
+                let expected = if update { Reply::Cancel } else { Reply::ScriptError };
+                assert_eq!(wait(receive, update, |_| panic!("an invalid answer is terminal")), expected);
             }
         }
     }

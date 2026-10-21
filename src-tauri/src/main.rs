@@ -98,7 +98,7 @@ enum Leave {
 struct LeaveRequest {
     id: u64,
     leave: Leave,
-    /// the live callback did not answer (hung page): the next request leaves without asking
+    /// a hung callback or broken close handler: the next explicit request leaves without asking
     silent: bool,
     /// Updates obtain consent without destroying the window or exiting the process.
     update_reply: Option<mpsc::Sender<bool>>,
@@ -208,6 +208,10 @@ fn ask_viewer(app: AppHandle, id: u64) {
                 finish_leave(&app, id, false);
                 return;
             }
+            leave_reply::Reply::ScriptError => {
+                script_failed_leave(&app, id);
+                return;
+            }
             leave_reply::Reply::Close => {
                 finish_leave(&app, id, true);
                 return;
@@ -223,6 +227,30 @@ fn leave_script(leave: Leave, id: u64) -> String {
         Leave::Update => ("update", "cancel"),
     };
     format!("typeof window.fairbeamWindowClose === 'function' ? window.fairbeamWindowClose('{kind}', {id}) : '{missing}'")
+}
+
+/// A broken handler cannot consent, but must not trap every subsequent explicit Quit/Close.
+/// Settle AppKit's current decision and retain the escape hatch in one main-thread callback:
+/// publishing the latch on the worker before a queued NO could let a second Quit race that NO.
+fn script_failed_leave(app: &AppHandle, id: u64) {
+    let handle = app.clone();
+    if let Err(error) = app.run_on_main_thread(move || {
+        {
+            let shell = handle.state::<Shell>();
+            let mut guard = shell.leaving.lock().unwrap();
+            let Some(req) = guard.as_mut().filter(|req| req.id == id) else { return; };
+            if req.leave == Leave::Update {
+                req.answer_update(false);
+                guard.take();
+                return;
+            }
+            req.silent = true;
+        }
+        #[cfg(target_os = "macos")]
+        macos_quit::reply(&handle, false);
+    }) {
+        shelllog::write(app, &format!("Could not settle the failed close handler: {error}"));
+    }
 }
 
 /// End request `id`; leave when the viewer said so.

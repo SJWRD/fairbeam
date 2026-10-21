@@ -21,31 +21,36 @@ assert.equal(route("not json"), false);
 const app = readFileSync(new URL("../src/App.tsx", import.meta.url), "utf8");
 const shell = readFileSync(new URL("../src-tauri/src/main.rs", import.meta.url), "utf8");
 // Exercise the App's actual handlers through the native action router, not a second
-// implementation of New/Open. A text field alone must not block these menu actions.
+// implementation of document navigation. A text field alone must not block these menu actions.
 const modalPredicate = app.match(/const hasOpenModal = \(\) => [^;]+;/)?.[0];
 assert.ok(modalPredicate, "App shares one modal boundary for native menu and OS opens");
 assert.equal((app.match(/const hasOpenModal =/g) ?? []).length, 1);
 const appRouter = app.slice(app.indexOf("const menuAction = createMenuActionRouter("), app.indexOf("  const notice ="));
 assert.ok(appRouter.endsWith("\n"), "the actual App menu router is available");
-let modal = "", mode = "design", nativeOpens = 0, browserOpens = 0, native = true;
+let modal = "", mode = "design", nativeOpens = 0, browserOpens = 0, examplesOpens = 0, native = true, hasDesign = true;
+const recentOpens = [], navigations = [];
 const modalDocument = {
   activeElement: { tagName: "INPUT" },
   querySelector(selector) { return selector.split(",").map(value => value.trim()).includes(modal) ? {} : null; },
 };
-const dispatch = Function("createMenuActionRouter", "document", "nativeDocumentsAvailable", "openNativeDocument", "setAppMode", "openInput", "showShortcutHelp",
+const dispatch = Function("createMenuActionRouter", "document", "nativeDocumentsAvailable", "openNativeDocument", "setAppMode", "openInput", "showShortcutHelp", "openExamples", "enterDesign", "designFile",
   `${modalPredicate}\n${appRouter}\nreturn menuAction;`)(createMenuActionRouter, modalDocument, () => native,
-  () => { nativeOpens++; }, value => { mode = value; }, { click() { browserOpens++; } }, () => {});
+  () => { nativeOpens++; }, value => { mode = value; navigations.push(value); }, { click() { browserOpens++; } }, () => {},
+  () => { examplesOpens++; }, id => { recentOpens.push(id); }, () => hasDesign ? {} : null);
 for (const marker of [".scrim", "[aria-modal='true']", "dialog[open]"]) {
   modal = marker;
   for (native of [true, false]) {
-    for (const action of ["file-new", "file-open"]) {
+    for (const action of ["file-new", "file-open", "view-start", "view-design", "view-examples", "file-open-recent:patch_antenna"]) {
       assert.equal(dispatch(action), true, `${marker}: native action remains recognized`);
       assert.equal(dispatch(JSON.stringify(action)), true, `${marker}: legacy encoded action is also guarded`);
     }
   }
-  assert.equal(mode, "design", `${marker}: New cannot navigate behind the modal`);
+  assert.equal(mode, "design", `${marker}: navigation cannot change mode behind the modal`);
+  assert.deepEqual(navigations, [], `${marker}: navigation is never dispatched behind the modal`);
   assert.equal(nativeOpens, 0, `${marker}: no native picker or replace prompt starts`);
   assert.equal(browserOpens, 0, `${marker}: no browser picker starts`);
+  assert.equal(examplesOpens, 0, `${marker}: no examples request starts`);
+  assert.deepEqual(recentOpens, [], `${marker}: no recent-file request starts`);
 }
 modal = "";
 native = true;
@@ -56,6 +61,21 @@ dispatch("file-open");
 assert.equal(browserOpens, 1, "browser fallback also dispatches once after dismissal");
 dispatch("file-new");
 assert.equal(mode, "home", "New works from a text field outside a modal");
+mode = "design";
+dispatch("view-start");
+assert.equal(mode, "home", "Start works from a text field after dismissal");
+assert.deepEqual(navigations, ["home", "home"], "New and Start each navigate once after dismissal");
+dispatch("view-design");
+assert.equal(mode, "design", "Design works from a text field after dismissal");
+assert.deepEqual(navigations, ["home", "home", "design"], "Design dispatches navigation once after dismissal");
+hasDesign = false;
+dispatch("view-design");
+assert.equal(navigations.length, 3, "Design still requires an open design");
+hasDesign = true;
+dispatch("view-examples");
+assert.equal(examplesOpens, 1, "Examples dispatches once after dismissal");
+dispatch(JSON.stringify("file-open-recent:patch_antenna"));
+assert.deepEqual(recentOpens, ["patch_antenna"], "Recent dispatches once after dismissal with the decoded ID");
 // Execute the real effect body: only the saved snapshot supplies the menu title.
 const rememberEffect = app.match(/createEffect\(\(\) => \{\s*(const saved = designFile\(\);[\s\S]*?)\n  \}\);/)?.[1];
 assert.ok(rememberEffect, "App remembers saved designs in the native recent menu");
