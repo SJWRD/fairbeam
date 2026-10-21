@@ -111,8 +111,11 @@ export interface Port {
   };
 }
 
+export type ElementSymbol = "auto" | "resistor" | "capacitor" | "inductor" | "network";
+
 /** Lumped circuit element that is not a port (e.g. a Wilkinson isolation resistor). */
 export interface LumpedElement {
+  symbol?: ElementSymbol;
   name: string;
   label: string;
   type: "resistor" | "rlc";

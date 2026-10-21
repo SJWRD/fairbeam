@@ -29,6 +29,7 @@ import { edgeMidpoint, isVertexPrimitive } from "./vertexModel";
 import { saveDesignMaterial } from "./userMaterialsStore";
 import { conductorLabel, libraryLabel, libraryNote, materialKindLabel } from "./MaterialLibrary";
 import { fmt as numberFormat, hasKey, localeTag, t } from "../i18n";
+import type { ElementSymbol } from "../types";
 import NumberField from "../components/NumberField";
 import { OptimizationInspector, ParamInspector, RunInspector } from "./PropsExtras";
 import { resultFocus } from "./resultFocus";
@@ -1087,6 +1088,17 @@ function ResistorInspector(props: { i: number }) {
         onChange={(v) => set((q) => { if (String(v).trim()) q[key] = v; else delete q[key]; }, key)} />}</For>
       <label class="dz-field"><span class="dz-label">{t("feed.topology")}</span><select class="rp-input" value={r().topology ?? "parallel"} onChange={(e) => { const v = e.currentTarget.value as "parallel" | "series"; set((q) => { q.topology = v; }, "topology"); }}><option value="parallel">{t("feed.parallel")}</option><option value="series">{t("feed.series")}</option></select></label>
       <SelectField label={t("props.direction")} value={r().direction} options={AXES} onChange={(v) => set((q) => { q.direction = v; }, "direction")} />
+      <label class="dz-field">
+        <span class="dz-label">{t("feed.symbol")}</span>
+        <select class="rp-input" id={fieldId(`${base()}.symbol`)} value={r().symbol ?? "auto"} onChange={(e) => {
+          const v = e.currentTarget.value as ElementSymbol;
+          set((q) => { q.symbol = v; }, "symbol");
+        }}>
+          <For each={["auto", "resistor", "capacitor", "inductor", "network"]}>{(symbol) =>
+            <option value={symbol}>{t(`feed.symbol.${symbol}`)}</option>
+          }</For>
+        </select>
+      </label>
     </div>
   );
 }

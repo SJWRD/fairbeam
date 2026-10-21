@@ -587,6 +587,7 @@
     {"name": "a part hidden in another (server only)",
      "append": {"parts": {"name": "inner", "material": "substrate", "primitives": [{"kind": "box", "start": [-1, -1, 0.2], "stop": [1, 1, 0.6]}]}},
      "expect": ["warning|part-hidden|parts[3]"]},
+    {"name": "rlc-invalid-symbol", "set": {"resistors": [{"R": 50, "symbol": "invalid", "start": [0, 0, 0], "stop": [0, 0, 1], "direction": "z"}]}, "expect": ["error|resistor-r|resistors[0].symbol"]},
     {"name": "rlc-capacitor-only", "set": {"resistors": [{"C": 1e-12, "start": [0, 0, 0], "stop": [0, 0, 1], "direction": "z"}]}, "expect": []},
     {"name": "rlc-negative-inductance", "set": {"resistors": [{"L": -1e-09, "start": [0, 0, 0], "stop": [0, 0, 1], "direction": "z"}]}, "expect": ["error|resistor-r|resistors[0].L"]},
     {"name": "rlc-empty", "set": {"resistors": [{"start": [0, 0, 0], "stop": [0, 0, 1], "direction": "z"}]}, "expect": ["error|resistor-r|resistors[0].R"]},

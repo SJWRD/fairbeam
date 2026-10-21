@@ -20,7 +20,7 @@ import { dims, freqText, num } from "../lib/format";
 import { modelToMm } from "../lib/modelUnits";
 import { niceLength, viewportCoordinates, viewportMeasurement, viewportScaleBar } from "./viewportReadouts";
 import { fmt, t } from "../i18n";
-import type { Bundle, Part } from "../types";
+import type { Bundle, LumpedElement, Part } from "../types";
 import {
   boxLines, buildParts, lumpedObject, meshPlaneLines, type PartObject, portObject, type SceneColors, sceneRadius, solidLook, waveguidePortObject, SceneGeometryCache, updatePortGlyphs,
 } from "./geometry";
@@ -662,6 +662,13 @@ export default function Viewport() {
       return new CSS2DObject(el);
     }
 
+    const elementSymbols = createMemo(() => new Map((designDraft.resistors ?? []).map((r, i) =>
+      [r.name || `R${i + 1}`, r.symbol ?? "auto"] as const)));
+    function elementSymbol(e: LumpedElement, i: number) {
+      if (appMode() !== "design") return e.symbol;
+      return elementSymbols().get(e.name) ?? designDraft.resistors?.[i]?.symbol ?? "auto";
+    }
+
     // ---- full rebuild: bundle or theme change
     createEffect(on([bundle, themeTick, theme], () => {
       const b = bundle();
@@ -708,8 +715,8 @@ export default function Viewport() {
         overlayRoot.add(g);
       }
 
-      for (const e of b.lumped_elements ?? []) {
-        const body = lumpedObject(e.start, e.stop, cssVar("--al-3d-lumped"), portR * 1.2, cssVar("--al-3d-lumped-accent"), e.direction, e);
+      for (const [i, e] of (b.lumped_elements ?? []).entries()) {
+        const body = lumpedObject(e.start, e.stop, cssVar("--al-3d-lumped"), portR * 1.2, cssVar("--al-3d-lumped-accent"), e.direction, { ...e, symbol: elementSymbol(e, i) });
         body.name = `lumped-${e.name}`;
         const l = label(lumpedLabel(e), "vp-label");
         body.add(l);
@@ -774,6 +781,16 @@ export default function Viewport() {
       requestRender();
     }));
 
+
+    // Symbol edits affect only the glyph, including when an older server preview arrives.
+    createEffect(() => {
+      const b = bundle();
+      for (const [i, e] of (b?.lumped_elements ?? []).entries()) {
+        const glyph = overlayRoot.getObjectByName(`lumped-${e.name}`) as PortGlyph | undefined;
+        glyph?.userData.setSymbol?.(elementSymbol(e, i));
+      }
+      requestRender();
+    });
 
     // X-ray changes only the existing dielectric materials; geometry, labels and camera stay put.
     // The selected port glyph gets the stronger look (bigger, opaque x-ray, focus colour). Created after

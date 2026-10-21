@@ -73,6 +73,18 @@ assert.equal(accent.material.color.getHexString(), "e0a526");
 assert.equal(accent.material.depthTest, false);
 assert.ok(size(r).z >= 0.3 - 1e-9, "flat resistor thickened");
 
+// changing the symbol keeps the body; selecting it again reuses the existing strokes
+const symbolLines = () => r.children.filter((c) => c.isLine && !c.isLineSegments && c.name !== "element-lead");
+const body = meshes(r)[0];
+r.userData.setSymbol("capacitor");
+assert.equal(symbolLines().length, 4);
+const capacitorLines = symbolLines();
+r.userData.setSymbol("capacitor");
+assert.deepEqual(symbolLines(), capacitorLines);
+r.userData.setSymbol("auto");
+assert.equal(symbolLines().length, 1);
+assert.equal(meshes(r)[0], body);
+
 // sheet rotated from XZ to YZ, with the current still along Z: symbols follow the sheet
 const symbolSize = (g) => {
   g.updateMatrixWorld(true);

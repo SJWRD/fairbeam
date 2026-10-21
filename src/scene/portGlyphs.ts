@@ -20,6 +20,7 @@ export interface PortGlyphData {
   /** world position the CSS2D label sits at (kept current by update) */
   labelAnchor: THREE.Vector3;
   kind: "lumped" | "waveguide" | "element";
+  setSymbol?: (symbol: LumpedElement["symbol"]) => void;
 }
 export type PortGlyph = THREE.Group & { userData: PortGlyphData };
 
@@ -207,19 +208,20 @@ export function waveguidePortObject(start: Vec3, stop: Vec3, direction: "x" | "y
   return g;
 }
 
-type ElementValues = Pick<LumpedElement, "R" | "L" | "C">;
+type ElementValues = Pick<LumpedElement, "R" | "L" | "C" | "symbol">;
 
 // Local Z runs between the terminals; separate paths keep the capacitor plates apart.
 function elementPaths(values: ElementValues): Vec3[][] {
   const keys = (["R", "L", "C"] as const).filter((key) => values[key] !== undefined);
-  const symbol = keys.length === 1 ? keys[0] : "network";
+  const automatic = keys.length === 1 ? { R: "resistor", L: "inductor", C: "capacitor" }[keys[0]] : "network";
+  const symbol = values.symbol && values.symbol !== "auto" ? values.symbol : automatic;
   let paths: Vec3[][];
-  if (symbol === "C") {
+  if (symbol === "capacitor") {
     paths = [
       [[0, 0, -0.5], [0, 0, -0.1]], [[-0.4, 0, -0.1], [0.4, 0, -0.1]],
       [[-0.4, 0, 0.1], [0.4, 0, 0.1]], [[0, 0, 0.1], [0, 0, 0.5]],
     ];
-  } else if (symbol === "L") {
+  } else if (symbol === "inductor") {
     // 4.5 planar turns; the sine term makes adjacent turns overlap.
     const coil = Array.from({ length: 181 }, (_, i): Vec3 => {
       const t = i / 180;
@@ -227,7 +229,7 @@ function elementPaths(values: ElementValues): Vec3[][] {
       return [0.15 * Math.cos(angle), 0, -0.3 + t * 0.6 + 0.05 * Math.sin(angle)];
     });
     paths = [[[0, 0, -0.5], ...coil, [0, 0, 0.5]]];
-  } else if (symbol === "R") {
+  } else if (symbol === "resistor") {
     paths = [[[0, 0, -0.5], [0, 0, -0.3], [0.35, 0, -0.2], [-0.35, 0, 0], [0.35, 0, 0.2], [0, 0, 0.3], [0, 0, 0.5]]];
   } else {
     paths = [[[0, 0, -0.5], [0, 0, -0.3], [0.35, 0, 0], [0, 0, 0.3], [-0.35, 0, 0], [0, 0, -0.3]], [[0, 0, 0.3], [0, 0, 0.5]]];
@@ -257,7 +259,7 @@ export function lumpedObject(start: Vec3, stop: Vec3, color: string, minT: numbe
   }
   const body = new THREE.Mesh(unit().box, new THREE.MeshStandardMaterial({ color, roughness: 0.55, metalness: 0.05, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 }));
   const lineMat = new THREE.LineBasicMaterial({ color: accent, depthTest: false, transparent: true, opacity: 0.95 });
-  const strokes = elementPaths(values).map((points) => {
+  const makeStrokes = (symbol: LumpedElement["symbol"]) => elementPaths({ ...values, symbol }).map((points) => {
     const geometry = new THREE.BufferGeometry();
     geometry.setAttribute("position", new THREE.Float32BufferAttribute(points.flat(), 3));
     const stroke = new THREE.Line(geometry, lineMat);
@@ -265,6 +267,9 @@ export function lumpedObject(start: Vec3, stop: Vec3, color: string, minT: numbe
     stroke.quaternion.copy(symbolRotation);
     return stroke;
   });
+  let symbol = values.symbol;
+  let strokes = makeStrokes(symbol);
+  let lastWpp = minT / 4;
   const leadGeometry = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), Z]);
   const leads = [-1, 1].map(() => {
     const lead = new THREE.Line(leadGeometry, lineMat);
@@ -287,6 +292,7 @@ export function lumpedObject(start: Vec3, stop: Vec3, color: string, minT: numbe
     out.position.copy(mid); out.scale.copy(body.scale);
     const w = Math.max(px(6), ...size.filter((_, i) => i !== n));
     // Keep a 2:1 symbol length/width ratio; only the leads fill a longer footprint.
+    lastWpp = wpp;
     const symbolWidth = Math.min(w, size[n] / 2);
     const symbolLength = symbolWidth * 2;
     for (const stroke of strokes) {
@@ -306,6 +312,14 @@ export function lumpedObject(start: Vec3, stop: Vec3, color: string, minT: numbe
     setHighlight(on, hl) { boost = on ? 1.4 : 1; lineMat.color.set(on ? hl ?? accent : accent); },
     labelAnchor,
     kind: "element",
+    setSymbol(next) {
+      if (next === symbol) return;
+      for (const stroke of strokes) { g.remove(stroke); stroke.geometry.dispose(); }
+      symbol = next;
+      strokes = makeStrokes(symbol);
+      g.add(...strokes);
+      update(lastWpp);
+    },
   };
   update(minT / 4);
   return g;

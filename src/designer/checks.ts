@@ -772,6 +772,7 @@ export function designChecks(d: Design): Check[] {
       const value = ev(`${w}.${key}`, re[key]);
       if (value !== null && value <= 0) error(`${w}.${key}`, "resistor-r", key === "R" ? "the resistance must be > 0 Ω" : "lumped values must be > 0");
     }
+    if (re.symbol !== undefined && !["auto", "resistor", "capacitor", "inductor", "network"].includes(re.symbol)) error(`${w}.symbol`, "resistor-r", "symbol must be auto, resistor, capacitor, inductor or network");
     if (re.topology !== undefined && !["parallel", "series"].includes(re.topology)) error(`${w}.topology`, "resistor-r", "topology must be parallel or series");
     const a = vec(`${w}.start`, re.start), c = vec(`${w}.stop`, re.stop);
     const k = AXES.indexOf(re.direction);
