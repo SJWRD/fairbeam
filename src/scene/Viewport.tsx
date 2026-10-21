@@ -709,7 +709,7 @@ export default function Viewport() {
       }
 
       for (const e of b.lumped_elements ?? []) {
-        const body = lumpedObject(e.start, e.stop, cssVar("--al-3d-lumped"), portR * 1.2, cssVar("--al-3d-lumped-accent"), e.direction);
+        const body = lumpedObject(e.start, e.stop, cssVar("--al-3d-lumped"), portR * 1.2, cssVar("--al-3d-lumped-accent"), e.direction, e);
         body.name = `lumped-${e.name}`;
         const l = label(lumpedLabel(e), "vp-label");
         body.add(l);

@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import type { Vec3 } from "../types";
+import type { LumpedElement, Vec3 } from "../types";
 
 /**
  * Port and lumped-element glyphs for the 3D view.
@@ -207,24 +207,66 @@ export function waveguidePortObject(start: Vec3, stop: Vec3, direction: "x" | "y
   return g;
 }
 
+type ElementValues = Pick<LumpedElement, "R" | "L" | "C">;
+
+// Local Z runs between the terminals; separate paths keep the capacitor plates apart.
+function elementPaths(values: ElementValues): Vec3[][] {
+  const keys = (["R", "L", "C"] as const).filter((key) => values[key] !== undefined);
+  const symbol = keys.length === 1 ? keys[0] : "network";
+  let paths: Vec3[][];
+  if (symbol === "C") {
+    paths = [
+      [[0, 0, -0.5], [0, 0, -0.1]], [[-0.4, 0, -0.1], [0.4, 0, -0.1]],
+      [[-0.4, 0, 0.1], [0.4, 0, 0.1]], [[0, 0, 0.1], [0, 0, 0.5]],
+    ];
+  } else if (symbol === "L") {
+    // 4.5 planar turns; the sine term makes adjacent turns overlap.
+    const coil = Array.from({ length: 181 }, (_, i): Vec3 => {
+      const t = i / 180;
+      const angle = -Math.PI / 2 + t * Math.PI * 9;
+      return [0.15 * Math.cos(angle), 0, -0.3 + t * 0.6 + 0.05 * Math.sin(angle)];
+    });
+    paths = [[[0, 0, -0.5], ...coil, [0, 0, 0.5]]];
+  } else if (symbol === "R") {
+    paths = [[[0, 0, -0.5], [0, 0, -0.3], [0.35, 0, -0.2], [-0.35, 0, 0], [0.35, 0, 0.2], [0, 0, 0.3], [0, 0, 0.5]]];
+  } else {
+    paths = [[[0, 0, -0.5], [0, 0, -0.3], [0.35, 0, 0], [0, 0, 0.3], [-0.35, 0, 0], [0, 0, -0.3]], [[0, 0, 0.3], [0, 0, 0.5]]];
+  }
+  return paths;
+}
+
 /**
- * Lumped R/L/C element (not a port): a dark body over its footprint plus an amber zig-zag along the
- * current direction, drawn through the metal, so it reads as a component and never as a red port.
+ * Lumped R/L/C element: a dark body with an amber circuit symbol along the current direction.
+ * Multiple configured values use a diamond for a generic network; magnitudes do not select symbols.
  */
-export function lumpedObject(start: Vec3, stop: Vec3, color: string, minT: number, accent: string, direction?: "x" | "y" | "z"): PortGlyph {
+export function lumpedObject(start: Vec3, stop: Vec3, color: string, minT: number, accent: string, direction?: "x" | "y" | "z", values: ElementValues = { R: 1 }): PortGlyph {
   const g = new THREE.Group() as PortGlyph;
   const b = extents(start, stop);
   const n = axisOf(direction, b.ext);
+  // Use the wider transverse axis to keep the symbol in the sheet plane.
+  const [u, v] = [0, 1, 2].filter((i) => i !== n);
+  const widthAxis = b.ext[v] > b.ext[u] ? v : u;
+  const symbolRotation = new THREE.Quaternion();
+  if (b.ext[widthAxis] > 0) {
+    const x = UNIT_AXES[widthAxis];
+    const z = UNIT_AXES[n].clone().multiplyScalar(sgn(stop[n] - start[n]));
+    const y = new THREE.Vector3().crossVectors(z, x);
+    symbolRotation.setFromRotationMatrix(new THREE.Matrix4().makeBasis(x, y, z));
+  } else {
+    symbolRotation.setFromUnitVectors(Z, UNIT_AXES[n]);
+  }
   const body = new THREE.Mesh(unit().box, new THREE.MeshStandardMaterial({ color, roughness: 0.55, metalness: 0.05, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 }));
   const lineMat = new THREE.LineBasicMaterial({ color: accent, depthTest: false, transparent: true, opacity: 0.95 });
-  // unit zig-zag along local +Z (-0.5..0.5)
-  const zig = new THREE.Line(new THREE.BufferGeometry(), lineMat);
-  zig.geometry.setAttribute("position", new THREE.Float32BufferAttribute(
-    [[0, 0, -0.5], [0, 0, -0.3], [0.35, 0, -0.2], [-0.35, 0, 0], [0.35, 0, 0.2], [0, 0, 0.3], [0, 0, 0.5]].flat(), 3));
-  zig.renderOrder = 61;
+  const strokes = elementPaths(values).map((points) => {
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute("position", new THREE.Float32BufferAttribute(points.flat(), 3));
+    const stroke = new THREE.Line(geometry, lineMat);
+    stroke.renderOrder = 61;
+    return stroke;
+  });
   const out = new THREE.LineSegments(unit().boxEdges, lineMat);
   out.renderOrder = 61;
-  g.add(body, zig, out);
+  g.add(body, ...strokes, out);
   const mid = new THREE.Vector3(...(b.mid as Vec3));
   const labelAnchor = mid.clone();
   let boost = 1;
@@ -234,9 +276,11 @@ export function lumpedObject(start: Vec3, stop: Vec3, color: string, minT: numbe
     body.position.copy(mid); body.scale.set(size[0], size[1], size[2]);
     out.position.copy(mid); out.scale.copy(body.scale);
     const w = Math.max(px(6), ...size.filter((_, i) => i !== n));
-    zig.position.copy(mid);
-    zig.scale.set(w, w, size[n]);
-    orient(zig, n, 1);
+    for (const stroke of strokes) {
+      stroke.position.copy(mid);
+      stroke.scale.set(w, w, size[n]);
+      stroke.quaternion.copy(symbolRotation);
+    }
     labelAnchor.set(mid.x, mid.y, mid.z + size[2] / 2 + px(10));
   };
   g.userData = {

@@ -73,6 +73,22 @@ assert.equal(accent.material.color.getHexString(), "e0a526");
 assert.equal(accent.material.depthTest, false);
 assert.ok(size(r).z >= 0.3 - 1e-9, "flat resistor thickened");
 
+// sheet rotated from XZ to YZ, with the current still along Z: symbols follow the sheet
+const symbolSize = (g) => {
+  g.updateMatrixWorld(true);
+  const bounds = new THREE.Box3();
+  for (const c of g.children) if (c.isLine && !c.isLineSegments) bounds.expandByObject(c);
+  return bounds.getSize(new THREE.Vector3());
+};
+for (const values of [{ R: 50 }, { L: 1e-9 }, { C: 1e-12 }, { R: 50, C: 1e-12 }]) {
+  const sheet = lumpedObject([0, 0, 0], [2, 0, 4], "#2f2d2a", 0.3, "#e0a526", "z", values);
+  const rotated = lumpedObject([0, 0, 0], [0, 2, 4], "#2f2d2a", 0.3, "#e0a526", "z", values);
+  const a = symbolSize(sheet), b = symbolSize(rotated);
+  assert.ok(a.x > 0 && Math.abs(a.y) < 1e-6, "symbol lies in the original sheet plane");
+  assert.ok(b.y > 0 && Math.abs(b.x) < 1e-6, "symbol follows the rotated sheet plane");
+  assert.ok(Math.abs(a.x - b.y) < 1e-6 && Math.abs(a.z - b.z) < 1e-6, "rotation preserves symbol dimensions");
+}
+
 // labels that would overprint stack upward; the others stay where they are
 {
   const P = (x, y, w = 80, h = 18) => ({ x, y, w, h });
