@@ -2023,8 +2023,53 @@ fn native_action_accelerator(id: &str, macos: bool) -> Option<&'static str> {
     }
 }
 
+fn native_action_label(id: &str, label: &str, macos: bool) -> String {
+    // AppKit renders its real accelerators. Other platforms keep the WebView-owned shortcut hints.
+    if macos { return label.to_owned(); }
+    let hint = match id {
+        "file-save" => "Ctrl+S",
+        "view-tree" => "Ctrl+Shift+1",
+        "view-dock" => "Ctrl+Shift+2",
+        "view-properties" => "Ctrl+Shift+3",
+        "view-ribbon" => "Ctrl+F1",
+        _ => return label.to_owned(),
+    };
+    format!("{label}    {hint}")
+}
+
+#[cfg(test)]
+mod native_menu_hint_tests {
+    use super::{native_action_accelerator, native_action_label};
+
+    #[test]
+    fn webview_owned_shortcuts_have_visible_non_macos_hints() {
+        for (id, label, hint) in [
+            ("file-save", "Save", "Ctrl+S"),
+            ("view-tree", "Model tree", "Ctrl+Shift+1"),
+            ("view-dock", "Results", "Ctrl+Shift+2"),
+            ("view-properties", "Özellikler", "Ctrl+Shift+3"),
+            ("view-ribbon", "Minimize Ribbon", "Ctrl+F1"),
+        ] {
+            assert_eq!(native_action_label(id, label, false), format!("{label}    {hint}"));
+            assert_eq!(native_action_accelerator(id, false), None, "the page still owns {id}");
+            assert_eq!(native_action_label(id, label, true), label, "AppKit renders the shortcut for {id}");
+            assert!(native_action_accelerator(id, true).is_some());
+        }
+    }
+
+    #[test]
+    fn other_menu_labels_and_non_macos_accelerators_are_unchanged() {
+        for id in ["file-new", "file-open", "file-save-as", "view-zoom-in", "view-zoom-out", "view-zoom-reset", "file-open-recent:1"] {
+            for macos in [false, true] {
+                assert_eq!(native_action_label(id, "Translated label", macos), "Translated label");
+            }
+            assert_eq!(native_action_accelerator(id, false), None);
+        }
+    }
+}
+
 fn action_item(handle: &AppHandle, id: &str, label: &str) -> tauri::Result<MenuItem<tauri::Wry>> {
-    MenuItem::with_id(handle, id, label, action_enabled(handle, id),
+    MenuItem::with_id(handle, id, native_action_label(id, label, cfg!(target_os = "macos")), action_enabled(handle, id),
         native_action_accelerator(id, cfg!(target_os = "macos")))
 }
 

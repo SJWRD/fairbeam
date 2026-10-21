@@ -586,6 +586,7 @@
   "checks.sub.run-too-long.time.min": "{n} min",
   "checks.sub.run-too-long.time.h": "{n} h",
   "closeRuns.description": "{count} simulations are running or queued. Quitting cancels them.",
+  "closeRuns.description.one": "{count} simulation is running or queued. Quitting cancels it.",
   "closeRuns.quit": "Quit and cancel runs",
   "closeRuns.title": "Simulations are running",
   "closeRuns.unknown.description": "Fairbeam could not check the run server. Quitting cancels any simulations still running or queued. Cancel keeps the app open.",

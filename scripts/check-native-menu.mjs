@@ -27,7 +27,16 @@ for (const [id, accelerator] of Object.entries({
   "view-zoom-in": "CmdOrCtrl+=", "view-zoom-out": "CmdOrCtrl+-", "view-zoom-reset": "CmdOrCtrl+0",
 })) assert.ok(main.includes(`"${id}" => Some("${accelerator}")`), `${id}: actual accelerator declaration`);
 assert.ok(main.includes('native_action_accelerator(id, cfg!(target_os = "macos"))'), "menu constructor uses the platform-gated accelerator");
-assert.doesNotMatch(main, /format!\("\{\}    \{(?:command|control)\}/, "no fake shortcut text in native labels");
+assert.ok(main.includes('native_action_label(id, label, cfg!(target_os = "macos"))'), "menu constructor uses platform-gated text hints");
+const acceleratorHelper = main.slice(main.indexOf("fn native_action_accelerator("), main.indexOf("fn native_action_label("));
+assert.match(acceleratorHelper, /if !macos \{ return None; \}/, "non-Mac menu accelerators stay disabled so the page owns shortcuts");
+const labelHelper = main.slice(main.indexOf("fn native_action_label("), main.indexOf("#[cfg(test)]", main.indexOf("fn native_action_label(")));
+assert.match(labelHelper, /if macos \{ return label\.to_owned\(\); \}/, "Mac labels stay plain for AppKit's real accelerators");
+assert.deepEqual(Object.fromEntries([...labelHelper.matchAll(/"([^"]+)" => "([^"]+)"/g)].map(match => [match[1], match[2]])), {
+  "file-save": "Ctrl+S", "view-tree": "Ctrl+Shift+1", "view-dock": "Ctrl+Shift+2", "view-properties": "Ctrl+Shift+3", "view-ribbon": "Ctrl+F1",
+}, "only the five legacy Windows/Linux text hints return");
+assert.ok(labelHelper.includes('format!("{label}    {hint}")'), "legacy text hints keep their four-space separator");
+assert.doesNotMatch(main, /format!\("\{\}    \{(?:command|control)\}/, "legacy text hints cannot bypass the platform-gated helper");
 const workspace = read("src/designer/DesignWorkspace.tsx");
 assert.ok(workspace.includes("desktopBrowserKey(e)"), "designer uses the same native passthrough policy");
 assert.doesNotMatch(workspace, /\["t", "n", "w", "r"\]/, "designer no longer independently swallows native New");
@@ -51,4 +60,4 @@ assert.match(windowMenu, /#\[cfg\(not\(target_os = "macos"\)\)\]\s*&action_item\
 assert.match(windowMenu, /PredefinedMenuItem::bring_all_to_front\(handle, Some\(&tx\("bring-all-to-front"\)\)\)/);
 assert.equal((windowMenu.match(/#\[cfg\(target_os = "macos"\)\]\s*&PredefinedMenuItem::separator/g) ?? []).length, 3,
   "native Window groups have three separators");
-console.log("check-native-menu: native accelerator declarations, page passthrough and Mac bundle locale/category contract pass");
+console.log("check-native-menu: platform-gated text hints, native accelerator declarations, page passthrough and Mac bundle locale/category contract pass");

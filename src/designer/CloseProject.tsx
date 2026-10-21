@@ -173,7 +173,7 @@ function RunningWorkDialog(props: { count: number | null }) {
         <div class="dialog-head">
           <div>
             <h2 id="close-runs-title">{t(props.count === null ? "closeRuns.unknown.title" : "closeRuns.title")}</h2>
-            <p id="close-runs-description">{props.count === null ? t("closeRuns.unknown.description") : t("closeRuns.description", { count: props.count })}</p>
+            <p id="close-runs-description">{props.count === null ? t("closeRuns.unknown.description") : t(props.count === 1 ? "closeRuns.description.one" : "closeRuns.description", { count: props.count })}</p>
           </div>
           <button class="icon-btn" onClick={cancel} aria-label={t("common.cancel")}><X size={16} /></button>
         </div>
