@@ -1,12 +1,15 @@
-"""Opt-in MUR-boundary diagnostic of the finite LC realization.
+"""Opt-in boundary-stress reproducer, not a working open-space LC fixture.
 
 python -m unittest tests.test_composite_lc_boundary -q
 python -m tests.test_composite_lc_boundary --fdtd --baseline C:/study/lc/n1_filter --out C:/study/lc/mur-boundary
 python -m tests.test_composite_lc_boundary --compare --baseline C:/study/lc/n1_filter --out C:/study/lc/mur-boundary
 
-This changes a physical boundary assumption, not the mesh resolution. The
-small MUR enclosure is not an open-space boundary-convergence certificate.
-The point circuit remains the original target; no part value is fitted.
+The installed 0.37.0rc3 CPU runtime produced runaway fields and stopped before
+the source pulse completed in this tiny six-MUR-face case. The guarded --fdtd
+command is therefore expected to fail and preserve raw evidence on that build;
+--compare only applies if a future runtime admits both complete sources.
+Boundary placement and native behavior remain unseparated. This changes a
+physical boundary assumption, not mesh resolution or the original point target.
 """
 import argparse
 from contextlib import contextmanager
