@@ -190,9 +190,7 @@ editing them, or the prefill stops working.
 One entry per release, newest first. The installers are on the
 [release page](https://github.com/ismailakdag/fairbeam-releases/releases) of each version.
 
-### 0.8.4, 2026-10-21 (unreleased)
-
-Release preparation is in progress. This entry does not announce available installers or an update.
+### 0.8.4, 2026-10-21
 
 - Close and Quit ask before canceling running or queued simulations, including other models,
   sweeps, optimization and research runs. An unavailable run server also prompts. In 0.8.3,
@@ -208,6 +206,10 @@ Release preparation is in progress. This entry does not announce available insta
   Improve initial Simulation settings focus, retain Results with a minimized ribbon, and keep
   keyboard focus on Compare checkboxes across result refreshes. Update macOS menu conventions
   and application metadata.
+- Use the singular run-warning form for one simulation, with English and Turkish coverage.
+  Restore all five Windows/Linux native-menu hints: Save (Ctrl+S), Model tree (Ctrl+Shift+1),
+  Results (Ctrl+Shift+2), Properties (Ctrl+Shift+3), and Minimize Ribbon (Ctrl+F1). The page
+  retains shortcut handling on those platforms; macOS native accelerators are unchanged.
 - Improve English and Turkish feedback for files, queues, exports and inputs. Reference-data
   drops belong to the visible Results/Examples comparison. Recognized macro drops (`.bas`,
   `.mcs`, macro-like `.txt`) and PCB drops (`.dxf`, `.gbr`, `.gerber`, `.drl`) point to their
@@ -237,11 +239,7 @@ Known limitations: Blender renders are not included in the simulation exit check
 on quit without a render warning ([#314](https://github.com/ismailakdag/fairbeam/issues/314)). The
 Windows bootstrap investigation [#251](https://github.com/ismailakdag/fairbeam/issues/251), the
 macOS/Unix exit-during-spawn timing window and the native validation omissions remain documented
-in the [review record](release-notes/0.8.4-draft.md). Elmer and coax remain experimental.
-
-Pending merge: the singular English run-warning text and restored Windows/Linux File/View
-shortcut hints are validated in `5cfde1830b3c6d4a03a9d1cdaf2ce1f0cadd09ad` but are not yet included
-on main. Replace this marker only after that merge is verified.
+in the [historical review record](release-notes/0.8.4-draft.md). Elmer and coax remain experimental.
 
 ### 0.8.3, 2026-10-19
 
