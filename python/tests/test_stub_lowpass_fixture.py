@@ -170,6 +170,17 @@ class StubReferenceTests(unittest.TestCase):
 
 
 class StubGeometryTests(unittest.TestCase):
+    def test_inner_boundary_planes_do_not_move_with_mesh_refinement(self):
+        length=f.dimensions()['unit']['length_mm']
+        for control,air in (('ordinary',6*f.HEIGHT),('boundary',9*f.HEIGHT)):
+            expected=[[-12*f.HEIGHT,2*length+12*f.HEIGHT],
+                      [-air,2*air+8*f.HEIGHT],[0.,f.HEIGHT+air]]
+            for n in f.MESHES:
+                axes=f.mesh_lines(n,control)
+                actual=[[values[8] if axis<2 else values[0],values[-9]]
+                        for axis,values in enumerate(axes)]
+                np.testing.assert_allclose(actual,expected,rtol=0,atol=1e-12)
+
     def test_balancing_preserves_each_positive_and_negative_metal_edge_thirds(self):
         dims=f.dimensions()
         for n in f.MESHES:

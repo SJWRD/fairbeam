@@ -164,8 +164,9 @@ def mesh_lines(n,control='ordinary'):
         edge=width/2;small=min(delta,d['unit']['width_mm']/n)
         for sign in (-1,1):yanchors.extend((sign*(edge-small/3),sign*(edge+2*small/3)))
     yanchors.extend(s['length_mm'] for s in d['stubs'])
-    ymax=max(yanchors)+air+8*maximum
-    inner_top=ymax-8*maximum
+    # Keep the coarse physical PML interface for every mesh level. Including
+    # mesh-dependent padding here would mix a boundary change into refinement.
+    inner_top=2*air+8*HEIGHT
     ya=[a for a in yanchors if -air<=a<=inner_top]+[-air,inner_top]
     ybody=_balanced_axis(ya,maximum)
     y=np.r_[ybody[0]-maximum*np.arange(8,0,-1),ybody,ybody[-1]+maximum*np.arange(1,9)]
