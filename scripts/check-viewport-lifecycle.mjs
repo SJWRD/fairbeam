@@ -1,7 +1,7 @@
 // Deterministic checks for the viewport's queued work and preview glyph bounds.
 // Run with: node --experimental-strip-types scripts/check-viewport-lifecycle.mjs
 import assert from "node:assert/strict";
-import { clearOwnedDebugReference, frameTask, portMarkerRadius, watchPixelRatio } from "../src/scene/viewportLifecycle.ts";
+import { checkFrameDistance, clearOwnedDebugReference, frameTask, portMarkerRadius, watchPixelRatio } from "../src/scene/viewportLifecycle.ts";
 import { poseToSave, validPose } from "../src/scene/cameraViews.ts";
 
 // A design's opening view (Design.view): the poses the viewport takes, and the pose it saves.
@@ -18,6 +18,33 @@ const schedule = (callback) => {
   return handle;
 };
 const cancel = (handle) => frames.delete(handle);
+
+// Small targets retain more context, distances scale with model size, and both viewport
+// dimensions contain the target even on a narrow display.
+for (const aspect of [0.5, 1, 2]) {
+  const small = checkFrameDistance(1, 100, 45, aspect);
+  const large = checkFrameDistance(100, 100, 45, aspect);
+  assert.ok(large > small, "larger objects require more camera distance");
+  assert.ok(small > large / 100, "small elements get more surrounding context");
+  assert.ok(Math.abs(checkFrameDistance(10, 1000, 45, aspect) - small * 10) < 1e-10,
+    "scaling the model preserves its composition");
+  const angularRadius = Math.asin(100 / large);
+  assert.ok(angularRadius < Math.PI / 8, "target fits vertically");
+  assert.ok(angularRadius < Math.atan(Math.tan(Math.PI / 8) * aspect), "target fits horizontally");
+}
+
+// A wide, flat object should fill a wide viewport instead of fitting an oversized sphere.
+const corners = [-10, 10].flatMap(x => [-1, 1].flatMap(y => [-0.1, 0.1].map(z => [x, y, z])));
+const radius = Math.hypot(10, 1, 0.1);
+const fitted = checkFrameDistance(radius, radius, 45, 2, corners);
+assert.ok(fitted < checkFrameDistance(radius, radius, 45, 2) * 0.6, 'large flat object gets a substantially tighter fit');
+for (const [x, y, z] of corners) {
+  assert.ok(Math.abs(x) / (fitted - z) < Math.tan(Math.PI / 8) * 2, 'corner fits horizontally');
+  assert.ok(Math.abs(y) / (fitted - z) < Math.tan(Math.PI / 8), 'corner fits vertically');
+}
+assert.equal(checkFrameDistance(radius, radius * 100, 45, 2, corners),
+  checkFrameDistance(radius, radius * 100, 45, 2), 'small-object framing is unchanged');
+
 const flush = () => {
   const queued = [...frames.values()];
   frames.clear();

@@ -43,7 +43,7 @@ import { booleanPreviewGeometry } from "../designer/booleanPreview";
 import { booleanKeysActive } from "../designer/booleanUi";
 import { faceBoundary } from "./faceHighlight";
 import { attachDrawOverlay } from "./drawOverlay";
-import { clearOwnedDebugReference, frameTask, portMarkerRadius, watchPixelRatio } from "./viewportLifecycle";
+import { checkFrameDistance, clearOwnedDebugReference, frameTask, portMarkerRadius, watchPixelRatio } from "./viewportLifecycle";
 import { renderPixelRatio } from "./renderBudget";
 import { localCpuRunActive } from "../runner/designRun";
 import { attachVertexOverlay } from "./vertexOverlay";
@@ -529,7 +529,19 @@ export default function Viewport() {
       const radius = Math.max(box.getSize(new THREE.Vector3()).length() / 2, 0.01);
       const direction = camera.position.clone().sub(controls.target).normalize();
       if (!direction.lengthSq()) direction.copy(VIEW_DIRS.iso);
-      const dist = radius / Math.sin(THREE.MathUtils.degToRad(camera.fov) / 2) * 2.5 * Math.max(1, 1 / camera.aspect);
+      const current = bundle();
+      const right = new THREE.Vector3(1, 0, 0).applyQuaternion(camera.quaternion);
+      const up = new THREE.Vector3(0, 1, 0).applyQuaternion(camera.quaternion);
+      const cameraCorners: [number, number, number][] = [];
+      if (reason === "check") {
+        for (const x of [box.min.x, box.max.x]) for (const y of [box.min.y, box.max.y]) for (const z of [box.min.z, box.max.z]) {
+          const offset = new THREE.Vector3(x, y, z).sub(center);
+          cameraCorners.push([offset.dot(right), offset.dot(up), offset.dot(direction)]);
+        }
+      }
+      const dist = reason === "check"
+        ? checkFrameDistance(radius, current ? sceneRadius(current).radius : radius, camera.fov, camera.aspect, cameraCorners)
+        : radius / Math.sin(THREE.MathUtils.degToRad(camera.fov) / 2) * 2.5 * Math.max(1, 1 / camera.aspect);
       camera.position.copy(center).addScaledVector(direction, dist);
       camera.near = dist / 500;
       camera.far = dist * 200;
