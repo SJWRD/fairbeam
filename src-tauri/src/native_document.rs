@@ -486,11 +486,8 @@ fn argument_paths(
 
 fn client(app: &AppHandle) -> Result<DocumentClient, Value> {
     app.state::<Shell>()
-        .server
-        .lock()
-        .unwrap()
-        .as_ref()
-        .map(|server| server.document_client())
+        .startup
+        .with_server(|server| server.document_client())
         .ok_or_else(|| error("document_server_unavailable", "The document server is not ready", 503))
 }
 
@@ -597,15 +594,13 @@ pub fn native_document_restore(app: AppHandle, model_id: String) -> Value {
     // Keep the server snapshot stable through this lookup. No filesystem operation, backend
     // request, pending-open consumption, or model hydration is part of restoring a binding.
     let shell = app.state::<Shell>();
-    let server = shell.server.lock().unwrap();
-    let Some(server) = server.as_ref() else {
-        return Value::Null;
-    };
-    app.state::<NativeDocuments>()
-        .0
-        .lock()
-        .unwrap()
-        .restore(&model_id, &server.document_client())
+    shell.startup.with_server(|server| {
+        app.state::<NativeDocuments>()
+            .0
+            .lock()
+            .unwrap()
+            .restore(&model_id, &server.document_client())
+    }).unwrap_or(Value::Null)
 }
 
 /// Only the private child channel can move portable files; the browser API cannot.

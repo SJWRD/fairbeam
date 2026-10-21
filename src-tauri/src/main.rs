@@ -34,6 +34,7 @@ mod native_document;
 mod runtime;
 mod seed;
 mod server;
+mod startup;
 mod shelllog;
 mod telemetry;
 mod update_progress;
@@ -65,15 +66,10 @@ use server::{http_ok, Server};
 
 #[derive(Default)]
 struct Shell {
-    server: Mutex<Option<Server>>,
-    /// workspace passed to the server that is currently running
-    active_workspace: Mutex<Option<PathBuf>>,
-    /// true only when the running server uses the app-managed GPU runtime
-    active_gpu_runtime: Mutex<bool>,
+    /// Startup generation, child and its ready metadata share one ownership boundary.
+    startup: startup::Startup<Server>,
     /// last state shown on the splash page (replayed when the page asks)
     splash: Mutex<Value>,
-    /// bumps on every (re)start so an older start thread stops reporting
-    generation: Mutex<u64>,
     /// a runtime installation is running
     installing: Mutex<bool>,
     /// the optional managed GPU runtime is being prepared for the next start
@@ -382,14 +378,52 @@ fn splash(app: &AppHandle, mut state: Value) {
     }
 }
 
-fn stop_server(app: &AppHandle) {
+/// Updater worker only: preserve failed-install recovery while serializing child cleanup with
+/// start workers. The UI callback only invalidates/takes state; it never waits on handoff.
+fn stop_server(app: &AppHandle) -> Result<(), String> {
     let shell = app.state::<Shell>();
-    *shell.active_workspace.lock().unwrap() = None;
-    *shell.active_gpu_runtime.lock().unwrap() = false;
-    let taken = shell.server.lock().unwrap().take();
+    let _handoff = shell.startup.handoff();
+    let (send, receive) = std::sync::mpsc::sync_channel(1);
+    let handle = app.clone();
+    app.run_on_main_thread(move || {
+        let _ = send.send(handle.state::<Shell>().startup.interrupt());
+    }).map_err(|error| format!("Could not stop the server for update: {error}"))?;
+    let taken = receive.recv().map_err(|_| "The app closed before the update could stop its server.")?
+        .map_err(|_| "The app is already shutting down.")?;
+    if let Some(server) = taken { server.stop(); }
+    Ok(())
+}
+
+/// Exit is terminal. It rejects new starts without making the main thread wait on a worker's
+/// handoff lock. The state mutex is released before the existing synchronous shutdown.
+fn shutdown_server(app: &AppHandle) {
+    let taken = app.state::<Shell>().startup.stop();
     if let Some(s) = taken {
         s.stop();
     }
+}
+
+/// A worker can retire the previous child only while its attempt is current. The handoff lock
+/// prevents another worker from spawning into the old child's jobs directory before stop ends.
+fn stop_for_start(app: &AppHandle, generation: u64) -> bool {
+    let shell = app.state::<Shell>();
+    let _handoff = shell.startup.handoff();
+    let Ok(taken) = shell.startup.take_current(generation) else { return false; };
+    if let Some(server) = taken { server.stop(); }
+    shell.startup.current(generation)
+}
+
+/// Generation changes also run on the UI thread. Check when this callback executes, not when
+/// the worker queues it, and never hold the startup state/handoff mutex during a UI call.
+fn startup_ui(app: &AppHandle, generation: u64, show: impl FnOnce(&AppHandle) + Send + 'static) {
+    let handle = app.clone();
+    let _ = app.run_on_main_thread(move || {
+        if handle.state::<Shell>().startup.current(generation) { show(&handle); }
+    });
+}
+
+fn startup_splash(app: &AppHandle, generation: u64, state: Value) {
+    startup_ui(app, generation, move |app| splash(app, state));
 }
 
 fn gpu_runtime_root(app: &AppHandle) -> PathBuf {
@@ -458,7 +492,7 @@ fn reveal_file(file: &Path) -> Result<(), String> {
 #[tauri::command]
 fn reveal_design(app: AppHandle, id: String, path: String) -> Result<(), String> {
     let shell = app.state::<Shell>();
-    let root = shell.active_workspace.lock().unwrap().clone()
+    let root = shell.startup.ready().map(|ready| ready.workspace)
         .unwrap_or_else(|| workspace(&app, &load_settings(&app), &Res::locate(&app)).root);
     reveal_file(&design_reveal::validate(&root, &id, Path::new(&path))?)
 }
@@ -809,6 +843,7 @@ fn gpu_choice(
 /// The setup screen: install the managed runtime, or use an existing installation.
 fn setup_screen(
     app: &AppHandle,
+    generation: u64,
     res: &Res,
     s: &Settings,
     text: &str,
@@ -818,12 +853,11 @@ fn setup_screen(
 ) {
     let install = runtime::install_available(res);
     // testing aid: FAIRBEAM_AUTO_INSTALL=1 presses "Install" (unattended checks of the first start)
-    static AUTO_DONE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
     if install.is_ok() && !managed_failed
         && std::env::var("FAIRBEAM_AUTO_INSTALL").as_deref() == Ok("1")
-        && !AUTO_DONE.swap(true, std::sync::atomic::Ordering::SeqCst)
+        && app.state::<Shell>().startup.auto_install_available(generation)
     {
-        install_runtime(app.clone(), false);
+        schedule_install(app.clone(), false, Some(generation));
         return;
     }
     // an installed managed runtime is offered as is (no reinstall) when another choice failed
@@ -835,8 +869,9 @@ fn setup_screen(
     let gpu_status = runtime::gpu_runtime_status(&gpu_root, res);
     let gpu_support = runtime::gpu_install_support();
     let gpu_installing = *app.state::<Shell>().gpu_installing.lock().unwrap();
-    splash(
+    startup_splash(
         app,
+        generation,
         json!({
             "phase": "setup", "text": text, "detail": detail, "managedReady": managed_ready && !managed_failed,
             "canRepair": install.is_ok() && managed_failed, "canRetry": managed_failed,
@@ -852,7 +887,8 @@ fn setup_screen(
 }
 
 /// Decide which Python runs fairbeam; shows the setup screen (and returns None) when there is none.
-fn choose(app: &AppHandle, res: &Res, s: &Settings, current: &dyn Fn() -> bool) -> Option<Chosen> {
+fn choose(app: &AppHandle, res: &Res, s: &Settings, generation: u64) -> Option<Chosen> {
+    let current = || app.state::<Shell>().startup.current(generation);
     let rt = runtime_root(app);
     let mut gpu_fallback_note = None;
     // A user who explicitly selected GPU can use the ready managed runtime or an existing GPU
@@ -868,11 +904,11 @@ fn choose(app: &AppHandle, res: &Res, s: &Settings, current: &dyn Fn() -> bool) 
                 let bundled = res.fairbeam_version();
                 if bundled.is_some() && bundled != choice.fairbeam {
                     let log = logs_dir(app).join(format!("gpu-runtime-{}.log", stamp()));
-                    runtime_progress(app, "Updating Fairbeam in the GPU runtime…", &log, json!({"step":"start"}), true);
+                    runtime_progress(app, generation, "Updating Fairbeam in the GPU runtime…", &log, json!({"step":"start"}), true);
                     if let Err(error) =
                         runtime::install_gpu(&gpu_root, res, false, true, &log, &|progress| {
                             shelllog::write(app, &format!("GPU runtime update: {progress}"));
-                            runtime_progress(app, "Updating Fairbeam in the GPU runtime…", &log, progress, true);
+                            runtime_progress(app, generation, "Updating Fairbeam in the GPU runtime…", &log, progress, true);
                         })
                     {
                         shelllog::write(app, &format!("GPU runtime update failed: {error}"));
@@ -912,8 +948,9 @@ fn choose(app: &AppHandle, res: &Res, s: &Settings, current: &dyn Fn() -> bool) 
     }
     // 1. an external installation chosen in the settings, unless GPU was explicitly selected above
     if let Some(py) = s.external() {
-        splash(
+        startup_splash(
             app,
+            generation,
             json!({"phase": "searching", "text": "Checking the chosen Python…", "python": py}),
         );
         return match runtime::check_python(&py, None, res) {
@@ -927,6 +964,7 @@ fn choose(app: &AppHandle, res: &Res, s: &Settings, current: &dyn Fn() -> bool) 
             Err(e) => {
                 setup_screen(
                     app,
+                    generation,
                     res,
                     s,
                     "The chosen Python cannot run Fairbeam.",
@@ -964,8 +1002,9 @@ fn choose(app: &AppHandle, res: &Res, s: &Settings, current: &dyn Fn() -> bool) 
         }
     }
     // 3. the managed runtime
-    splash(
+    startup_splash(
         app,
+        generation,
         json!({"phase": "searching", "text": "Checking the Fairbeam runtime…", "runtime": rt}),
     );
     match runtime::managed_status(&rt) {
@@ -977,11 +1016,11 @@ fn choose(app: &AppHandle, res: &Res, s: &Settings, current: &dyn Fn() -> bool) 
             if new_openems || (bundled.is_some() && bundled != fairbeam) {
                 let log = logs_dir(app).join(format!("runtime-{}.log", stamp()));
                 let text = if new_openems { "Updating openEMS in the runtime…" } else { "Updating Fairbeam in the runtime…" };
-                runtime_progress(app, text, &log, json!({"step":"start"}), true);
+                runtime_progress(app, generation, text, &log, json!({"step":"start"}), true);
                 if let Err(e) = runtime::install(&rt, res, false, !new_openems, &log, &|progress| {
-                    runtime_progress(app, text, &log, progress, true);
+                    runtime_progress(app, generation, text, &log, progress, true);
                 }) {
-                    setup_screen(app, res, s, "The runtime could not be updated.", e, vec![], true);
+                    setup_screen(app, generation, res, s, "The runtime could not be updated.", e, vec![], true);
                     return None;
                 }
             }
@@ -999,7 +1038,7 @@ fn choose(app: &AppHandle, res: &Res, s: &Settings, current: &dyn Fn() -> bool) 
                     })
                 }
                 Err(e) => {
-                    setup_screen(app, res, s, "The Fairbeam runtime is damaged.",
+                    setup_screen(app, generation, res, s, "The Fairbeam runtime is damaged.",
                         format!("runtime_import_failed:{e}"),
                         vec![json!({"python": python, "why": "managed runtime", "result": e})], true);
                     return None;
@@ -1032,7 +1071,7 @@ fn choose(app: &AppHandle, res: &Res, s: &Settings, current: &dyn Fn() -> bool) 
                     }
                 }
             }
-            setup_screen(app, res, s, "Fairbeam needs to install its runtime.",
+            setup_screen(app, generation, res, s, "Fairbeam needs to install its runtime.",
                 "Python, the Python packages and openEMS are installed once for your user account, in the folder below. Nothing is installed system-wide.".into(),
                 tried, false);
             None
@@ -1042,26 +1081,33 @@ fn choose(app: &AppHandle, res: &Res, s: &Settings, current: &dyn Fn() -> bool) 
 
 /// Choose the Python, seed the workspace, start the server, wait for it and show the viewer.
 fn start(app: AppHandle) {
-    let generation = {
-        let shell = app.state::<Shell>();
-        let mut g = shell.generation.lock().unwrap();
-        *g += 1;
-        *g
-    };
+    schedule_start(app, None);
+}
+
+fn schedule_start(app: AppHandle, expected: Option<u64>) {
+    let handle = app.clone();
+    let _ = app.run_on_main_thread(move || {
+        let Some(generation) = handle.state::<Shell>().startup.begin(expected) else { return; };
+        start_worker(handle, generation);
+    });
+}
+
+fn start_worker(app: AppHandle, generation: u64) {
     thread::spawn(move || {
+        if !stop_for_start(&app, generation) { return; }
         // first: the import from the previous app (moves the workspace before the seed step)
-        antenlab_import::on_start(&app, &|text: &str| splash(&app, json!({"phase": "starting", "text": text})));
-        let current = || *app.state::<Shell>().generation.lock().unwrap() == generation;
-        stop_server(&app);
+        antenlab_import::on_start(&app, &|text: &str| startup_splash(&app, generation, json!({"phase": "starting", "text": text})));
+        let current = || app.state::<Shell>().startup.current(generation);
+        if !current() { return; }
         let s = load_settings(&app);
         let res = Res::locate(&app);
         if let Some(saved) = &s.workspace {
             if let Err(error) = workspace_settings::check_saved(Path::new(saved)) {
-                workspace_recovery_screen(&app, saved, &error);
+                workspace_recovery_screen(&app, generation, saved, &error);
                 return;
             }
         }
-        let Some(chosen) = choose(&app, &res, &s, &current) else {
+        let Some(chosen) = choose(&app, &res, &s, generation) else {
             return;
         };
         if !current() {
@@ -1070,44 +1116,40 @@ fn start(app: AppHandle) {
         // Runtime selection/update may take minutes; the saved drive can disappear meanwhile.
         if let Some(saved) = &s.workspace {
             if let Err(error) = workspace_settings::check_saved(Path::new(saved)) {
-                workspace_recovery_screen(&app, saved, &error);
+                workspace_recovery_screen(&app, generation, saved, &error);
                 return;
             }
         }
         let ws = workspace(&app, &s, &res);
         match seed::seed(&ws, &res) {
             Ok(done) if !done.is_empty() => {
-                splash(
+                startup_splash(
                     &app,
+                    generation,
                     json!({"phase": "starting", "text": "Preparing your workspace…", "workspace": ws.root}),
                 );
             }
             Ok(_) => {}
             Err(e) => {
-                workspace_recovery_screen(&app, &ws.root.display().to_string(), &e);
+                workspace_recovery_screen(&app, generation, &ws.root.display().to_string(), &e);
                 return;
             }
         }
+        // Narrow worker-only handoff: no runtime selection, seeding or UI work is under it.
+        // Select the port and open the log only after rejecting a stale worker, so it cannot
+        // truncate the current server's log while being rejected at publication.
+        let shell = app.state::<Shell>();
+        let handoff = shell.startup.handoff();
+        if !current() { return; }
         let port = if cfg!(debug_assertions) {
             std::env::var("FAIRBEAM_API_PORT")
                 .ok()
                 .and_then(|p| p.parse().ok())
                 .unwrap_or(5325)
         } else {
-            let mut s = load_settings(&app);
-            let port = server::stable_port(s.server_port).unwrap_or(5320);
-            if s.server_port != Some(port) {
-                s.server_port = Some(port);
-                let _ = save_settings(&app, &s);
-            }
-            port
+            server::stable_port(load_settings(&app).server_port).unwrap_or(5320)
         };
         let log = logs_dir(&app).join("server.log");
-        splash(
-            &app,
-            json!({"phase": "starting", "text": "Starting the Fairbeam server…", "python": chosen.python,
-            "openems": chosen.openems, "gpu": chosen.gpu, "port": port, "log": log, "workspace": ws.root, "note": chosen.note}),
-        );
 
         let mut cmd = Command::new(&chosen.python);
         cmd.args([
@@ -1148,14 +1190,28 @@ fn start(app: AppHandle) {
         let srv = match Server::spawn(cmd, port) {
             Ok(s) => s,
             Err(e) => {
-                splash(
+                drop(handoff);
+                startup_splash(
                     &app,
+                    generation,
                     json!({"phase": "error", "text": "Could not start the server.", "detail": e.to_string(), "log": log}),
                 );
                 return;
             }
         };
-        *app.state::<Shell>().server.lock().unwrap() = Some(srv);
+        if let Err(abandoned) = shell.startup.publish(generation, srv) {
+            // Still under handoff, but outside state: finish our child's shutdown before the
+            // next worker can spawn into the same jobs directory. Never stop the shared slot.
+            abandoned.stop();
+            return;
+        }
+        drop(handoff);
+        startup_splash(
+            &app,
+            generation,
+            json!({"phase": "starting", "text": "Starting the Fairbeam server…", "python": chosen.python,
+            "openems": chosen.openems, "gpu": chosen.gpu, "port": port, "log": log, "workspace": ws.root, "note": chosen.note}),
+        );
 
         let started = Instant::now();
         let deadline = started + Duration::from_secs(90);
@@ -1164,22 +1220,23 @@ fn start(app: AppHandle) {
                 return;
             }
             if http_ok(port, "/api/health") {
-                *app.state::<Shell>().active_workspace.lock().unwrap() = Some(ws.root.clone());
                 let using_gpu_runtime = chosen.gpu
                     && chosen.runtime.as_ref().is_some_and(|root| {
                         paths::canonical(root) == paths::canonical(&gpu_runtime_root(&app))
                     });
-                *app.state::<Shell>().active_gpu_runtime.lock().unwrap() = using_gpu_runtime;
+                if !shell.startup.mark_ready(generation, startup::Ready {
+                    workspace: ws.root.clone(), gpu_runtime: using_gpu_runtime,
+                }) { return; }
                 break;
             }
             let exited = {
-                let shell = app.state::<Shell>();
-                let mut guard = shell.server.lock().unwrap();
-                guard.as_mut().map(|s| s.exited()).unwrap_or(true)
+                let Some(exited) = shell.startup.inspect_current(generation, Server::exited) else { return; };
+                exited
             };
             if exited || Instant::now() > deadline {
-                splash(
+                startup_splash(
                     &app,
+                    generation,
                     json!({"phase": "error",
                     "text": if exited { "The server stopped during start-up." } else { "The server did not answer within 90 s." },
                     "detail": tail(&log, 14), "log": log, "python": chosen.python}),
@@ -1197,8 +1254,9 @@ fn start(app: AppHandle) {
 
         let target = match dev_url() {
             Some(url) => {
-                splash(
+                startup_splash(
                     &app,
+                    generation,
                     json!({"phase": "starting", "text": format!("Waiting for the Vite dev server at {url}…"), "port": port}),
                 );
                 let dev_port = Url::parse(&url).ok().and_then(|u| u.port()).unwrap_or(5315);
@@ -1209,14 +1267,20 @@ fn start(app: AppHandle) {
             }
             None => format!("http://127.0.0.1:{port}/"),
         };
-        splash(
-            &app,
-            json!({"phase": "ready", "text": "Opening Fairbeam…", "port": port}),
-        );
-        if let (Some(win), Ok(url)) = (app.get_webview_window("main"), Url::parse(&target)) {
-            let _ = win.navigate(url);
-        }
-        updater::check_later(app.clone());
+        startup_ui(&app, generation, move |app| {
+            if !cfg!(debug_assertions) {
+                let mut settings = load_settings(app);
+                if settings.server_port != Some(port) {
+                    settings.server_port = Some(port);
+                    let _ = save_settings(app, &settings);
+                }
+            }
+            splash(app, json!({"phase": "ready", "text": "Opening Fairbeam…", "port": port}));
+            if let (Some(win), Ok(url)) = (app.get_webview_window("main"), Url::parse(&target)) {
+                let _ = win.navigate(url);
+            }
+            updater::check_later(app.clone());
+        });
     });
 }
 
@@ -1231,13 +1295,13 @@ fn retry(app: AppHandle) {
 }
 
 /// Install (or repair) the managed runtime, then start with it.
-fn runtime_progress(app: &AppHandle, text: &str, log: &Path, progress: Value, updating: bool) {
-    splash(app, json!({"phase":"installing", "text":text, "updating":updating,
+fn runtime_progress(app: &AppHandle, generation: u64, text: &str, log: &Path, progress: Value, updating: bool) {
+    startup_splash(app, generation, json!({"phase":"installing", "text":text, "updating":updating,
         "step":progress["step"], "fraction":progress["fraction"], "message":progress["message"], "log":log}));
 }
 
-fn workspace_recovery_screen(app: &AppHandle, path: &str, error: &str) {
-    splash(app, json!({"phase":"workspace", "text":"The saved workspace is unavailable.",
+fn workspace_recovery_screen(app: &AppHandle, generation: u64, path: &str, error: &str) {
+    startup_splash(app, generation, json!({"phase":"workspace", "text":"The saved workspace is unavailable.",
         "workspace":path, "detail":error, "settings":settings_path(app)}));
 }
 
@@ -1253,36 +1317,56 @@ fn use_default_workspace(app: AppHandle) -> Result<(), String> {
 
 #[tauri::command]
 fn install_runtime(app: AppHandle, repair: bool) {
-    {
-        let shell = app.state::<Shell>();
+    schedule_install(app, repair, None);
+}
+
+fn schedule_install(app: AppHandle, repair: bool, automatic: Option<u64>) {
+    let handle = app.clone();
+    let _ = app.run_on_main_thread(move || {
+        let shell = handle.state::<Shell>();
         let mut busy = shell.installing.lock().unwrap();
         let gpu_busy = shell.gpu_installing.lock().unwrap();
         if *busy || *gpu_busy {
             return;
         }
+        let accepted = match automatic {
+            Some(generation) => shell.startup.begin_auto_install(generation),
+            None => shell.startup.begin(None),
+        };
+        let Some(generation) = accepted else { return; };
         *busy = true;
-    }
-    // no start thread may report over the installer's progress
-    *app.state::<Shell>().generation.lock().unwrap() += 1;
+        drop(gpu_busy);
+        drop(busy);
+        drop(shell);
+        install_worker(handle, repair, generation);
+    });
+}
+
+fn install_worker(app: AppHandle, repair: bool, generation: u64) {
     thread::spawn(move || {
-        stop_server(&app);
+        if !stop_for_start(&app, generation) {
+            *app.state::<Shell>().installing.lock().unwrap() = false;
+            return;
+        }
         let res = Res::locate(&app);
         let rt = runtime_root(&app);
         if let Err(error) = runtime::install_available(&res) {
             *app.state::<Shell>().installing.lock().unwrap() = false;
-            setup_screen(&app, &res, &load_settings(&app), "The runtime could not be installed.", error, vec![], true);
+            setup_screen(&app, generation, &res, &load_settings(&app), "The runtime could not be installed.", error, vec![], true);
             return;
         }
         let log = logs_dir(&app).join(format!("runtime-{}.log", stamp()));
-        splash(
+        startup_splash(
             &app,
+            generation,
             json!({"phase": "installing", "step": "start", "text": "Installing the Fairbeam runtime…", "runtime": rt, "log": log}),
         );
         let progress_app = app.clone();
         let progress_log = log.clone();
         let result = runtime::install(&rt, &res, repair, false, &log, &move |p: Value| {
-            splash(
+            startup_splash(
                 &progress_app,
+                generation,
                 json!({"phase": "installing", "text": "Installing the Fairbeam runtime…",
                 "step": p["step"], "fraction": p["fraction"], "message": p["message"], "log": progress_log}),
             );
@@ -1290,15 +1374,18 @@ fn install_runtime(app: AppHandle, repair: bool) {
         *app.state::<Shell>().installing.lock().unwrap() = false;
         match result {
             Ok(()) => {
-                let mut s = load_settings(&app);
-                s.runtime = Some("managed".into());
-                s.python = None;
-                let _ = save_settings(&app, &s);
-                start(app);
+                startup_ui(&app, generation, move |app| {
+                    let mut s = load_settings(app);
+                    s.runtime = Some("managed".into());
+                    s.python = None;
+                    let _ = save_settings(app, &s);
+                    schedule_start(app.clone(), Some(generation));
+                });
             }
             Err(e) => {
-                splash(
+                startup_splash(
                     &app,
+                    generation,
                     json!({"phase": "error", "text": "The runtime could not be installed.", "detail": e,
                     "log": log, "installFailed": true, "canRepair": runtime::install_available(&res).is_ok()}),
                 );
@@ -1390,12 +1477,7 @@ async fn get_general_settings(app: AppHandle) -> Value {
     let s = load_settings(&app);
     let res = Res::locate(&app);
     let next_workspace = workspace(&app, &s, &res).root;
-    let current_workspace = app
-        .state::<Shell>()
-        .active_workspace
-        .lock()
-        .unwrap()
-        .clone();
+    let current_workspace = app.state::<Shell>().startup.ready().map(|ready| ready.workspace);
     let workspace_pending = current_workspace
         .as_ref()
         .is_some_and(|path| paths::canonical(path) != paths::canonical(&next_workspace));
@@ -1498,7 +1580,7 @@ async fn install_gpu_runtime(app: AppHandle) -> Result<(), Value> {
         if *cpu_installing {
             return Err(json!({"code":"runtime_installing"}));
         }
-        if *shell.active_gpu_runtime.lock().unwrap() {
+        if shell.startup.ready().is_some_and(|ready| ready.gpu_runtime) {
             return Err(json!({"code":"gpu_runtime_in_use_until_exit"}));
         }
         let mut installing = shell.gpu_installing.lock().unwrap();
@@ -1647,12 +1729,7 @@ fn set_language(app: AppHandle, lang: String) -> Result<(), String> {
 #[tauri::command]
 fn open_workspace(app: AppHandle) -> Result<(), String> {
     let s = load_settings(&app);
-    let dir = app
-        .state::<Shell>()
-        .active_workspace
-        .lock()
-        .unwrap()
-        .clone()
+    let dir = app.state::<Shell>().startup.ready().map(|ready| ready.workspace)
         .unwrap_or_else(|| workspace(&app, &s, &Res::locate(&app)).root);
     fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     open_directory(&dir)
@@ -1673,12 +1750,7 @@ fn remember_recent_design(app: AppHandle, id: String, title: Option<String>) -> 
         return Err("Invalid design id".into());
     }
     let mut settings = load_settings(&app);
-    let current = app
-        .state::<Shell>()
-        .active_workspace
-        .lock()
-        .unwrap()
-        .clone();
+    let current = app.state::<Shell>().startup.ready().map(|ready| ready.workspace);
     let next = workspace(&app, &settings, &Res::locate(&app)).root;
     if current
         .as_ref()
@@ -2285,7 +2357,7 @@ fn main() {
             native_document::queue_open_paths(handle, urls.iter().filter_map(|url| url.to_file_path().ok()));
         }
         if let RunEvent::Exit = event {
-            stop_server(handle);
+            shutdown_server(handle);
         }
     });
 }
