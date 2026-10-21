@@ -190,6 +190,59 @@ editing them, or the prefill stops working.
 One entry per release, newest first. The installers are on the
 [release page](https://github.com/ismailakdag/fairbeam-releases/releases) of each version.
 
+### 0.8.4, 2026-10-21 (unreleased)
+
+Release preparation is in progress. This entry does not announce available installers or an update.
+
+- Close and Quit ask before canceling running or queued simulations, including other models,
+  sweeps, optimization and research runs. An unavailable run server also prompts. In 0.8.3,
+  run cancellation was never mentioned, even when an unsaved-work question appeared.
+  macOS Dock Quit and logout/restart requests now share the simulation, draft and pending-Save
+  decisions. The first failed close-handler reply cancels the current decision; the next
+  explicit request probes again. Update consent does not use the repeated-script-error exit fallback.
+- Preserve design and result ownership across Save, Save As, model switches and failed previews.
+  Missing-workspace recovery offers retry, the default workspace or another folder. A missing
+  saved custom workspace is not silently recreated; the default workspace and missing
+  subfolders can still be seeded. Damaged runtimes offer Repair.
+- Keep native New/Open and Start/Design/Examples/Open Recent commands behind the active modal.
+  Improve initial Simulation settings focus, retain Results with a minimized ribbon, and keep
+  keyboard focus on Compare checkboxes across result refreshes. Update macOS menu conventions
+  and application metadata.
+- Improve English and Turkish feedback for files, queues, exports and inputs. Reference-data
+  drops belong to the visible Results/Examples comparison. Recognized macro drops (`.bas`,
+  `.mcs`, macro-like `.txt`) and PCB drops (`.dxf`, `.gbr`, `.gerber`, `.drl`) point to their
+  import tools; other unsupported types show an error. Measurement text is parsed before
+  macro classification in Results.
+- Show endpoint contact feedback and touching-primitive highlights. R/L/C elements distinguish
+  contact, no contact and undetermined geometry; discrete ports show red rings only for no
+  contact. These placement aids do not establish final mesh connectivity.
+- Correct figure-export numbers, notes and dash patterns, preserving wrapped legends and raw
+  names. Toolbar CSV downloads now include a UTF-8 BOM for headers such as Ω and ∠; package
+  and clipboard data stay BOM-free. Scripts reading toolbar CSVs can use `utf-8-sig` to remove
+  the BOM. Decimal values are preserved.
+- Keep dimensions and reports consistent across mm, cm and m models. Preserve completed
+  convergence outcomes when Stop races with completion, prevent the next density from starting
+  after Stop, and keep integer sweep values consistent with preview.
+- Reduce result-history transfers during list polling while retaining selected-result details.
+  Preserve completed-run provenance during a long Save, and improve server ownership when
+  startup requests overlap.
+- Move optional GPU installation from startup to Settings, with progress and failure details.
+  Runtime updates show step progress; bundled macOS runtime installation checks its minimum
+  system version and offers an existing openEMS Python installation on older systems.
+- Update English and Turkish workflow help, including the published Elmer guides. Add citation
+  metadata and source-archive guidance, five opt-in research comparison fixtures, and more
+  complete browser-failure diagnostics. These changes make no new solver-accuracy claims.
+
+Known limitations: Blender renders are not included in the simulation exit check and are canceled
+on quit without a render warning ([#314](https://github.com/ismailakdag/fairbeam/issues/314)). The
+Windows bootstrap investigation [#251](https://github.com/ismailakdag/fairbeam/issues/251), the
+macOS/Unix exit-during-spawn timing window and the native validation omissions remain documented
+in the [review record](release-notes/0.8.4-draft.md). Elmer and coax remain experimental.
+
+Pending merge: the singular English run-warning text and restored Windows/Linux File/View
+shortcut hints are validated in `5cfde1830b3c6d4a03a9d1cdaf2ce1f0cadd09ad` but are not yet included
+on main. Replace this marker only after that merge is verified.
+
 ### 0.8.3, 2026-10-19
 
 - Fix the desktop permission error when choosing to remove a portable `.fb` document and
