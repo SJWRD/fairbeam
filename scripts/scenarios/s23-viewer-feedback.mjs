@@ -33,6 +33,24 @@ export default {
       await s.click('header.screen.start',{sel:'.mode-switch button'});await s.wait('.home');
       await s.fill('.home-design-search input','igdir');assert.ok(await s.page.$(`[data-home-design="${b}"]`));await s.fill('.home-design-search input','');
     });
+    await s.step('file drop hint clears on leaving a child and stays during internal transitions',async()=>{
+      const result=await s.page.evaluate(()=>{
+        const child=document.querySelector('.home');
+        const data=new DataTransfer();data.items.add(new File(['unsupported'],'photo.png'));
+        const fire=(target,type,relatedTarget=null)=>target.dispatchEvent(new DragEvent(type,{bubbles:true,cancelable:true,dataTransfer:data,relatedTarget}));
+        const shown=()=>!!document.querySelector('.drop-hint');
+        fire(child,'dragover');const entered=shown();
+        fire(child,'dragleave',document.querySelector('.drop-hint'));const internal=shown();
+        fire(document.querySelector('.drop-hint'),'dragleave');const left=shown();
+        fire(child,'dragover');const reentered=shown();
+        fire(child,'dragleave',document.body);const outside=shown();
+        fire(child,'dragover');fire(document.querySelector('.drop-hint'),'drop');const dropped=shown();
+        return {entered,internal,left,reentered,outside,dropped};
+      });
+      assert.deepEqual(result,{entered:true,internal:true,left:false,reentered:true,outside:false,dropped:false});
+      await s.wait('[data-toast-key="file-drop"]',await s.T('app.dropUnsupported',{name:'photo.png'}));
+      await clearToasts();
+    });
     await s.step('drops on Start explain unsupported files and hidden reference context',async()=>{
       for(const [name,key] of [['macro.bas','app.dropCst'],['board.dxf','app.dropPcb'],['photo.png','app.dropUnsupported'],['ref.s1p','app.dropReferenceContext']]) {
         await clearToasts();await drop(name,'bad data');await s.wait('[data-toast-key="file-drop"]',await s.T(key,{name}));

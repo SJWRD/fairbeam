@@ -14,6 +14,11 @@ const carriesLink = (dt: DataTransfer | null | undefined): boolean =>
 const editable = (t: EventTarget | null): boolean =>
   typeof Element !== "undefined" && t instanceof Element && !!t.closest("input, textarea, [contenteditable]:not([contenteditable=false])");
 
+/** Leave events bubble from children too, including the drop hint itself. Only keep the hint
+ * when the next target is still inside this drop zone; a null target means the drag left it. */
+export const leftDropZone = (e: DragEvent): boolean =>
+  !(e.currentTarget instanceof Node && e.relatedTarget instanceof Node && e.currentTarget.contains(e.relatedTarget));
+
 export function fileDropHandlers(setDragging: (on: boolean) => void, open: (f: File) => void) {
   return {
     onDragOver: (e: DragEvent) => {
@@ -24,7 +29,7 @@ export function fileDropHandlers(setDragging: (on: boolean) => void, open: (f: F
         e.preventDefault(); // accept it, only so that the drop below can cancel the navigation
       }
     },
-    onDragLeave: (e: DragEvent) => { if (e.currentTarget === e.target) setDragging(false); },
+    onDragLeave: (e: DragEvent) => { if (leftDropZone(e)) setDragging(false); },
     onDrop: (e: DragEvent) => {
       setDragging(false);
       if (carriesFiles(e.dataTransfer)) {
