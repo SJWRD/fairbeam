@@ -102,11 +102,15 @@ export function createDesignerSession(effects: DesignerSessionEffects = {}) {
 
     /** The draft as JSON, once per change: the dirty flag and the local backup both follow it. */
     const draftText = createMemo(() => (loaded() ? JSON.stringify(draft) : ""));
+    const savedDesignText = createMemo(() => {
+      const design = file()?.design;
+      return design ? JSON.stringify(withElementSymbols(design)) : "";
+    });
 
     const dirty = createMemo(() => {
       const f = file();
       // track the whole draft: any nested edit re-evaluates
-      return !!f && loaded() && (persistencePending() || resultsPending() || draftText() !== JSON.stringify(f.design));
+      return !!f && loaded() && (persistencePending() || resultsPending() || draftText() !== savedDesignText());
     });
 
     let lastKey = "";
@@ -360,10 +364,10 @@ export function createDesignerSession(effects: DesignerSessionEffects = {}) {
     }
     function takeFile(next: DesignFile) {
       if (disposed) return;
-      next = { ...next, design: withElementSymbols(next.design) };
       documentChangeObserver?.();
       if (disposed) return;
       const previous = file();
+      const design = withElementSymbols(next.design);
       forgetSaveNote();
       asyncState.replaceDocument();
       batch(() => {
@@ -372,8 +376,8 @@ export function createDesignerSession(effects: DesignerSessionEffects = {}) {
         setPendingResultsToken("[]");
         // Keep JSON key order independent when replacing a different document.
         if (previous?.id !== next.id) setDraft(reconcile({} as Design));
-        setDraft(reconcile(structuredClone(next.design)));
-        resetHistory(next.design);
+        setDraft(reconcile(design));
+        resetHistory(design);
         setServerErrors({}); setServerChecks([]); setChecksTicket(null);
         setConflict(null); setSelection({ type: "design" }); setSaving(false);
       });
@@ -381,7 +385,7 @@ export function createDesignerSession(effects: DesignerSessionEffects = {}) {
     function restoreBackup(design: Design, at: number) {
       if (disposed || !file()) return;
       design = withElementSymbols(design);
-      setUndoStack([JSON.stringify(file()!.design)]);
+      setUndoStack([savedDesignText()]);
       setDraft(reconcile(structuredClone(design)));
       history.push({ text: JSON.stringify(design), label: "Restored backup", at, target: "design" });
       historyPosition = 1; notifyHistory();
