@@ -142,7 +142,7 @@ process.once('message', async () => {
 `);
   const actualChannel = channel('child_process'), baseline = actualChannel.hasSubscribers;
   for (const outcome of ['success', 'failure', 'abnormal-fixture']) {
-    const directory = join(root, `owned-child-${outcome}`), children = [], normalOutput = [];
+    const directory = join(root, `owned-child-${outcome}`), children = [], normalOutput = new Map();
     const options = { executablePath: process.execPath, headless: true, args: [], marker: {} };
     const browser = {}, original = new Error('owned child controlled launch failure');
     let launches = 0, cleanupErrors = 0;
@@ -154,12 +154,15 @@ process.once('message', async () => {
         for (const kind of ['other', 'owned']) {
           const child = spawn(process.execPath, [script, kind], { stdio: ['ignore', 'pipe', 'pipe', 'ipc'] });
           children.push(child);
-          const consume = chunk => normalOutput.push(chunk.toString('utf8'));
+          const output = { stdout: [], stderr: [] };
+          normalOutput.set(child, output); // Chunk order is defined per child/pipe, not across processes or pipes.
+          const consumeStdout = chunk => output.stdout.push(chunk.toString('utf8'));
+          const consumeStderr = chunk => output.stderr.push(chunk.toString('utf8'));
           const onError = error => childErrors.push(error);
           // These are the fixture's normal consumers and error handling, not observer listeners.
-          child.stdout.on('data', consume); child.stderr.on('data', consume); child.once('error', onError);
+          child.stdout.on('data', consumeStdout); child.stderr.on('data', consumeStderr); child.once('error', onError);
           completion.push(new Promise(resolve => child.once('close', code => {
-            child.removeListener('error', onError); child.stdout.removeListener('data', consume); child.stderr.removeListener('data', consume);
+            child.removeListener('error', onError); child.stdout.removeListener('data', consumeStdout); child.stderr.removeListener('data', consumeStderr);
             resolve(code);
           })));
           if (kind === 'owned') {
@@ -202,9 +205,10 @@ process.once('message', async () => {
     assert(record.browserOutput.records.some(entry => entry.text === 'safe stderr'));
     assert.deepEqual(record.browserOutput.childEvents.map(event => event.event), ['exit', 'close']);
     assert.doesNotMatch(JSON.stringify(record.browserOutput), /unrelated-real-secret|real-split-secret|private-id|private-path|query-secret|partial-real-secret|DevTools/);
-    assert.match(normalOutput.join(''), /unrelated-real-secret/);
-    assert.match(normalOutput.join(''), /token=real-split-secret/);
-    assert.match(normalOutput.join(''), /DevTools listening on ws:\/\/host\/private-id/);
+    assert.match(normalOutput.get(children[0]).stdout.join(''), /unrelated-real-secret/);
+    assert.match(normalOutput.get(children[1]).stdout.join(''), /token=real-split-secret/);
+    assert.match(normalOutput.get(children[1]).stdout.join(''), /DevTools listening on ws:\/\/host\/private-id/);
+    assert.match(normalOutput.get(children[1]).stderr.join(''), /safe stderr/);
   }
 }
 
