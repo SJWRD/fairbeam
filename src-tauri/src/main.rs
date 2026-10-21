@@ -77,6 +77,8 @@ struct Shell {
     gpu_progress: Mutex<Value>,
     /// a close or quit waiting for the viewer's decision
     leaving: Mutex<Option<LeaveRequest>>,
+    /// A recent broken-handler reply; it never reserves the viewer or skips a fresh probe.
+    script_error: Mutex<ScriptErrorMarker>,
     /// numbers the close/quit requests (the viewer ignores a decision made for an older one)
     leave_seq: Mutex<u64>,
     /// where each running download was asked to go, by URL (WKWebView's "finished" has no path)
@@ -98,12 +100,34 @@ enum Leave {
 struct LeaveRequest {
     id: u64,
     leave: Leave,
-    /// a hung callback or broken close handler: the next explicit request leaves without asking
+    /// a live but hung callback: the next explicit request leaves without asking
     silent: bool,
     /// Updates obtain consent without destroying the window or exiting the process.
     update_reply: Option<mpsc::Sender<bool>>,
     /// Final consent reserves the shell until installation finishes or fails.
     approved: bool,
+}
+
+#[derive(Default)]
+struct ScriptErrorMarker {
+    at: Option<Instant>,
+}
+
+impl ScriptErrorMarker {
+    /// Consume the previous failure once. An expired error starts a new window, not an exit.
+    fn failed(&mut self, now: Instant) -> bool {
+        if self.at.take().and_then(|previous| now.checked_duration_since(previous))
+            .is_some_and(|elapsed| elapsed <= Duration::from_secs(60))
+        {
+            return true;
+        }
+        self.at = Some(now);
+        false
+    }
+
+    fn clear(&mut self) {
+        self.at = None;
+    }
 }
 
 impl LeaveRequest {
@@ -201,7 +225,12 @@ fn ask_viewer(app: AppHandle, id: u64) {
             return;
         }
         match leave_reply::wait(rx, leave == Leave::Update, &set_silent) {
-            leave_reply::Reply::Pending => thread::sleep(Duration::from_millis(150)),
+            leave_reply::Reply::Pending => {
+                // A recovered handler owns an unsaved-work/run question again. A later script
+                // error in that question must not inherit an earlier escape opportunity.
+                clear_script_error(&app, id);
+                thread::sleep(Duration::from_millis(150));
+            }
             leave_reply::Reply::Cancel => {
                 // A terminal callback failure must also settle a pending AppKit termination.
                 // finish_leave checks ownership before clearing the request or replying NO.
@@ -229,25 +258,39 @@ fn leave_script(leave: Leave, id: u64) -> String {
     format!("typeof window.fairbeamWindowClose === 'function' ? window.fairbeamWindowClose('{kind}', {id}) : '{missing}'")
 }
 
-/// A broken handler cannot consent, but must not trap every subsequent explicit Quit/Close.
-/// Settle AppKit's current decision and retain the escape hatch in one main-thread callback:
-/// publishing the latch on the worker before a queued NO could let a second Quit race that NO.
+fn clear_script_error(app: &AppHandle, id: u64) {
+    let shell = app.state::<Shell>();
+    let guard = shell.leaving.lock().unwrap();
+    if guard.as_ref().is_some_and(|req| req.id == id) {
+        shell.script_error.lock().unwrap().clear();
+    }
+}
+
+/// A broken handler cannot consent. Clear the request and settle AppKit in one main-thread
+/// callback so a new explicit request always re-probes after NO. Only a second recent error,
+/// without an intervening valid answer, may use the ordinary exit path.
 fn script_failed_leave(app: &AppHandle, id: u64) {
     let handle = app.clone();
     if let Err(error) = app.run_on_main_thread(move || {
-        {
+        let leave = {
             let shell = handle.state::<Shell>();
             let mut guard = shell.leaving.lock().unwrap();
-            let Some(req) = guard.as_mut().filter(|req| req.id == id) else { return; };
+            if guard.as_ref().map(|req| req.id) != Some(id) { return; }
+            let mut req = guard.take().unwrap();
             if req.leave == Leave::Update {
+                shell.script_error.lock().unwrap().clear();
                 req.answer_update(false);
-                guard.take();
                 return;
             }
-            req.silent = true;
+            let repeated = shell.script_error.lock().unwrap().failed(Instant::now());
+            repeated.then_some(req.leave)
+        };
+        if let Some(leave) = leave {
+            leave_now(&handle, leave);
+        } else {
+            #[cfg(target_os = "macos")]
+            macos_quit::reply(&handle, false);
         }
-        #[cfg(target_os = "macos")]
-        macos_quit::reply(&handle, false);
     }) {
         shelllog::write(app, &format!("Could not settle the failed close handler: {error}"));
     }
@@ -261,6 +304,7 @@ fn finish_leave(app: &AppHandle, id: u64, leave: bool) {
         if guard.as_ref().map(|r| r.id) != Some(id) {
             return;
         }
+        shell.script_error.lock().unwrap().clear();
         if let Some(req) = guard.as_mut().filter(|r| r.leave == Leave::Update) {
             req.answer_update(leave);
             if !leave {
@@ -336,6 +380,53 @@ pub(crate) fn approve_update(app: AppHandle) -> Option<UpdatePermit> {
 fn update_committing(app: &AppHandle) -> bool {
     app.state::<Shell>().leaving.lock().unwrap().as_ref()
         .is_some_and(|r| r.leave == Leave::Update && r.approved)
+}
+
+#[cfg(test)]
+mod script_error_tests {
+    use super::ScriptErrorMarker;
+    use std::time::{Duration, Instant};
+
+    #[test]
+    fn recent_second_error_is_one_shot() {
+        let mut marker = ScriptErrorMarker::default();
+        let now = Instant::now();
+        assert!(!marker.failed(now));
+        assert!(marker.failed(now + Duration::from_secs(59)));
+        assert!(marker.at.is_none(), "the repeat consumes the marker");
+        assert!(!marker.failed(now + Duration::from_secs(60)));
+    }
+
+    #[test]
+    fn exact_window_boundary_is_recent_but_expired_error_only_rearms() {
+        let now = Instant::now();
+        let mut boundary = ScriptErrorMarker::default();
+        assert!(!boundary.failed(now));
+        assert!(boundary.failed(now + Duration::from_secs(60)));
+
+        let mut expired = ScriptErrorMarker::default();
+        assert!(!expired.failed(now));
+        let later = now + Duration::from_secs(60) + Duration::from_nanos(1);
+        assert!(!expired.failed(later));
+        assert_eq!(expired.at, Some(later));
+    }
+
+    #[test]
+    fn valid_answer_clears_the_previous_error() {
+        let now = Instant::now();
+        let mut marker = ScriptErrorMarker::default();
+        assert!(!marker.failed(now));
+        marker.clear();
+        assert!(!marker.failed(now + Duration::from_secs(1)));
+    }
+
+    #[test]
+    fn a_future_timestamp_cannot_grant_exit_or_panic() {
+        let now = Instant::now();
+        let mut marker = ScriptErrorMarker { at: Some(now + Duration::from_secs(1)) };
+        assert!(!marker.failed(now));
+        assert_eq!(marker.at, Some(now));
+    }
 }
 
 #[cfg(test)]
