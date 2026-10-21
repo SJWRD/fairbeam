@@ -253,7 +253,7 @@ class SteppedFilterTests(unittest.TestCase):
     def test_launch_pair_changes_only_the_active_source_position(self):
         for port in (1, 2):
             canonical = []
-            for control, distance in zip(f.DIAGNOSTIC_CONTROLS, (12., 24.)):
+            for control, distance in (('launch-box', 12.), ('launch', 24.)):
                 holder = f.build(1, port, kind='through', control=control)
                 sim, meta = holder[0], holder[2]
                 with tempfile.TemporaryDirectory() as tmp:
@@ -270,7 +270,42 @@ class SteppedFilterTests(unittest.TestCase):
                 self.assertEqual(meta['source_distance_mm'], distance)
             self.assertEqual(canonical[0], canonical[1])
         self.assertEqual(len(configurations()), 20)
-        self.assertEqual(len(configurations(include_diagnostics=True)), 22)
+        self.assertEqual(len(configurations(include_diagnostics=True)), 23)
+
+    def test_longitudinal_shoulders_use_the_exposed_union_boundary(self):
+        d = f.dimensions()
+        widths = [d['feed_width_mm'], *[s['width'] for s in d['sections']], d['feed_width_mm']]
+        for n in f.MESHES:
+            aligned = f.mesh_lines(n, 'launch')
+            corrected = f.mesh_lines(n, 'launch-edges')
+            np.testing.assert_array_equal(aligned[1], corrected[1])
+            np.testing.assert_array_equal(aligned[2], corrected[2])
+            np.testing.assert_array_equal(aligned[0][[8, -9]], corrected[0][[8, -9]])
+            x = corrected[0]
+            for edge, left, right in zip(d['junctions_mm'], widths[:-1], widths[1:]):
+                self.assertFalse(np.isclose(x, edge, rtol=0, atol=1e-12).any())
+                j = np.searchsorted(x, edge)
+                fraction = (edge-x[j-1])/(x[j]-x[j-1])
+                self.assertAlmostEqual(fraction, 2/3 if right > left else 1/3, places=11)
+
+    def test_edge_control_preserves_physical_geometry_source_and_clock(self):
+        for n in f.MESHES:
+            for port in (1, 2):
+                canonical = []; metadata = []
+                for control in ('launch', 'launch-edges'):
+                    holder = f.build(n, port, control=control); metadata.append(holder[2])
+                    with tempfile.TemporaryDirectory() as tmp:
+                        path = Path(tmp)/'input.xml'; holder[0].fdtd.Write2XML(str(path))
+                        root = ET.parse(path).getroot()
+                        grid = root.find('.//RectilinearGrid/XLines')
+                        self.assertIsNotNone(grid)
+                        grid.clear(); grid.text = 'LONGITUDINAL-MESH'
+                        canonical.append(ET.tostring(root))
+                self.assertEqual(canonical[0], canonical[1])
+                np.testing.assert_allclose(metadata[0]['declared_dt_s'],
+                    metadata[1]['declared_dt_s'], rtol=1e-14, atol=0)
+                self.assertEqual(metadata[0]['source_distance_mm'], 24.)
+                self.assertEqual(metadata[1]['source_distance_mm'], 24.)
 
     def test_geometry_and_loss_are_explicit_and_bundles_refused(self):
         for kind in f.KINDS:

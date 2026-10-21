@@ -31,7 +31,7 @@ TAN_D, SIGMA, COPPER_MM = .02, 5.8e7, .0127
 FREQUENCIES = np.linspace(.5e9, 5e9, 451)
 MESHES, KINDS, LOSSES = (1, 2, 3), ('through', 'filter'), ('pec', 'dielectric')
 STUDY_CONTROLS = ('time', 'dt', 'boundary', 'plane')
-DIAGNOSTIC_CONTROLS = ('launch-box', 'launch')
+DIAGNOSTIC_CONTROLS = ('launch-box', 'launch', 'launch-edges')
 CONTROLS = ('ordinary', *STUDY_CONTROLS, *DIAGNOSTIC_CONTROLS)
 CAP_S, END_DB, THREADS, OVERSAMPLING = 8e-9, -80., 4, 4
 MARKER = 'FAIRBEAM-STEPPED-LOWPASS-PROPAGATION-BEGIN'
@@ -141,7 +141,17 @@ def mesh_lines(n, control='ordinary'):
     air = 18. if control == 'boundary' else 12.
     extended = control in DIAGNOSTIC_CONTROLS
     end = 30. if extended else 18.
-    xanchors = [-end, length+end, -12., length+12., *d['junctions_mm']]
+    xanchors = [-end, length+end, -12., length+12.]
+    if control == 'launch-edges':
+        # At each shoulder the wider strip is the exposed metal half-plane.
+        # Bracket its physical edge by 1/3 inside and 2/3 outside. Geometry
+        # stays fixed; do not bracket the hidden end of the narrower strip.
+        widths = [d['feed_width_mm'], *[s['width'] for s in d['sections']], d['feed_width_mm']]
+        for edge, left, right in zip(d['junctions_mm'], widths[:-1], widths[1:]):
+            inside = 1 if right > left else -1
+            xanchors.extend((edge+inside*dx/3, edge-inside*2*dx/3))
+    else:
+        xanchors.extend(d['junctions_mm'])
     if extended: xanchors.extend((-24., length+24.))
     for centre in (-9., -6., length+6., length+9.):
         xanchors.extend((centre-dx, centre, centre+dx))
@@ -189,7 +199,7 @@ def build(n, port, kind='filter', loss='pec', control='ordinary', cap_s=None):
     sim.dielectric('substrate', ER, tan_d=TAN_D if loss == 'dielectric' else 0.,
         tan_d_freq=FC).AddBox([x[0], y[0], 0.], [x[-1], y[-1], H], priority=1)
     feed = sim.metal('feed'); wf = d['feed_width_mm']; plane = 9. if control == 'plane' else 6.
-    ports = []; source_distance = 24. if control == 'launch' else 12.
+    ports = []; source_distance = 24. if control in ('launch', 'launch-edges') else 12.
     for number, start, stop, centre in ((1, x[0], 0., -plane), (2, x[-1], length, length+plane)):
         direction = 1 if number == 1 else -1
         ports.append(sim.fdtd.AddMSLPort(number, feed, [start, -wf/2, H], [stop, wf/2, 0.],
