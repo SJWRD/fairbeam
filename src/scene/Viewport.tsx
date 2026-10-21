@@ -529,7 +529,7 @@ export default function Viewport() {
       const radius = Math.max(box.getSize(new THREE.Vector3()).length() / 2, 0.01);
       const direction = camera.position.clone().sub(controls.target).normalize();
       if (!direction.lengthSq()) direction.copy(VIEW_DIRS.iso);
-      const dist = radius / Math.sin(THREE.MathUtils.degToRad(camera.fov) / 2) * 1.08 * Math.max(1, 1 / camera.aspect);
+      const dist = radius / Math.sin(THREE.MathUtils.degToRad(camera.fov) / 2) * 2.5 * Math.max(1, 1 / camera.aspect);
       camera.position.copy(center).addScaledVector(direction, dist);
       camera.near = dist / 500;
       camera.far = dist * 200;

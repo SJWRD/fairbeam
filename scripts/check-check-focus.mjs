@@ -51,8 +51,8 @@ assert.equal(events[0].detail.reason, 'check');
 store.focusPath('ports[0].start', { frame: true, focus: false });
 frames.shift()();
 assert.deepEqual(store.selection(), { type: 'port', i: 0 });
-// The camera shows the port with the conductor it touches (#92); the selection outline stays exact.
-assert.deepEqual(events[1].detail.bounds, [[0, 0, 0], [10, 20, 1]]);
+// A floating end must stay visible even when the other end touches a much larger conductor.
+assert.deepEqual(events[1].detail.bounds, [[2, 3, 0], [2, 3, 1]]);
 assert.deepEqual(store.selectionBounds({ type: 'port', i: 0 }), [[2, 3, 0], [2, 3, 1]]);
 store.setDraft('ports', 0, 'stop', [2, 3, 2]);
 assert.equal(frames.length, 0, 'editing after a check click must not move the camera again');
@@ -71,8 +71,7 @@ settings.openSimSettings('currents');
 assert.equal(settings.simSettingsSection(), 'currents', 'ribbon monitor actions retain their explicit entry point');
 settings.setSimSettingsOpen(false);
 
-// A probe feed between a ground plane and a patch frames the patch (the smallest metal it touches),
-// not the whole ground and not the dielectric; a feed touching no metal keeps its own box.
+// Check navigation frames the port itself; new-feed framing retains its conductor context.
 store.setDraft({
   ...design,
   materials: [{ name: 'copper', kind: 'metal' }, { name: 'fr4', kind: 'dielectric', epsilon: 4.3 }],
@@ -88,12 +87,20 @@ store.setDraft({
 });
 store.focusPath('ports[0].start', { frame: true, focus: false });
 frames.shift()();
-assert.deepEqual(events.at(-1).detail.bounds, [[-15, -12, 0], [15, 12, 1.6]], 'feed framed with its patch');
+assert.deepEqual(events.at(-1).detail.bounds, [[5, 0, 0], [5, 0, 1.6]], 'check frames the port rather than its patch');
+assert.deepEqual(store.frameBounds({ type: 'port', i: 0 }), [[-15, -12, 0], [15, 12, 1.6]], 'new-feed framing retains its patch context');
 assert.deepEqual(store.selectionBounds({ type: 'port', i: 0 }), [[5, 0, 0], [5, 0, 1.6]], 'exact port selection bounds');
 store.focusPath('ports[1].start', { frame: true, focus: false });
 frames.shift()();
 assert.deepEqual(events.at(-1).detail.bounds, [[60, 0, 5], [60, 0, 6]], 'no touching metal: the port alone');
 assert.equal(frames.length, 0, 'one frame request per check click');
+
+// Reproduce a disconnected probe: only its start touches the ground plane. Framing the touching
+// metal here used to show the entire model and make the floating stop too small to inspect.
+store.setDraft('ports', 0, 'stop', [5, 0, 1]);
+store.focusPath('ports[0].stop', { frame: true, focus: false });
+frames.shift()();
+assert.deepEqual(events.at(-1).detail.bounds, [[5, 0, 0], [5, 0, 1]], 'floating stop stays framed at port scale');
 
 // Source contract for the keyboard/screen-reader parts of #92 (the browser run checks behaviour):
 // each custom radio group takes the shared arrow keys and is one Tab stop (a roving tabindex on

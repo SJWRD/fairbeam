@@ -932,7 +932,9 @@ export function focusPath(path: string, options: { frame?: boolean; focus?: bool
   setSelection(s);
   if (options.frame) {
     setCenterView("3d");
-    const bounds = frameBounds(s);
+    // Checks must expose the port and its endpoints even when one end touches a large ground
+    // plane. Conductor context is useful when adding a feed, but hides the fault at this scale.
+    const bounds = s.type === "port" ? selectionBounds(s) : frameBounds(s);
     if (bounds) {
       if (!previewActive()) {
         const preview = quickBundle(unwrap(draft), names().names, draftPreview());
@@ -992,7 +994,7 @@ export function selectionBounds(s: Selection): import("../types").Part["bbox"] |
   return bounds?.flat().every(Number.isFinite) ? bounds : null;
 }
 
-/** Camera bounds for a check: the item itself, and for a port or resistor also the smallest metal
+/** Camera bounds with conductor context: the item itself, and for a port or resistor also the smallest metal
  * part it touches (the patch a probe feeds, not the ground plane), so the view shows where the feed
  * sits on its conductor. Only the camera uses this: the selection outline keeps selectionBounds. */
 export function frameBounds(s: Selection): import("../types").Part["bbox"] | null {
