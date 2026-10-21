@@ -112,9 +112,11 @@ ok(() => assert.match(src('src/runner/startPython.ts'), /await openRunPanel\(key
 // ------------------------------------------------------------------ file drops
 const PART_DRAG = src('src/designer/NavTree.tsx').match(/const PART_DRAG = "([^"]+)"/)[1];
 ok(() => assert.equal(PART_DRAG, 'application/x-fairbeam-part'));
+// The leave handler uses DOM containment; this Node-only check supplies its drop-zone node.
+globalThis.Node = class { contains(node) { return node === this; } };
 const event = (types, files = []) => {
   const e = { dataTransfer: { types, files }, prevented: false, preventDefault() { this.prevented = true; } };
-  e.currentTarget = e.target = {};
+  e.currentTarget = e.target = new Node();
   return e;
 };
 let dragging = false;
@@ -162,7 +164,8 @@ ok(() => assert.equal(dragging, false, 'leaving the window hides the hint'));
 
 // App wires the helper (no inline catch-all dragover) and routes bundles vs reference data
 const app = src('src/App.tsx');
-ok(() => assert.match(app, /fileDropHandlers\(setDragging, \(file\) => void openDroppedFile\(file\)\)/));
+ok(() => assert.match(app, /fileDropHandlers\(\(on\) => setDragging\(on && !pcbImportOpen\(\)\), \(file\) => void openDroppedFile\(file\)\)/));
+ok(() => assert.match(app, /<Show when=\{dragging\(\) && !pcbImportOpen\(\)\}>/));
 ok(() => assert.match(src('src/runner/dropFile.ts'), /await openUserProject\(file\)/));
 ok(() => assert.match(app, /onDragOver=\{drop\.onDragOver\}/));
 ok(() => assert.match(app, /onDrop=\{drop\.onDrop\}/));
