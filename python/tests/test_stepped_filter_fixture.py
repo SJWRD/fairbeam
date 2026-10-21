@@ -26,11 +26,14 @@ from tests.test_coax_resonator import wait_owned
 from tests import stepped_filter_fixture as f
 
 
-def configurations():
-    return [(f'n{n}_{kind}_{loss}', n, kind, loss, 'ordinary')
+def configurations(include_diagnostics=False):
+    cases = [(f'n{n}_{kind}_{loss}', n, kind, loss, 'ordinary')
         for n in f.MESHES for kind in f.KINDS for loss in f.LOSSES]+[
         (f'n2_filter_{loss}_{control}', 2, 'filter', loss, control)
-        for loss in f.LOSSES for control in f.CONTROLS[1:]]
+        for loss in f.LOSSES for control in f.STUDY_CONTROLS]
+    if include_diagnostics:
+        cases += [(f'n1_through_pec_{control}', 1, 'through', 'pec', control) for control in f.DIAGNOSTIC_CONTROLS]
+    return cases
 
 
 def forecast(meta, rate):
@@ -53,7 +56,7 @@ def freeze(out, n, kind, loss, control, cap_s=None):
 
 def preflight(out, rate):
     out = Path(out); out.mkdir(parents=True, exist_ok=False); rows = []
-    for name, n, kind, loss, control in configurations():
+    for name, n, kind, loss, control in configurations(include_diagnostics=True):
         folder = out/name; folder.mkdir()
         plan = freeze(folder, n, kind, loss, control)
         for meta in plan['ports']:
@@ -155,7 +158,7 @@ def study(root):
                         passes=change['s_abs'] <= f.LIMITS['mesh_s_abs'] and change['phase_deg'] <= f.LIMITS['mesh_phase_deg']))
     for loss in f.LOSSES:
         base = f'n2_filter_{loss}'
-        for control in f.CONTROLS[1:]:
+        for control in f.STUDY_CONTROLS:
             other = base+'_'+control
             if base not in results or other not in results: continue
             # Feed-plane changes have an independently specified analytical
@@ -247,6 +250,28 @@ class SteppedFilterTests(unittest.TestCase):
                         expected = 1/3 if sign == 1 else 2/3
                         self.assertAlmostEqual((edge-y[j-1])/(y[j]-y[j-1]), expected, places=11)
 
+    def test_launch_pair_changes_only_the_active_source_position(self):
+        for port in (1, 2):
+            canonical = []
+            for control, distance in zip(f.DIAGNOSTIC_CONTROLS, (12., 24.)):
+                holder = f.build(1, port, kind='through', control=control)
+                sim, meta = holder[0], holder[2]
+                with tempfile.TemporaryDirectory() as tmp:
+                    path = Path(tmp)/'input.xml'; sim.fdtd.Write2XML(str(path)); tree = ET.parse(path)
+                    boxes = tree.findall('.//Properties/Excitation/Primitives/Box')
+                    self.assertEqual(len(boxes), 1)
+                    expected = -distance if port == 1 else f.dimensions()['junctions_mm'][-1]+distance
+                    for corner in ('P1', 'P2'):
+                        node = boxes[0].find(corner)
+                        # CSXCAD serializes primitive coordinates to six digits.
+                        np.testing.assert_allclose(float(node.attrib['X']), expected, rtol=1e-6, atol=1e-12)
+                        node.set('X', 'SOURCE-POSITION')
+                    canonical.append(ET.tostring(tree.getroot()))
+                self.assertEqual(meta['source_distance_mm'], distance)
+            self.assertEqual(canonical[0], canonical[1])
+        self.assertEqual(len(configurations()), 20)
+        self.assertEqual(len(configurations(include_diagnostics=True)), 22)
+
     def test_geometry_and_loss_are_explicit_and_bundles_refused(self):
         for kind in f.KINDS:
             for loss in f.LOSSES:
@@ -325,6 +350,21 @@ class SteppedFilterTests(unittest.TestCase):
         h = e+np.array([dt/2, 0.]); f.trace_clock(e, meta); f.trace_clock(h, meta, True)
         with self.assertRaises(ValueError): f.trace_clock(h, meta)
         with self.assertRaises(ValueError): f.trace_clock(e[:-1], meta)
+
+    def test_through_samples_do_not_use_the_filter_prototype(self):
+        target = f.reference(kind='through'); a = np.broadcast_to(np.eye(2), target.shape)
+        v = (np.sqrt(f.Z0)*(a+target)).transpose(2, 1, 0)
+        i = ((a-target)/np.sqrt(f.Z0)).transpose(2, 1, 0); phase = .04
+        vv = np.stack((v*np.exp(1j*phase), v, v*np.exp(-1j*phase)), axis=2)
+        ii = np.broadcast_to(i[:, :, None, None, :]*np.cos(phase/2), (2, 2, 2, 2, len(f.FREQUENCIES)))
+        def source(path, allow_cap):
+            port = int(path.name[-1])
+            meta = dict(n=1, kind='through', loss='pec', control='ordinary', cap_s=8e-9,
+                mesh_mm={}, plane_mm=6., excited_port=port)
+            return meta, dict(v=vv[port-1], i=ii[port-1]), dict(source=True, stopping=False)
+        with tempfile.TemporaryDirectory() as tmp, patch.object(f, 'read', side_effect=source):
+            _, result = f.matrix(tmp, True)
+            self.assertTrue(all(row['prototype_loss_db'] == 0. for row in result['samples']))
 
     def test_long_forecast_refused_before_launch_or_output(self):
         with tempfile.TemporaryDirectory() as tmp, patch(__name__+'.popen_group') as launch:

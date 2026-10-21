@@ -30,7 +30,9 @@ ORDER, Z_HIGH, Z_LOW = 6, 120., 20.
 TAN_D, SIGMA, COPPER_MM = .02, 5.8e7, .0127
 FREQUENCIES = np.linspace(.5e9, 5e9, 451)
 MESHES, KINDS, LOSSES = (1, 2, 3), ('through', 'filter'), ('pec', 'dielectric')
-CONTROLS = ('ordinary', 'time', 'dt', 'boundary', 'plane')
+STUDY_CONTROLS = ('time', 'dt', 'boundary', 'plane')
+DIAGNOSTIC_CONTROLS = ('launch-box', 'launch')
+CONTROLS = ('ordinary', *STUDY_CONTROLS, *DIAGNOSTIC_CONTROLS)
 CAP_S, END_DB, THREADS, OVERSAMPLING = 8e-9, -80., 4, 4
 MARKER = 'FAIRBEAM-STEPPED-LOWPASS-PROPAGATION-BEGIN'
 LIMITS = dict(s_abs=.02, phase_deg=2., mesh_s_abs=.005, mesh_phase_deg=.5,
@@ -137,7 +139,10 @@ def mesh_lines(n, control='ordinary'):
     d = dimensions(); length = d['junctions_mm'][-1]
     maximum, dx = H/n, H/(2*n)
     air = 18. if control == 'boundary' else 12.
-    xanchors = [-18., length+18., -12., length+12., *d['junctions_mm']]
+    extended = control in DIAGNOSTIC_CONTROLS
+    end = 30. if extended else 18.
+    xanchors = [-end, length+end, -12., length+12., *d['junctions_mm']]
+    if extended: xanchors.extend((-24., length+24.))
     for centre in (-9., -6., length+6., length+9.):
         xanchors.extend((centre-dx, centre, centre+dx))
     xb = _balanced(xanchors, maximum)
@@ -184,12 +189,12 @@ def build(n, port, kind='filter', loss='pec', control='ordinary', cap_s=None):
     sim.dielectric('substrate', ER, tan_d=TAN_D if loss == 'dielectric' else 0.,
         tan_d_freq=FC).AddBox([x[0], y[0], 0.], [x[-1], y[-1], H], priority=1)
     feed = sim.metal('feed'); wf = d['feed_width_mm']; plane = 9. if control == 'plane' else 6.
-    ports = []
+    ports = []; source_distance = 24. if control == 'launch' else 12.
     for number, start, stop, centre in ((1, x[0], 0., -plane), (2, x[-1], length, length+plane)):
         direction = 1 if number == 1 else -1
         ports.append(sim.fdtd.AddMSLPort(number, feed, [start, -wf/2, H], [stop, wf/2, 0.],
             'x', 'z', excite=-1 if number == port else 0,
-            FeedShift=abs(start-(stop-direction*12.)), MeasPlaneShift=abs(start-centre), priority=10))
+            FeedShift=abs(start-(stop-direction*source_distance)), MeasPlaneShift=abs(start-centre), priority=10))
     solids = ['substrate', 'feed']
     if kind == 'through':
         sim.metal('body').AddBox([0., -wf/2, H], [length, wf/2, H], priority=10); solids.append('body')
@@ -219,7 +224,7 @@ def build(n, port, kind='filter', loss='pec', control='ordinary', cap_s=None):
         mesh_mm={a: v.tolist() for a, v in zip('xyz', (x, y, z))}, plane_mm=plane,
         declared_dt_s=float(dt), cap_s=cap, max_timesteps=steps, end_db=end, threads=THREADS,
         source_duration_s=excitation.dgauss_duration_s(FREQUENCIES[-1]), solids=solids,
-        expected_current_indices=indices, native_copper=False)
+        expected_current_indices=indices, source_distance_mm=source_distance, native_copper=False)
     return sim, ports, meta
 
 
@@ -458,7 +463,8 @@ def matrix(root, allow_cap=False):
     result['measurement_passes'] = all(result[k] <= LIMITS[k] for k in ('contour_s_abs', 'recurrence_rel', 'reciprocity_abs', 'singular_power_max'))
     result['point_target_passes'] = result['s_abs'] <= LIMITS['s_abs'] and result['phase_deg'] <= LIMITS['phase_deg']
     result['samples'] = [dict(f_hz=float(FREQUENCIES[k]), native_loss_db=float(-20*np.log10(abs(actual[k, 1, 0]))),
-        line_loss_db=float(-20*np.log10(abs(target[k, 1, 0]))), prototype_loss_db=float(10*np.log10(1+(FREQUENCIES[k]/FC)**(2*ORDER))))
+        line_loss_db=float(-20*np.log10(abs(target[k, 1, 0]))),
+        prototype_loss_db=float(10*np.log10(1+(FREQUENCIES[k]/FC)**(2*ORDER))) if metas[0]['kind'] == 'filter' else 0.)
         for k in (50, 200, 350, 450)]
     prefix = 'cap-diagnostic-' if allow_cap else ''
     report, arrays = root/(prefix+'comparison.json'), root/(prefix+'matrix.npz')
