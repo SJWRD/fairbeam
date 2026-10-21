@@ -1450,6 +1450,9 @@ Every step asserts the expected state and audits the page: no element overflows 
 clipped text without a tooltip, no raw i18n keys, no dialog outside the window, and no console error
 or warning (which includes the `[i18n]` missing-key warning). A failing step saves a screenshot
 under `$TMPDIR/fairbeam-scenario-failures/`. The audit checks itself first on a page with known faults.
+Startup screenshots have a separate 30-second capture budget for cold Windows browsers; other
+diagnostic operations remain bounded at five seconds. Capture failures retain the original test
+failure and the available evidence; they never count as a passing scenario.
 
 The runner starts Vite and a run server on free ports over a temp folder (a copy of `public/` whose
 `projects/` is also the server's `--projects`, because Vite serves result files from its public

@@ -22,6 +22,7 @@ import { scenarioAttemptDirectory, withScenarioAttemptDiagnostics } from './scen
 import { scenarioAttemptDiagnosticsSelfTest } from './check-scenario-attempt-diagnostics.mjs';
 import { startupDiagnosticsSelfTest } from './check-scenario-startup-diagnostics.mjs';
 import { selfTestArtifactsSelfTest } from './check-scenario-self-test-artifacts.mjs';
+import { captureBudgetSelfTest } from './check-scenario-capture-budget.mjs';
 import { launchWithEvidence } from './scenarios/launch-evidence.mjs';
 import { browserLaunchEvidenceSelfTest } from './check-browser-launch-evidence.mjs';
 
@@ -163,6 +164,7 @@ for (const sig of ['SIGINT', 'SIGTERM']) process.once(sig, async () => { await c
 const results = [];
 try {
   await browserLaunchEvidenceSelfTest(); console.log('Browser launch evidence checks passed (no browser started).');
+  await captureBudgetSelfTest(); console.log('Startup screenshot budget checks passed (no browser started).');
   const puppeteerModule = process.env.FAIRBEAM_PUPPETEER
     ? await import(pathToFileURL(process.env.FAIRBEAM_PUPPETEER).href)
     : await import(pathToFileURL(createRequire(import.meta.url).resolve('puppeteer-core')).href);

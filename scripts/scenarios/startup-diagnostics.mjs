@@ -57,10 +57,10 @@ export function startupDiagnostics(page, { directory, stack } = {}) {
       outstanding: [...pending.values()].map(entry => ({ ...entry, durationMs: elapsed() - entry.startedMs })),
       dropped, captureErrors: [],
     };
-    const attempt = async (name, fn) => {
+    const attempt = async (name, fn, budgetMs = 5000) => {
       let timer;
       try { return await Promise.race([Promise.resolve().then(fn), new Promise((_, reject) => {
-        timer = setTimeout(() => reject(new Error('diagnostic capture exceeded 5 seconds')), 5000);
+        timer = setTimeout(() => reject(new Error(`diagnostic capture exceeded ${budgetMs / 1000} seconds`)), budgetMs);
       })]); }
       catch (e) { evidence.captureErrors.push({ operation: name, error: clipped(safeText(e.message)) }); }
       finally { clearTimeout(timer); }
@@ -89,7 +89,12 @@ export function startupDiagnostics(page, { directory, stack } = {}) {
       await attempt('body text', () => writeFile(join(directory, 'body.txt'), safeText(text)));
       await attempt('HTML', () => writeFile(join(directory, 'dom.html'), safeText(html, 60000)));
     }
-    await attempt('screenshot', () => page.screenshot({ path: join(directory, 'page.png'), timeout: 5000 }));
+    // A cold Windows compositor can exceed the DOM/log budget. ScreenshotOptions has no
+    // timeout field; bound the whole capture here, without changing application readiness.
+    // Keep file writing outside the browser promise so a late reply cannot create a PNG
+    // after startup.json has recorded that this capture timed out.
+    const screenshot = await attempt('screenshot', () => page.screenshot({ type: 'png', optimizeForSpeed: true }), 30000);
+    if (screenshot) await attempt('screenshot file', () => writeFile(join(directory, 'page.png'), screenshot));
     evidence.processes = await attempt('stack logs', () => (stack?.diagnostics?.() ?? []).map(child => ({
       ...child, output: safeText(child.output),
     })));
