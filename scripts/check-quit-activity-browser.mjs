@@ -29,7 +29,7 @@ try {
       ];
       window.__quitReads = 0;
       window.fetch = async (url, init) => {
-        if (String(url) !== "/api/runs") return fetch(url, init);
+        if (String(url) !== "/api/runs?summary=1") return fetch(url, init);
         window.__quitReads++;
         if (window.__quitUnavailable) throw new TypeError("offline fixture");
         return new Response(JSON.stringify({ runs: window.__activeForQuit }), { headers: { "Content-Type": "application/json" } });
