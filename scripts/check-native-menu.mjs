@@ -33,8 +33,8 @@ assert.match(acceleratorHelper, /if !macos \{ return None; \}/, "non-Mac menu ac
 const labelHelper = main.slice(main.indexOf("fn native_action_label("), main.indexOf("#[cfg(test)]", main.indexOf("fn native_action_label(")));
 assert.match(labelHelper, /if macos \{ return label\.to_owned\(\); \}/, "Mac labels stay plain for AppKit's real accelerators");
 assert.deepEqual(Object.fromEntries([...labelHelper.matchAll(/"([^"]+)" => "([^"]+)"/g)].map(match => [match[1], match[2]])), {
-  "file-save": "Ctrl+S", "view-tree": "Ctrl+Shift+1", "view-dock": "Ctrl+Shift+2", "view-properties": "Ctrl+Shift+3",
-}, "only the four legacy Windows/Linux text hints return");
+  "file-save": "Ctrl+S", "view-tree": "Ctrl+Shift+1", "view-dock": "Ctrl+Shift+2", "view-properties": "Ctrl+Shift+3", "view-ribbon": "Ctrl+F1",
+}, "only the five legacy Windows/Linux text hints return");
 assert.ok(labelHelper.includes('format!("{label}    {hint}")'), "legacy text hints keep their four-space separator");
 assert.doesNotMatch(main, /format!\("\{\}    \{(?:command|control)\}/, "legacy text hints cannot bypass the platform-gated helper");
 const workspace = read("src/designer/DesignWorkspace.tsx");

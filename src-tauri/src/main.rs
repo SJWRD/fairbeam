@@ -2031,6 +2031,7 @@ fn native_action_label(id: &str, label: &str, macos: bool) -> String {
         "view-tree" => "Ctrl+Shift+1",
         "view-dock" => "Ctrl+Shift+2",
         "view-properties" => "Ctrl+Shift+3",
+        "view-ribbon" => "Ctrl+F1",
         _ => return label.to_owned(),
     };
     format!("{label}    {hint}")
@@ -2047,6 +2048,7 @@ mod native_menu_hint_tests {
             ("view-tree", "Model tree", "Ctrl+Shift+1"),
             ("view-dock", "Results", "Ctrl+Shift+2"),
             ("view-properties", "Özellikler", "Ctrl+Shift+3"),
+            ("view-ribbon", "Minimize Ribbon", "Ctrl+F1"),
         ] {
             assert_eq!(native_action_label(id, label, false), format!("{label}    {hint}"));
             assert_eq!(native_action_accelerator(id, false), None, "the page still owns {id}");
@@ -2057,7 +2059,7 @@ mod native_menu_hint_tests {
 
     #[test]
     fn other_menu_labels_and_non_macos_accelerators_are_unchanged() {
-        for id in ["file-new", "file-open", "file-save-as", "view-ribbon", "view-zoom-in", "view-zoom-out", "view-zoom-reset", "file-open-recent:1"] {
+        for id in ["file-new", "file-open", "file-save-as", "view-zoom-in", "view-zoom-out", "view-zoom-reset", "file-open-recent:1"] {
             for macos in [false, true] {
                 assert_eq!(native_action_label(id, "Translated label", macos), "Translated label");
             }
