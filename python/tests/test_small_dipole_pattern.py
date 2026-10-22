@@ -136,7 +136,10 @@ def study(root):
         if not path.exists():missing.append(name);continue
         state=json.loads(path.read_text())
         if state['status']!='complete':rejected.append(dict(name=name,status=state['status'],reason=state.get('reason')));continue
-        try:m,d=f.read(root/name/'capture');row=compare(root/name/'capture')
+        try:
+            m,d=f.read(root/name/'capture')
+            if (m['n'],m['control'])!=(n,c):raise ValueError('stored cohort does not match its declared mesh/control')
+            row=compare(root/name/'capture')
         except (ValueError,AssertionError,FileNotFoundError)as error:rejected.append(dict(name=name,reason=repr(error)));continue
         data[name]=(m,d);rows.append(dict(name=name,**row))
         a={k:(np.repeat(v[:1],2,axis=0)if k in ('e_theta','e_phi','prad_w','native_dmax')else v)for k,v in d.items()}
@@ -260,6 +263,20 @@ class SmallDipolePatternTests(unittest.TestCase):
             self.assertEqual(first[key],second[key])
         self.assertEqual(first['recording_domain'],'frequency');self.assertEqual(second['recording_domain'],'time')
         self.assertEqual(a[0].dump_type,10);self.assertEqual(b[0].dump_type,0)
+
+    def test_per_box_sampling_protects_fd_from_plain_nyquist_aliasing(self):
+        for control,value in (('ordinary',8),('td',8),('fd1',1)):
+            _,boxes,m=f.build(1,control)
+            self.assertEqual(m['recording_over_sampling'],value)
+            for box in boxes:
+                self.assertEqual(box.e_dump.GetOverSampling(),value);self.assertEqual(box.h_dump.GetOverSampling(),value)
+
+    def test_diagnostic_cohort_cannot_be_relabelled_as_qualification_data(self):
+        with tempfile.TemporaryDirectory()as tmp:
+            path=Path(tmp)/'n1';path.mkdir();f.save(path/'progress.json',dict(status='complete'))
+            with patch.object(f,'read',return_value=(dict(n=1,control='fd1'),{})):
+                result=study(tmp)
+            self.assertFalse(result['qualified']);self.assertIn('cohort',result['rejected'][0]['reason'])
 
     def test_invalid_models_and_requests_do_not_dispatch(self):
         for n in (True,0,4,1.5):
