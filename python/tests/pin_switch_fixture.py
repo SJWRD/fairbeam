@@ -2,8 +2,10 @@
 
 One-port FDTD measures fixed forward/reverse impedances. Embedding those
 loads in ideal series/shunt two-ports is algebra, not two-port field data.
-All impedances are scaled by ten before fields; S is invariant under the
-same reference-impedance scaling. No bias, transport or switching physics.
+All impedances use one explicit common scale; S is invariant under the
+same reference-impedance scaling. The default is selected from independent
+open/short controls and a held-out resistor, not a fit to the load data.
+No bias, transport or switching physics.
 """
 import json
 import math
@@ -19,7 +21,7 @@ from tests import coupled_stripline_fixture as environment
 
 ROOT=Path(__file__).resolve().parents[2]
 FREQUENCIES=np.linspace(1.2e9,2.4e9,121)
-Z0, SCALE, RF, RR, LI, CJ=50.,10.,1.5,2.,.5e-9,.5e-12
+Z0, SCALE, RF, RR, LI, CJ=50.,2.25,1.5,2.,.5e-9,.5e-12
 KINDS=('open','short','resistor','forward','reverse')
 MESHES=(1,2,3)
 CONTROLS=('ordinary','time','dt','domain','scale')
@@ -67,12 +69,12 @@ def contrast(forward,reverse,layout):
     return loss(reverse)-loss(forward) if layout=='series' else loss(forward)-loss(reverse)
 
 
-def reference_reflection(kind):
+def reference_reflection(kind,scale=SCALE):
     if kind not in KINDS:raise ValueError('unknown load')
     if kind in ('open','short','resistor'):
         return np.full(len(FREQUENCIES),{'open':1.,'short':-1.,'resistor':0.}[kind],complex)
-    z=diode_z(state=kind,scale=SCALE)
-    return (z-Z0*SCALE)/(z+Z0*SCALE)
+    z=diode_z(state=kind,scale=scale)
+    return (z-Z0*scale)/(z+Z0*scale)
 
 
 def capacitor_floor(mesh,start,stop):
@@ -113,9 +115,12 @@ def probe_bounds(mesh,start,stop,current=False):
     return [low,high]
 
 
-def build(n,kind,control='ordinary',cap_s=None):
+def build(n,kind,control='ordinary',cap_s=None,*,impedance_scale=SCALE):
     if isinstance(n,bool) or n not in MESHES or not isinstance(n,int) or kind not in KINDS or control not in CONTROLS:
         raise ValueError('declared mesh/load/control required')
+    if isinstance(impedance_scale,bool) or not np.isfinite(impedance_scale) or impedance_scale<=0:
+        raise ValueError('positive finite impedance scale required')
+    scale=float(impedance_scale)
     factor=.5 if control=='scale' else 1.
     margin=1.5 if control=='domain' else 1
     counts=(12,8,12);extents=(.03,.02,.02)
@@ -132,14 +137,14 @@ def build(n,kind,control='ordinary',cap_s=None):
     coords=lambda p:(np.asarray(p)*factor).tolist()
     plates=sim.metal('plates')
     for z in (-.01,.01):plates.AddBox(coords([-.02,-.01,z]),coords([.02,.01,z]),priority=10)
-    sim.lumped_port(1,Z0*SCALE,coords([-.02,-.01,-.01]),coords([-.01,.01,.01]),'z')
+    sim.lumped_port(1,Z0*scale,coords([-.02,-.01,-.01]),coords([-.01,.01,.01]),'z')
     elements=[];nodes=[]
     if kind=='short':plates.AddBox(coords([.01,-.01,-.01]),coords([.02,.01,.01]),priority=10)
     specifications=[]
-    if kind=='resistor':specifications=[('R',Z0*SCALE,-.01,.01)]
-    elif kind=='forward':specifications=[('R',RF*SCALE,-.01,0.),('L',LI*SCALE,0.,.01)];nodes=[0.]
+    if kind=='resistor':specifications=[('R',Z0*scale,-.01,.01)]
+    elif kind=='forward':specifications=[('R',RF*scale,-.01,0.),('L',LI*scale,0.,.01)];nodes=[0.]
     elif kind=='reverse':
-        specifications=[('R',RR*SCALE,-.01,-.01/3),('L',LI*SCALE,-.01/3,.01/3),('C',CJ/SCALE,.01/3,.01)]
+        specifications=[('R',RR*scale,-.01,-.01/3),('L',LI*scale,-.01/3,.01/3),('C',CJ/scale,.01/3,.01)]
         nodes=[-.01/3,.01/3]
     if nodes:
         pads=sim.metal('internal_nodes')
@@ -161,7 +166,7 @@ def build(n,kind,control='ordinary',cap_s=None):
         expected[name]=probe_bounds(mesh,start,stop,name in port.I_filenames)
     return sim,dict(n=n,kind=kind,control=control,mesh_mm=mesh,grid=grid,native_cells=cells,
         declared_dt_s=float(dt),cap_s=cap,max_timesteps=math.ceil(cap/dt),end_db=END_DB,
-        reference_ohm=Z0*SCALE,impedance_scale=SCALE,geometry_scale=factor,elements=elements,
+        reference_ohm=Z0*scale,impedance_scale=scale,geometry_scale=factor,elements=elements,
         required_properties=required,probe_boxes=probe,expected_probe_indices=expected,
         voltage_names=list(port.U_filenames),current_names=list(port.I_filenames),
         source_duration_s=excitation.dgauss_duration_s(FREQUENCIES[-1]),threads=THREADS,
@@ -229,13 +234,13 @@ def audit_header(text,m):
     return dict(version='v0.37.0-rc3',threads=THREADS)
 
 
-def capture(out,n,kind,control='ordinary',cap_s=None):
-    out=Path(out);out.mkdir(exist_ok=False,parents=True);sim,m=build(n,kind,control,cap_s)
+def capture(out,n,kind,control='ordinary',cap_s=None,impedance_scale=SCALE):
+    out=Path(out);out.mkdir(exist_ok=False,parents=True);sim,m=build(n,kind,control,cap_s,impedance_scale=impedance_scale)
     m.update(source=identity(),runtime=environment.runtime_identity())
     sim.fdtd.Write2XML(str(out/'input.xml'));m['input_sha256']=sha(out/'input.xml')
     plan=json.loads((out.parent/'plan.json').read_text())
     if plan!={**m}:raise ValueError('input differs from frozen pre-field plan')
-    setup,_=build(n,kind,control,cap_s);setup.fdtd.SetTimeStep(0.);setup.fdtd.SetNumberOfTimeSteps(1024)
+    setup,_=build(n,kind,control,cap_s,impedance_scale=impedance_scale);setup.fdtd.SetTimeStep(0.);setup.fdtd.SetNumberOfTimeSteps(1024)
     setup.fdtd.Write2XML(str(out/'operator-input.xml'))
     op=dict(run=setup.run(str(out/'operator'),threads=THREADS,exact=True,echo=True,setup_only=True),
         required_usage=used(setup,m['required_properties']),input_sha256=sha(out/'operator-input.xml'))
@@ -256,7 +261,7 @@ def capture(out,n,kind,control='ordinary',cap_s=None):
         tail=trace[:,0]>=m['native']['numerical_time_s']-.5e-9
         tails.append(float(10*np.log10(max(np.mean(trace[tail,1]**2),np.finfo(float).tiny)/max(np.max(trace[:,1]**2),np.finfo(float).tiny))))
         hashes[name]=sha(path);indices[name]=[list(map(int,v))for v in re.findall(r'-> \[(\d+),(\d+),(\d+)\]','\n'.join(path.read_text().splitlines()[:3]))]
-    v,i=values;port=sim._port_objs[0];port.CalcPort(str(out/'raw'),FREQUENCIES,ref_impedance=Z0*SCALE)
+    v,i=values;port=sim._port_objs[0];port.CalcPort(str(out/'raw'),FREQUENCIES,ref_impedance=m['reference_ohm'])
     np.testing.assert_allclose(port.uf_tot,v,rtol=3e-13,atol=1e-23);np.testing.assert_allclose(port.if_tot,i,rtol=3e-13,atol=1e-23)
     m.update(terminal_tail_db=max(tails),raw_sha256=hashes,actual_probe_indices=indices,source_trace=source_info(out/'raw/et',m))
     np.savez_compressed(out/'data.npz',frequency_hz=FREQUENCIES,v=v,i=i)
@@ -274,7 +279,7 @@ def admissible(m,checks,allow_cap=False):
 
 def read(out,allow_cap=False):
     out=Path(out);m=json.loads((out/'report.json').read_text())
-    _,expected=build(m['n'],m['kind'],m['control'],m['cap_s'])
+    _,expected=build(m['n'],m['kind'],m['control'],m['cap_s'],impedance_scale=m['impedance_scale'])
     if (any(m.get(k)!=v for k,v in expected.items()) or m['source']!=identity()
         or m['runtime']!=environment.runtime_identity()):raise ValueError('stored model/source/runtime changed')
     q=quality(m)

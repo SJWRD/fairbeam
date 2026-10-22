@@ -24,20 +24,20 @@ def forecast(meta,rate):
     return float(1.2*meta['native_cells']*meta['max_timesteps']/(rate*1e6)+45.)
 
 
-def freeze(out,n,kind,control,cap=None):
-    sim,m=f.build(n,kind,control,cap)
+def freeze(out,n,kind,control,cap=None,impedance_scale=f.SCALE):
+    sim,m=f.build(n,kind,control,cap,impedance_scale=impedance_scale)
     sim.fdtd.Write2XML(str(out/'planned.xml'))
     m.update(source=f.identity(),runtime=f.environment.runtime_identity(),input_sha256=f.sha(out/'planned.xml'))
     f.save(out/'plan.json',m);return m
 
 
-def acquire(out,n,kind,control='ordinary',rate=60.,pilot_s=None,allow_cap=False):
+def acquire(out,n,kind,control='ordinary',rate=60.,pilot_s=None,allow_cap=False,impedance_scale=f.SCALE):
     out=Path(out).resolve()
     if out.exists():raise ValueError('fresh acquisition directory required')
     if pilot_s is not None and (not np.isfinite(pilot_s) or not 0<pilot_s<=.5e-9):raise ValueError('pilot in 0..0.5 ns required')
-    _,m=f.build(n,kind,control,pilot_s);seconds=forecast(m,rate)
+    _,m=f.build(n,kind,control,pilot_s,impedance_scale=impedance_scale);seconds=forecast(m,rate)
     if seconds>1800.:raise ValueError('over 30 minutes/source; defer this acquisition')
-    out.mkdir(parents=True,exist_ok=False);m=freeze(out,n,kind,control,pilot_s)
+    out.mkdir(parents=True,exist_ok=False);m=freeze(out,n,kind,control,pilot_s,impedance_scale)
     state=dict(status='prepared',started_utc=datetime.now(timezone.utc).isoformat(),source=m['source'],runtime=m['runtime'],
         driver_head=subprocess.check_output(['git','rev-parse','HEAD'],cwd=f.ROOT,text=True).strip(),
         forecast_seconds=seconds,rate_mcps=rate,pilot=pilot_s is not None,capped_diagnostic_requested=allow_cap,
@@ -45,7 +45,7 @@ def acquire(out,n,kind,control='ordinary',rate=60.,pilot_s=None,allow_cap=False)
     proc=None;start,wall=time.monotonic(),time.time();code=None;failure=None;command=[]
     try:
         command=[sys.executable,'-m','tests.test_pin_switch_fixture','--worker','--mesh',str(n),
-            '--kind',kind,'--control',control,'--out',str(out/'capture')]
+            '--kind',kind,'--control',control,'--impedance-scale',str(impedance_scale),'--out',str(out/'capture')]
         if pilot_s is not None:command+=['--pilot-seconds',str(pilot_s)]
         with (out/'worker.log').open('x',encoding='utf-8')as log:
             proc=popen_group(command,cwd=f.ROOT/'python',stdout=log,stderr=subprocess.STDOUT)
@@ -84,21 +84,22 @@ def acquire(out,n,kind,control='ordinary',rate=60.,pilot_s=None,allow_cap=False)
         state['active_launcher_pid']=None;f.save(out/'progress.json',state)
 
 
-def reflection(v,i):
-    a=v+f.Z0*f.SCALE*i
+def reflection(v,i,zref=f.Z0*f.SCALE):
+    a=v+zref*i
     if (not np.isfinite(a).all() or not np.isfinite(v).all() or not np.isfinite(i).all()
         or abs(a).min()<.02*max(abs(a).max(),np.finfo(float).tiny)):
         raise ValueError('insufficient incident spectrum')
-    return (v-f.Z0*f.SCALE*i)/a
+    return (v-zref*i)/a
 
 
 def compare(folder,allow_cap=False):
-    m,d,q=f.read(folder,allow_cap);s11=reflection(d['v'],d['i']);error=float(abs(s11-f.reference_reflection(m['kind'])).max())
+    m,d,q=f.read(folder,allow_cap);s11=reflection(d['v'],d['i'],m['reference_ohm'])
+    error=float(abs(s11-f.reference_reflection(m['kind'],m['impedance_scale'])).max())
     result=dict(n=m['n'],kind=m['kind'],control=m['control'],reflection_error_abs=error,
         point_passes=error<=f.LIMITS['reflection_abs'],native_complete=all(q.values()),native_quality=q,
         qualified=False,fdtd_twoport_switch_validated=False,scope=f.SCOPE)
     if m['kind'] in ('forward','reverse'):
-        z=d['v']/d['i']/f.SCALE;target=f.diode_z(state=m['kind'])
+        z=d['v']/d['i']/m['impedance_scale'];target=f.diode_z(state=m['kind'])
         if not np.isfinite(z).all():raise ValueError('finite measured load impedance required')
         result['z_error_relative']=float((abs(z-target)/abs(target)).max())
         result['point_passes'] &= result['z_error_relative']<=f.LIMITS['z_relative']
@@ -129,10 +130,11 @@ def study(root):
         progress=json.loads(state.read_text())
         if progress['status']!='complete':rejected.append(dict(name=name,status=progress['status'],reason=progress.get('reason')));continue
         try:
-            row=compare(root/name/'capture');_,d,_=f.read(root/name/'capture')
+            row=compare(root/name/'capture');m,d,_=f.read(root/name/'capture')
+            if m['impedance_scale']!=f.SCALE:raise ValueError('strict study requires its single declared impedance scale')
         except (ValueError,AssertionError,FileNotFoundError)as error:
             rejected.append(dict(name=name,reason=repr(error)));continue
-        rows.append(dict(name=name,**row));data[name]=(reflection(d['v'],d['i']),d['v']/d['i']/f.SCALE if kind in ('forward','reverse')else None)
+        rows.append(dict(name=name,**row));data[name]=(reflection(d['v'],d['i'],m['reference_ohm']),d['v']/d['i']/m['impedance_scale'] if kind in ('forward','reverse')else None)
     pairs=[]
     for kind in f.KINDS:
         pairs.extend((f'n{a}_{kind}',f'n{b}_{kind}',kind,'mesh')for a,b in zip(f.MESHES[:-1],f.MESHES[1:]))
@@ -216,6 +218,15 @@ class PinSwitchTests(unittest.TestCase):
             self.assertEqual([e['value']for e in other['elements']],[e['value']for e in base['elements']])
         self.assertLess(f.build(1,'reverse','dt')[1]['declared_dt_s'],base['declared_dt_s'])
         self.assertGreater(f.build(1,'reverse','time')[1]['cap_s'],base['cap_s'])
+
+    def test_explicit_conditioning_records_and_scales_every_branch(self):
+        for scale in (2.25,10.):
+            _,m=f.build(1,'reverse',impedance_scale=scale)
+            self.assertEqual(m['reference_ohm'],f.Z0*scale);self.assertEqual(m['impedance_scale'],scale)
+            np.testing.assert_allclose([e['value']for e in m['elements']],[f.RR*scale,f.LI*scale,f.CJ/scale],rtol=1e-15)
+            self.assertEqual(m,json.loads(json.dumps(m,allow_nan=False)))
+        for scale in (0.,-1.,np.nan,np.inf,True):
+            with self.assertRaises(ValueError):f.build(1,'reverse',impedance_scale=scale)
 
     def test_nonfinite_or_incomplete_clocks_are_rejected(self):
         dt=1e-13;stride=int(1/(2*f.FREQUENCIES[-1]*dt))//4
@@ -302,15 +313,19 @@ def main():
     p.add_argument('--kind',choices=f.KINDS,default='forward');p.add_argument('--control',choices=f.CONTROLS,default='ordinary')
     p.add_argument('--rate-mcps',type=float,default=60.);p.add_argument('--pilot-seconds',type=float)
     p.add_argument('--allow-capped-diagnostic',action='store_true')
+    p.add_argument('--impedance-scale',type=float)
     args=p.parse_args()
     if args.allow_capped_diagnostic and not(args.fdtd or args.compare):p.error('capped diagnostics are separate from strict study')
+    if args.impedance_scale is not None and (not(args.prepare or args.fdtd or args.worker)
+        or not np.isfinite(args.impedance_scale) or args.impedance_scale<=0):p.error('positive conditioning scale belongs to a prepared acquisition')
+    scale=f.SCALE if args.impedance_scale is None else args.impedance_scale
     if args.pilot_seconds is not None and (not(args.fdtd or args.worker) or not np.isfinite(args.pilot_seconds) or not 0<args.pilot_seconds<=.5e-9):p.error('performance-only pilot must be in 0..0.5 ns')
-    if args.worker:f.capture(args.out,args.mesh,args.kind,args.control,args.pilot_seconds);return
-    if args.fdtd:result=acquire(args.out,args.mesh,args.kind,args.control,args.rate_mcps,args.pilot_seconds,args.allow_capped_diagnostic)
+    if args.worker:f.capture(args.out,args.mesh,args.kind,args.control,args.pilot_seconds,scale);return
+    if args.fdtd:result=acquire(args.out,args.mesh,args.kind,args.control,args.rate_mcps,args.pilot_seconds,args.allow_capped_diagnostic,scale)
     elif args.compare:result=compare(args.out/'capture',args.allow_capped_diagnostic)
     elif args.study:result=study(args.out)
     else:
-        args.out.mkdir(parents=True,exist_ok=False);result=freeze(args.out,args.mesh,args.kind,args.control)
+        args.out.mkdir(parents=True,exist_ok=False);result=freeze(args.out,args.mesh,args.kind,args.control,impedance_scale=scale)
         result=dict(result,forecast_seconds=forecast(result,args.rate_mcps),native_propagations=0)
     print(json.dumps(result,indent=2,allow_nan=False))
 
