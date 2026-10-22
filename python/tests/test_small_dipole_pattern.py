@@ -222,6 +222,12 @@ class SmallDipolePatternTests(unittest.TestCase):
         self.assertGreater(f.build(2,'time')[2]['cap_s'],base['cap_s'])
         self.assertLess(f.build(2,'dt')[2]['declared_dt_s'],base['declared_dt_s'])
 
+    def test_current_contour_encloses_the_zero_thickness_sheet_coordinate(self):
+        _,_,m=f.build(1)
+        # Captured rc3 header: y=0 must be enclosed by both dual boundaries.
+        self.assertEqual(m['expected_probe_indices']['port_it_1'],[[26,27,32],[29,28,32]])
+        self.assertEqual(m['expected_probe_indices']['port_ut_1'],[[28,28,32],[28,28,33]])
+
     def test_native_surface_inventory_checks_planes_and_finite_fields(self):
         with tempfile.TemporaryDirectory()as tmp:
             raw=Path(tmp);m=dict(surface_names=['a','b'],surfaces_mm=[30.,45.])

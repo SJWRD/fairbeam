@@ -76,9 +76,9 @@ def probe_bounds(mesh,start,stop,current=False):
         g=np.asarray(mesh[axis]);dual=(g[:-1]+g[1:])/2
         if current:
             lo,hi=[int(np.searchsorted(g,v,side='left'))-1 for v in (a,b)]
-            if hi>lo:
-                if dual[lo]>a:lo-=1
-                if dual[hi]<b:hi+=1
+            # Containment also spans a collapsed transverse sheet coordinate.
+            if dual[lo]>a:lo-=1
+            if dual[hi]<b:hi+=1
         else:lo,hi=[int(np.searchsorted(dual,v,side='left'))for v in (a,b)]
         if not 0<=lo<=hi<len(g)-(1 if current else 0):raise ValueError('probe outside grid')
         low.append(lo);high.append(hi)
