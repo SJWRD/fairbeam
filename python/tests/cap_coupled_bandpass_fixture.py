@@ -28,7 +28,10 @@ MESHES,ORDERS,KINDS,LOSSES=(0,1,2,3),(3,4),('through','element','filter'),('pec'
 STUDY_CONTROLS=('time','dt','boundary','plane','source','yspan')
 DIAGNOSTIC_CONTROLS=('unmapped',)
 CONTROLS=('ordinary',*STUDY_CONTROLS,*DIAGNOSTIC_CONTROLS)
-CAP_S,END_DB,THREADS,OVERSAMPLING=120e-9,-80.,1,4
+# Probe tails are admitted separately from global energy. A -80 dB global
+# stop left a -63 dB local tail in the initial coarse filter; do not relax
+# the tail gate or change circuit values to admit that capture.
+CAP_S,END_DB,THREADS,OVERSAMPLING=120e-9,-100.,1,4
 MARKER='FAIRBEAM-CAP-COUPLED-BANDPASS-PROPAGATION-BEGIN'
 LIMITS=dict(s_abs=.02,phase_deg=2.,mesh_s_abs=.005,mesh_phase_deg=.5,
     control_s_abs=.0025,control_phase_deg=.2,contour_s_abs=.0025,

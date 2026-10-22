@@ -357,6 +357,8 @@ class CapCoupledTests(unittest.TestCase):
         f.trace_clock(e,m);f.trace_clock(h,m,True)
         with self.assertRaises(ValueError):f.trace_clock(h,m)
         with self.assertRaises(ValueError):f.trace_clock(e[:-1],m)
+        bad=e.copy();bad[1,1]=np.nan
+        with self.assertRaises(ValueError):f.trace_clock(bad,m)
 
     def test_native_header_accepts_scientific_counts_but_not_wrong_inputs(self):
         for grid in ([200,5,4],[193,122,98]):
