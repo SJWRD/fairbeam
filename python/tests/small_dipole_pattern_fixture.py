@@ -22,7 +22,7 @@ ROOT=Path(__file__).resolve().parents[2]
 FREQUENCIES=np.array([.9,1.,1.1])*1e9
 THETA=np.arange(0.,181.,2.);PHI=np.arange(0.,360.,10.)
 MESHES=(1,2,3);CONTROLS=('ordinary','time','dt','domain','feed')
-END_DB,CAP_S,THREADS,OVERSAMPLING=-90.,12e-9,4,8
+END_DB,CAP_S,THREADS,OVERSAMPLING=-90.,13.5e-9,4,8
 LENGTH,WIDTH,GAP=15.,.6,.4
 SURFACES=(30.,45.)
 MARKER='FAIRBEAM-SMALL-DIPOLE-PROPAGATION-BEGIN'
