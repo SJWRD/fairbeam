@@ -75,7 +75,7 @@ def reference(freq=FREQUENCIES, kind='filter', plane_mm=12., loss='pec'):
         raise ValueError('declared lossless kind, 1..3 GHz and positive reference planes required')
     delay = 1/(4*F0)
     if kind == 'through':
-        s = network_s(f, [0, 2], [(0, 2, Z0, 2*delay)], z_ref=Z0)
+        s = network_s(f, [0, 1], [(0, 1, Z0, 2*delay)], z_ref=Z0)
     else:
         z = dimensions()['stub_impedances_ohm']
         s = network_s(f, [0, 2], [(0, 1, Z0, delay), (1, 2, Z0, delay),
@@ -198,7 +198,7 @@ def build(n, port, kind='filter', loss='pec', control='ordinary', cap_s=None):
                 wire.AddCylinder([sx,0.,cz],[sx,length,cz],radius,priority=10)
     source_distance = 40. if control == 'source' else 30.
     plane = 18. if control == 'plane' else 12.
-    dx = 1/(1+.25*n); ports = []; feeds = []; indices = {}
+    dx = 1/(1+.25*n); ports = []; feeds = []; indices = {}; voltage_indices = {}
     mid_y,mid_z = (y[:-1]+y[1:])/2,(z[:-1]+z[1:])/2
     gap = d['main_gap_mm']; low_z,high_z = [float(z[np.argmin(abs(z-v))]) for v in (-gap/2,gap/2)]
     gap_dual = np.flatnonzero((mid_z>low_z)&(mid_z<high_z))
@@ -221,7 +221,10 @@ def build(n, port, kind='filter', loss='pec', control='ordinary', cap_s=None):
         ix = int(np.argmin(abs(x-centre_x)))
         np.testing.assert_allclose(x[ix-1:ix+2],[centre_x-dx,centre_x,centre_x+dx],atol=1e-11,rtol=0)
         for j,sx in enumerate(x[ix-1:ix+2]):
-            sim.csx.AddProbe(f'v{endpoint}_{j}',p_type=0,weight=-1.).AddBox(
+            name = f'v{endpoint}_{j}'
+            voltage_indices[name] = [[ix+j-1, int(np.argmin(abs(y))), int(np.argmin(abs(z-cz)))]
+                for cz in actual_centres]
+            sim.csx.AddProbe(name,p_type=0,weight=-1.).AddBox(
                 [sx,0.,actual_centres[0]],[sx,0.,actual_centres[1]])
         for loop,zl in enumerate(lower_indices):
             zh,lo,hi = top+loop,yl-loop,yh+loop
@@ -243,7 +246,7 @@ def build(n, port, kind='filter', loss='pec', control='ordinary', cap_s=None):
         mesh_mm={a:v.tolist() for a,v in zip('xyz',(x,y,z))},plane_mm=plane,
         declared_dt_s=float(dt),cap_s=cap,max_timesteps=steps,end_db=end_db,threads=THREADS,
         source_duration_s=excitation.dgauss_duration_s(FREQUENCIES[-1]),solids=solids,
-        required_properties=required,expected_current_indices=indices,
+        required_properties=required,expected_current_indices=indices,expected_voltage_indices=voltage_indices,
         source_distance_mm=source_distance,feeds=feeds,native_copper=False,
         actual_wire_centres_z_mm=actual_centres,actual_junctions_x_mm=junctions,
         actual_stub_length_mm=length,minimum_nominal_stub_diameter_cells=float(
@@ -311,7 +314,8 @@ def quality(meta):
         operator=0 < meta['declared_dt_s'] <= .8*op['run'].get('timestep_s', 0.),
         geometry=meta['required_usage'] == op['required_usage'] and set(meta['required_usage']) == set(meta['required_properties'])
             and all(v and all(v) for v in meta['required_usage'].values()),
-        probes=meta['actual_current_indices'] == meta['expected_current_indices'],
+        probes=meta['actual_current_indices'] == meta['expected_current_indices']
+            and meta['actual_voltage_indices'] == meta['expected_voltage_indices'],
         header=meta.get('native_header') == dict(version='v0.37.0-rc3', threads=THREADS),
         engine=run.get('threads') == THREADS and run.get('engine') == 'cpu' and run.get('exact_endcriteria') is True,
         tail=meta['terminal_tail_db'] <= LIMITS['terminal_tail_db']).items()}
@@ -363,11 +367,11 @@ def capture(out, n, port, kind='filter', loss='pec', control='ordinary', cap_s=N
         tails.append(float(10*np.log10(max(np.mean(data[mask, 1]**2), np.finfo(float).tiny)
             / max(np.max(data[:, 1]**2), np.finfo(float).tiny))))
         raw_hashes[name] = sha(path)
-        if name in cn:
-            header = '\n'.join(path.read_text().splitlines()[:3])
-            indices[name] = [list(map(int, v)) for v in re.findall(r'-> \[(\d+),(\d+),(\d+)\]', header)]
+        header = '\n'.join(path.read_text().splitlines()[:3])
+        indices[name] = [list(map(int, v)) for v in re.findall(r'-> \[(\d+),(\d+),(\d+)\]', header)]
     voltage = np.asarray(values[:6]).reshape(2, 3, -1)
-    meta.update(actual_current_indices=indices, terminal_tail_db=max(tails), raw_sha256=raw_hashes,
+    meta.update(actual_current_indices={k:indices[k] for k in cn},
+        actual_voltage_indices={k:indices[k] for k in vn}, terminal_tail_db=max(tails), raw_sha256=raw_hashes,
         source_trace=source_info(out/'raw/et', meta))
     np.savez_compressed(out/'data.npz', frequency_hz=FREQUENCIES,
         v=voltage, i=np.asarray(values[6:]).reshape(2, 2, 2, -1))
@@ -418,9 +422,9 @@ def read(out, allow_cap=False):
         mask = clock >= meta['native']['numerical_time_s']-.5e-9
         tails.append(float(10*np.log10(max(np.mean(value[mask]**2), np.finfo(float).tiny)
             / max(np.max(value**2), np.finfo(float).tiny))))
-        if name in cn:
-            indices = [list(map(int, v)) for v in re.findall(r'-> \[(\d+),(\d+),(\d+)\]', '\n'.join(path.read_text().splitlines()[:3]))]
-            if indices != meta['expected_current_indices'][name]: raise ValueError('current indices changed')
+        indices = [list(map(int, v)) for v in re.findall(r'-> \[(\d+),(\d+),(\d+)\]', '\n'.join(path.read_text().splitlines()[:3]))]
+        expected = meta['expected_current_indices'] if name in cn else meta['expected_voltage_indices']
+        if indices != expected[name]: raise ValueError('probe indices changed')
     with np.load(out/'data.npz') as stored: data = dict(stored)
     if not np.array_equal(data['frequency_hz'], FREQUENCIES): raise ValueError('frequency grid changed')
     np.testing.assert_allclose(np.asarray(values[:6]).reshape(2, 3, -1), data['v'], rtol=3e-13, atol=1e-23)

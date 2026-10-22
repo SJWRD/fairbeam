@@ -64,18 +64,22 @@ def preflight(out, rate):
     return result
 
 
-def acquire(out, n=1, kind='filter', loss='pec', control='ordinary', rate=15., pilot_s=None, allow_cap=False):
+def acquire(out, n=1, kind='filter', loss='pec', control='ordinary', rate=15., pilot_s=None, allow_cap=False, window_s=None):
     out = Path(out).resolve()
     if out.exists(): raise ValueError('fresh output directory required')
     if pilot_s is not None and (not np.isfinite(pilot_s) or not 0 < pilot_s <= .5e-9):
         raise ValueError('performance pilot must be in 0..0.5 ns')
-    holder = f.build(n, 1, kind, loss, control, pilot_s); meta = holder[2]
+    if window_s is not None and (pilot_s is not None or not allow_cap
+            or not np.isfinite(window_s) or not f.excitation.dgauss_duration_s(f.FREQUENCIES[-1]) <= window_s <= f.CAP_S):
+        raise ValueError('explicit capped diagnostic window must contain the source and be at most 32 ns')
+    cap = pilot_s if pilot_s is not None else window_s
+    holder = f.build(n, 1, kind, loss, control, cap); meta = holder[2]
     estimate = forecast(meta, rate)
     if estimate > 1800.: raise ValueError('forecast exceeds 30 minutes; defer this cohort')
-    out.mkdir(parents=True, exist_ok=False); plan = freeze(out, n, kind, loss, control, pilot_s)
+    out.mkdir(parents=True, exist_ok=False); plan = freeze(out, n, kind, loss, control, cap)
     state = dict(started_utc=datetime.now(timezone.utc).isoformat(), status='prepared',
         source=plan['source'], runtime=plan['runtime'], active_launcher_pid=None, qualified=False,
-        pilot=pilot_s is not None, capped_diagnostic_requested=allow_cap,
+        pilot=pilot_s is not None, diagnostic_window_s=window_s, capped_diagnostic_requested=allow_cap,
         driver_head=subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=f.ROOT, text=True).strip(),
         forecast_seconds_per_source=estimate, rate_mcps=rate)
     progress = out/'progress.json'; f.save(progress, state)
@@ -87,6 +91,7 @@ def acquire(out, n=1, kind='filter', loss='pec', control='ordinary', rate=15., p
                 '--mesh', str(n), '--kind', kind, '--loss', loss, '--control', control,
                 '--port', str(port), '--out', str(out/f'port{port}')]
             if pilot_s is not None: command.extend(('--pilot-seconds', str(pilot_s)))
+            if window_s is not None: command.extend(('--window-seconds', str(window_s)))
             start, wall = time.monotonic(), time.time(); code = None; failure = None
             with (out/f'port{port}.log').open('x', encoding='utf-8') as log:
                 proc = popen_group(command, cwd=f.ROOT/'python', stdout=log, stderr=subprocess.STDOUT)
@@ -188,6 +193,14 @@ def abcd_reference(freq, plane_mm=12.):
 
 
 class OpenStubTests(unittest.TestCase):
+    def test_through_reference_is_the_matched_air_line(self):
+        target = f.reference(kind='through')
+        length = f.dimensions()['junctions_mm'][-1]*1e-3+.024
+        delay = np.exp(-2j*np.pi*f.FREQUENCIES*length/f.C0)
+        np.testing.assert_allclose(target[:,0,1],delay,atol=2e-14,rtol=0)
+        np.testing.assert_allclose(target[:,1,0],delay,atol=2e-14,rtol=0)
+        np.testing.assert_allclose(target[:,(0,1),(0,1)],0.,atol=2e-14,rtol=0)
+
     def test_independent_nodal_and_abcd_predictions_off_the_notch(self):
         freq = f.FREQUENCIES[abs(f.FREQUENCIES-f.F0)>1e7]
         np.testing.assert_allclose(f.reference(freq),abcd_reference(freq),atol=2e-11,rtol=0)
@@ -249,6 +262,18 @@ class OpenStubTests(unittest.TestCase):
             self.assertEqual(sum('port_excite_' in v for v in meta['required_properties']),1)
             self.assertEqual(sum('port_resist_' in v for v in meta['required_properties']),2)
             with self.assertRaises(ValueError):sim.to_bundle()
+
+    def test_voltage_planes_are_tied_to_actual_mesh_nodes(self):
+        for n in f.MESHES:
+            _,_,meta=f.build(n,1)
+            self.assertEqual(len(meta['expected_voltage_indices']),6)
+            for name,(a,b) in meta['expected_voltage_indices'].items():
+                self.assertEqual(a[:2],b[:2])
+                self.assertEqual(meta['mesh_mm']['y'][a[1]],0.)
+                self.assertEqual([meta['mesh_mm']['z'][q[2]] for q in (a,b)],meta['actual_wire_centres_z_mm'])
+                port,plane=map(int,name[1:].split('_'))
+                centre=-meta['plane_mm'] if port==0 else meta['dimensions']['junctions_mm'][-1]+meta['plane_mm']
+                self.assertAlmostEqual(meta['mesh_mm']['x'][a[0]],centre+(plane-1)/(1+.25*n),places=10)
 
     def test_current_contours_exclude_the_return_wire(self):
         for n in f.MESHES:
@@ -357,6 +382,32 @@ class OpenStubTests(unittest.TestCase):
             self.assertEqual(len(result['missing']), 13)
 
 
+    def test_diagnostic_window_is_explicit_and_bounded_before_launch(self):
+        with tempfile.TemporaryDirectory() as tmp, patch(__name__+'.popen_group') as launch:
+            for window in (0., -1., np.nan, .5e-9, 33e-9):
+                with self.assertRaises(ValueError):
+                    acquire(Path(tmp)/'absent', window_s=window, allow_cap=True)
+            with self.assertRaises(ValueError):
+                acquire(Path(tmp)/'absent', window_s=8e-9)
+            with self.assertRaises(ValueError):
+                acquire(Path(tmp)/'absent', window_s=8e-9, pilot_s=.5e-9, allow_cap=True)
+            launch.assert_not_called()
+            self.assertFalse((Path(tmp)/'absent').exists())
+
+    def test_diagnostic_window_is_frozen_and_reaches_the_worker(self):
+        proc = Mock(pid=123, win_job=None); proc.poll.return_value = 2
+        with tempfile.TemporaryDirectory() as tmp, patch(__name__+'.popen_group', return_value=proc), \
+                patch(__name__+'.wait_owned', return_value=2), patch(__name__+'.release_group'):
+            out = Path(tmp)/'failed'
+            with self.assertRaises(RuntimeError):
+                acquire(out, n=0, kind='through', rate=1000., window_s=8e-9, allow_cap=True)
+            plan = json.loads((out/'plan.json').read_text())
+            self.assertTrue(all(p['cap_s']==8e-9 for p in plan['ports']))
+            command = json.loads((out/'port1.worker.json').read_text())['command']
+            self.assertEqual(float(command[command.index('--window-seconds')+1]),8e-9)
+            self.assertEqual(f.build(0,1,kind='through')[2]['cap_s'],32e-9)
+            self.assertFalse((out/'cap-diagnostic-matrix.npz').exists())
+
     def test_unused_source_is_refused_before_propagation(self):
         _,_,meta = f.build(0,1,kind='through')
         used = {name:[True] for name in meta['required_properties']}
@@ -382,12 +433,19 @@ def main():
     p.add_argument('--control', choices=f.CONTROLS, default='ordinary'); p.add_argument('--port', type=int, choices=(1, 2), default=1)
     p.add_argument('--rate-mcps', type=float, default=15.); p.add_argument('--pilot-seconds', type=float)
     p.add_argument('--allow-capped-diagnostic', action='store_true')
+    p.add_argument('--window-seconds', type=float, help='bounded diagnostic window; full quality gates still apply')
     args = p.parse_args()
     if args.allow_capped_diagnostic and not (args.fdtd or args.compare): p.error('capped diagnostics are separate from strict study')
+    if args.window_seconds is not None:
+        if (args.pilot_seconds is not None or not (args.fdtd or args.worker)
+                or not np.isfinite(args.window_seconds)
+                or not f.excitation.dgauss_duration_s(f.FREQUENCIES[-1]) <= args.window_seconds <= f.CAP_S):
+            p.error('diagnostic window must contain the source, be at most 32 ns, and be separate from a pilot')
     if args.worker:
-        f.capture(args.out, args.mesh, args.port, args.kind, args.loss, args.control, args.pilot_seconds); return
+        cap = args.pilot_seconds if args.pilot_seconds is not None else args.window_seconds
+        f.capture(args.out, args.mesh, args.port, args.kind, args.loss, args.control, cap); return
     if args.preflight: result = preflight(args.out, args.rate_mcps)
-    elif args.fdtd: result = acquire(args.out, args.mesh, args.kind, args.loss, args.control, args.rate_mcps, args.pilot_seconds, args.allow_capped_diagnostic)
+    elif args.fdtd: result = acquire(args.out, args.mesh, args.kind, args.loss, args.control, args.rate_mcps, args.pilot_seconds, args.allow_capped_diagnostic, args.window_seconds)
     elif args.compare: result = f.matrix(args.out, args.allow_capped_diagnostic)[1]
     else: result = study(args.out)
     print(json.dumps(result, indent=2, allow_nan=False))
