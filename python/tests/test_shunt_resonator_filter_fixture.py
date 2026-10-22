@@ -280,6 +280,12 @@ class ShuntResonatorTests(unittest.TestCase):
         np.testing.assert_allclose(f.scattering(v,i),target,atol=3e-13,rtol=0)
         with self.assertRaises(ValueError):f.scattering(v[[0,0]],i[[0,0]])
 
+    def test_frozen_native_plan_survives_json_without_type_changes(self):
+        for kind in f.KINDS:
+            for port in (1,2):
+                _,meta=f.build(0,port,kind=kind,cap_s=.5e-9)
+                self.assertEqual(meta,json.loads(json.dumps(meta,allow_nan=False)))
+
     def test_actual_electric_and_half_step_magnetic_clocks_are_required(self):
         dt=1e-13;stride=int(1/(2*f.FREQUENCIES[-1]*dt))//f.OVERSAMPLING
         m=dict(native=dict(dt_s=dt,numerical_time_s=3*stride*dt))

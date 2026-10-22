@@ -170,7 +170,7 @@ def port_probe_geometry(sim):
                 bounds=[]
                 for axis in (1,2):
                     dual=(grids[axis][:-1]+grids[axis][1:])/2
-                    bounds.append((float(dual[low[axis]]),float(dual[high[axis]])))
+                    bounds.append([float(dual[low[axis]]),float(dual[high[axis]])])
                 if (any(a>=-RI or b<=RI for a,b in bounds)
                         or max(np.hypot(a,b) for a in bounds[0] for b in bounds[1])>=RO):
                     raise ValueError('native current contour must enclose the inner rod and exclude its shield')
