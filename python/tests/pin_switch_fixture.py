@@ -23,7 +23,9 @@ Z0, SCALE, RF, RR, LI, CJ=50.,10.,1.5,2.,.5e-9,.5e-12
 KINDS=('open','short','resistor','forward','reverse')
 MESHES=(1,2,3)
 CONTROLS=('ordinary','time','dt','domain','scale')
-CAP_S,END_DB,THREADS,OVERSAMPLING=8e-9,-80.,1,4
+# -80 dB can stop the reverse load before its full pulse/local-tail window.
+# A remaining global-energy floor still makes a run diagnostic-only.
+CAP_S,END_DB,THREADS,OVERSAMPLING=8e-9,-115.,1,4
 MARKER='FAIRBEAM-STATIC-PIN-PROPAGATION-BEGIN'
 LIMITS=dict(reflection_abs=.005,z_relative=.02,mesh_reflection_abs=.0025,
     mesh_z_relative=.005,control_reflection_abs=.001,control_z_relative=.003,
