@@ -204,6 +204,7 @@ class SmallDipolePatternTests(unittest.TestCase):
         for n in f.MESHES:
             sim,boxes,m=f.build(n)
             self.assertEqual(len(boxes),2);self.assertEqual(m['reference_ohm'],50.)
+            for axis in 'xy':self.assertIn(0.,m['mesh_mm'][axis])
             for lines in m['mesh_mm'].values():
                 np.testing.assert_allclose(np.diff(lines[-9:]),8.,atol=1e-12)
                 self.assertEqual(lines[-9],100.)
@@ -211,6 +212,8 @@ class SmallDipolePatternTests(unittest.TestCase):
             for name in m['surface_names']:
                 self.assertEqual(len(sim.csx.GetPropertiesByName(name+'_E')[0].GetAllPrimitives()),6)
             with self.assertRaises(ValueError):sim.to_bundle()
+        dt=[f.build(n)[2]['declared_dt_s']for n in f.MESHES]
+        self.assertTrue(all(b<a for a,b in zip(dt,dt[1:])))
 
     def test_controls_are_explicit_and_json_safe(self):
         _,_,base=f.build(2)

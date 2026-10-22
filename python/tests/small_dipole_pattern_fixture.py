@@ -88,9 +88,10 @@ def probe_bounds(mesh,start,stop,current=False):
 def build(n,control='ordinary',cap_s=None):
     if isinstance(n,bool) or not isinstance(n,int) or n not in MESHES or control not in CONTROLS:
         raise ValueError('declared mesh/control required')
-    edge,arms,res=((2,8,10.),(3,12,8.),(4,16,6.))[n-1]
+    edge,arms,res=((2,8,10.),(4,12,8.),(6,16,6.))[n-1]
     free=140. if control=='domain'else 100.
     fine=np.linspace(-WIDTH/2,WIDTH/2,edge+1)
+    fine[edge//2]=0.  # Preserve the physical sheet/voltage-probe plane at every level.
     step=(LENGTH-GAP)/(2*arms);tip=LENGTH/2
     z=np.r_[GAP/2+np.arange(arms)*step,tip-step/3,tip+2*step/3]
     anchors={'x':fine,'y':fine,'z':np.r_[-z,z]}
