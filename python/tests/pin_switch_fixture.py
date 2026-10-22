@@ -23,7 +23,7 @@ Z0, SCALE, RF, RR, LI, CJ=50.,10.,1.5,2.,.5e-9,.5e-12
 KINDS=('open','short','resistor','forward','reverse')
 MESHES=(1,2,3)
 CONTROLS=('ordinary','time','dt','domain','scale')
-CAP_S,END_DB,THREADS,OVERSAMPLING=8e-9,-80.,4,4
+CAP_S,END_DB,THREADS,OVERSAMPLING=8e-9,-80.,1,4
 MARKER='FAIRBEAM-STATIC-PIN-PROPAGATION-BEGIN'
 LIMITS=dict(reflection_abs=.005,z_relative=.02,mesh_reflection_abs=.0025,
     mesh_z_relative=.005,control_reflection_abs=.001,control_z_relative=.003,
@@ -90,6 +90,27 @@ class LoadSimulation(Simulation):
     def to_bundle(self,*args,**kwargs):raise ValueError('static research load has no Designer bundle representation')
 
 
+def probe_bounds(mesh,start,stop,current=False):
+    """rc3 operator snapping; current boxes enclose their dual-grid area.
+
+    See Operator::SnapToMeshLine / SnapBox2Mesh and ProcessCurrent. A
+    nearest-dual approximation misses the upper transverse boundary when
+    an endpoint is exactly on a primary line.
+    """
+    low=[];high=[]
+    for a,left,right in zip('xyz',start,stop):
+        g=np.asarray(mesh[a]);dual=(g[:-1]+g[1:])/2
+        if current:
+            lo,hi=[int(np.searchsorted(g,v,side='left'))-1 for v in (left,right)]
+            if hi>lo:
+                if dual[lo]>left:lo-=1
+                if dual[hi]<right:hi+=1
+        else:lo,hi=[int(np.searchsorted(dual,v,side='left'))for v in (left,right)]
+        if not 0<=lo<=hi<len(g)-(1 if current else 0):raise ValueError('probe outside declared grid')
+        low.append(lo);high.append(hi)
+    return [low,high]
+
+
 def build(n,kind,control='ordinary',cap_s=None):
     if isinstance(n,bool) or n not in MESHES or not isinstance(n,int) or kind not in KINDS or control not in CONTROLS:
         raise ValueError('declared mesh/load/control required')
@@ -135,12 +156,7 @@ def build(n,kind,control='ordinary',cap_s=None):
         box=sim.csx.GetPropertiesByName(name)[0].GetAllPrimitives()[0]
         start,stop=np.asarray(box.GetStart()),np.asarray(box.GetStop())
         probe[name]=dict(start_mm=start.tolist(),stop_mm=stop.tolist())
-        lo=[];hi=[]
-        for axis,a in enumerate('xyz'):
-            values=np.asarray(mesh[a]);values=(values[:-1]+values[1:])/2 if name in port.I_filenames else values
-            nearest=lambda value:int(np.flatnonzero(abs(values-value)<=abs(values-value).min()+1e-11)[0])
-            lo.append(nearest(start[axis]));hi.append(nearest(stop[axis]))
-        expected[name]=[lo,hi]
+        expected[name]=probe_bounds(mesh,start,stop,name in port.I_filenames)
     return sim,dict(n=n,kind=kind,control=control,mesh_mm=mesh,grid=grid,native_cells=cells,
         declared_dt_s=float(dt),cap_s=cap,max_timesteps=math.ceil(cap/dt),end_db=END_DB,
         reference_ohm=Z0*SCALE,impedance_scale=SCALE,geometry_scale=factor,elements=elements,

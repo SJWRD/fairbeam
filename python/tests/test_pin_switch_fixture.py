@@ -221,6 +221,13 @@ class PinSwitchTests(unittest.TestCase):
         for value in (data[:-1],data+np.array([dt/2,0])):
             with self.assertRaises(ValueError):f.trace_clock(value,meta)
 
+    def test_current_contour_encloses_dual_cells_at_primary_line_endpoints(self):
+        _,m=f.build(1,'forward')
+        # Actual rc3 pilot header: nearest dual picks upper [3,5,5]
+        # and misses the outer transverse current segment.
+        self.assertEqual(m['expected_probe_indices']['port_it_1'],[[1,1,5],[4,6,5]])
+        self.assertEqual(m['expected_probe_indices']['port_ut_1'],[[3,4,3],[3,4,9]])
+
     def test_operator_warning_and_zero_incident_spectrum_cannot_be_admitted(self):
         with self.assertRaisesRegex(ValueError,'lumped warning'):f.reject_warnings('Operator::Calc_LumpedElements(): Warning: skipped C')
         with self.assertRaises(ValueError):reflection(np.zeros(121),np.zeros(121))
