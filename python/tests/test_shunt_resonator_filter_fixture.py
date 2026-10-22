@@ -286,6 +286,13 @@ class ShuntResonatorTests(unittest.TestCase):
                 _,meta=f.build(0,port,kind=kind,cap_s=.5e-9)
                 self.assertEqual(meta,json.loads(json.dumps(meta,allow_nan=False)))
 
+    def test_current_probe_prediction_uses_native_dual_nodes(self):
+        # The rc3 finest pilot puts the lower contour at dual indices 9/87.
+        # Nearest-primal-minus-one incorrectly predicts 8/86 on this mesh.
+        _,meta=f.build(2,1,kind='through',cap_s=.5e-9)
+        row=meta['native_probe_geometry'][0]
+        self.assertEqual(row['expected_indices']['port_it_1A'],[[77,9,87],[77,18,96]])
+
     def test_actual_electric_and_half_step_magnetic_clocks_are_required(self):
         dt=1e-13;stride=int(1/(2*f.FREQUENCIES[-1]*dt))//f.OVERSAMPLING
         m=dict(native=dict(dt_s=dt,numerical_time_s=3*stride*dt))

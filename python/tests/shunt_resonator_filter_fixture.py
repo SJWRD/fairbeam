@@ -159,9 +159,9 @@ def port_probe_geometry(sim):
             current=name in port.I_filenames;low=[];high=[]
             for axis,values in enumerate(grids):
                 nearest=lambda value:int(np.flatnonzero(abs(values-value)<=abs(values-value).min()+1e-11)[0])
-                if current and axis==0:
-                    a=b=int(np.searchsorted(values,start[axis]-1e-11))-1
-                elif current:a,b=nearest(start[axis])-1,nearest(stop[axis])
+                if current:
+                    dual=(values[:-1]+values[1:])/2
+                    a,b=int(np.argmin(abs(dual-start[axis]))),int(np.argmin(abs(dual-stop[axis])))
                 else:a,b=nearest(start[axis]),nearest(stop[axis])
                 if not 0<=a<=b<len(values)-(1 if current else 0):raise ValueError('native probe escapes the grid')
                 low.append(a);high.append(b)
