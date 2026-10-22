@@ -264,13 +264,19 @@ def capture(out,n,kind,control='ordinary',cap_s=None):
     return m
 
 
-def read(out):
+def admissible(m,checks,allow_cap=False):
+    failed=[k for k,v in checks.items()if not v]
+    return not failed or (allow_cap and failed==['stopping']
+        and m['native']['timesteps']==m['max_timesteps'] and m['native']['numerical_time_s']>=m['cap_s'])
+
+
+def read(out,allow_cap=False):
     out=Path(out);m=json.loads((out/'report.json').read_text())
     _,expected=build(m['n'],m['kind'],m['control'],m['cap_s'])
     if (any(m.get(k)!=v for k,v in expected.items()) or m['source']!=identity()
         or m['runtime']!=environment.runtime_identity()):raise ValueError('stored model/source/runtime changed')
     q=quality(m)
-    if not all(q.values()):raise ValueError(f'rejected native source: {q}')
+    if not admissible(m,q,allow_cap):raise ValueError(f'rejected native source: {q}')
     for name,want in [('input.xml',m['input_sha256']),('operator-input.xml',m['operator']['input_sha256']),
         ('operator.json',m['operator_sha256']),('data.npz',m['data_sha256'])]:
         if sha(out/name)!=want:raise ValueError('stored input/operator/data changed')

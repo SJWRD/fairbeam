@@ -31,7 +31,7 @@ def freeze(out,n,kind,control,cap=None):
     f.save(out/'plan.json',m);return m
 
 
-def acquire(out,n,kind,control='ordinary',rate=60.,pilot_s=None):
+def acquire(out,n,kind,control='ordinary',rate=60.,pilot_s=None,allow_cap=False):
     out=Path(out).resolve()
     if out.exists():raise ValueError('fresh acquisition directory required')
     if pilot_s is not None and (not np.isfinite(pilot_s) or not 0<pilot_s<=.5e-9):raise ValueError('pilot in 0..0.5 ns required')
@@ -40,7 +40,8 @@ def acquire(out,n,kind,control='ordinary',rate=60.,pilot_s=None):
     out.mkdir(parents=True,exist_ok=False);m=freeze(out,n,kind,control,pilot_s)
     state=dict(status='prepared',started_utc=datetime.now(timezone.utc).isoformat(),source=m['source'],runtime=m['runtime'],
         driver_head=subprocess.check_output(['git','rev-parse','HEAD'],cwd=f.ROOT,text=True).strip(),
-        forecast_seconds=seconds,rate_mcps=rate,pilot=pilot_s is not None,active_launcher_pid=None,qualified=False)
+        forecast_seconds=seconds,rate_mcps=rate,pilot=pilot_s is not None,capped_diagnostic_requested=allow_cap,
+        active_launcher_pid=None,qualified=False)
     proc=None;start,wall=time.monotonic(),time.time();code=None;failure=None;command=[]
     try:
         command=[sys.executable,'-m','tests.test_pin_switch_fixture','--worker','--mesh',str(n),
@@ -74,7 +75,9 @@ def acquire(out,n,kind,control='ordinary',rate=60.,pilot_s=None):
             native=report['native'];rate_mcps=native['cells']*native['timesteps']/native['iteration_wall_s']/1e6
             state.update(status='performance_only',rate_measured_mcps=rate_mcps)
             return state
-        result=compare(folder);state.update(status='complete',result=result);return result
+        result=compare(folder,allow_cap)
+        state.update(status='complete' if result['native_complete'] else 'complete_with_known_deviation',result=result)
+        return result
     except BaseException as error:
         state.update(status='rejected',reason=repr(error));raise
     finally:
@@ -89,10 +92,11 @@ def reflection(v,i):
     return (v-f.Z0*f.SCALE*i)/a
 
 
-def compare(folder):
-    m,d,_=f.read(folder);s11=reflection(d['v'],d['i']);error=float(abs(s11-f.reference_reflection(m['kind'])).max())
+def compare(folder,allow_cap=False):
+    m,d,q=f.read(folder,allow_cap);s11=reflection(d['v'],d['i']);error=float(abs(s11-f.reference_reflection(m['kind'])).max())
     result=dict(n=m['n'],kind=m['kind'],control=m['control'],reflection_error_abs=error,
-        point_passes=error<=f.LIMITS['reflection_abs'],qualified=False,fdtd_twoport_switch_validated=False,scope=f.SCOPE)
+        point_passes=error<=f.LIMITS['reflection_abs'],native_complete=all(q.values()),native_quality=q,
+        qualified=False,fdtd_twoport_switch_validated=False,scope=f.SCOPE)
     if m['kind'] in ('forward','reverse'):
         z=d['v']/d['i']/f.SCALE;target=f.diode_z(state=m['kind'])
         if not np.isfinite(z).all():raise ValueError('finite measured load impedance required')
@@ -105,7 +109,7 @@ def compare(folder):
             difference=float(abs(20*np.log10(abs(native[:,1,0]/ideal[:,1,0]))).max())
             result[layout+'_embedding_loss_error_db']=difference
             result['point_passes'] &= difference<=f.LIMITS['attenuation_db']
-    path=Path(folder).parent/'comparison.json'
+    path=Path(folder).parent/('cap-diagnostic-comparison.json' if allow_cap else 'comparison.json')
     if path.exists():
         if json.loads(path.read_text())!=result:raise ValueError('stored comparison changed')
     else:f.save(path,result)
@@ -253,6 +257,22 @@ class PinSwitchTests(unittest.TestCase):
             self.assertFalse(result['qualified']);self.assertFalse(result['fdtd_twoport_switch_validated'])
             self.assertFalse(result['book_example_validated'])
 
+    def test_explicit_cap_diagnostic_waives_only_global_stopping(self):
+        m=dict(native=dict(timesteps=10,numerical_time_s=1.),max_timesteps=10,cap_s=1.)
+        q=dict(stopping=False,source=True,clock=True,tail=True,geometry=True,probes=True)
+        self.assertFalse(f.admissible(m,q));self.assertTrue(f.admissible(m,q,True))
+        for key in ('source','clock','tail','geometry','probes'):
+            self.assertFalse(f.admissible(m,dict(q,**{key:False}),True))
+        self.assertFalse(f.admissible(dict(m,cap_s=2.),q,True))
+
+    def test_capped_diagnostics_cannot_enter_strict_study_qualification(self):
+        with tempfile.TemporaryDirectory()as tmp:
+            folder=Path(tmp)/'n1_forward';folder.mkdir()
+            f.save(folder/'progress.json',dict(status='complete_with_known_deviation'))
+            result=study(tmp)
+            self.assertFalse(result['qualified']);self.assertEqual(len(result['rejected']),1)
+            self.assertFalse(result['book_example_validated'])
+
     def test_failed_worker_keeps_receipt_and_does_not_make_a_comparison(self):
         proc=Mock(pid=123,win_job=None);proc.poll.return_value=2
         with tempfile.TemporaryDirectory()as tmp,patch(__name__+'.popen_group',return_value=proc),\
@@ -281,11 +301,13 @@ def main():
     p.add_argument('--out',type=Path,required=True);p.add_argument('--mesh',type=int,choices=f.MESHES,default=1)
     p.add_argument('--kind',choices=f.KINDS,default='forward');p.add_argument('--control',choices=f.CONTROLS,default='ordinary')
     p.add_argument('--rate-mcps',type=float,default=60.);p.add_argument('--pilot-seconds',type=float)
+    p.add_argument('--allow-capped-diagnostic',action='store_true')
     args=p.parse_args()
+    if args.allow_capped_diagnostic and not(args.fdtd or args.compare):p.error('capped diagnostics are separate from strict study')
     if args.pilot_seconds is not None and (not(args.fdtd or args.worker) or not np.isfinite(args.pilot_seconds) or not 0<args.pilot_seconds<=.5e-9):p.error('performance-only pilot must be in 0..0.5 ns')
     if args.worker:f.capture(args.out,args.mesh,args.kind,args.control,args.pilot_seconds);return
-    if args.fdtd:result=acquire(args.out,args.mesh,args.kind,args.control,args.rate_mcps,args.pilot_seconds)
-    elif args.compare:result=compare(args.out/'capture')
+    if args.fdtd:result=acquire(args.out,args.mesh,args.kind,args.control,args.rate_mcps,args.pilot_seconds,args.allow_capped_diagnostic)
+    elif args.compare:result=compare(args.out/'capture',args.allow_capped_diagnostic)
     elif args.study:result=study(args.out)
     else:
         args.out.mkdir(parents=True,exist_ok=False);result=freeze(args.out,args.mesh,args.kind,args.control)
