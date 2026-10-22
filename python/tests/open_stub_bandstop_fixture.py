@@ -292,10 +292,13 @@ def source_info(path, meta):
 
 def audit_header(text, meta):
     text_after = text.split(MARKER)[-1]
-    grid = re.search(r'FDTD simulation size: (\d+)x(\d+)x(\d+) --> (\d+) FDTD cells', text_after)
+    grid = re.search(r'FDTD simulation size: (\d+)x(\d+)x(\d+) --> (\S+) FDTD cells', text_after)
     if (text.count(MARKER) != 1 or re.findall(r'openEMS 64bit -- version (\S+)', text_after) != ['v0.37.0-rc3']
             or f'fixed number of threads: {THREADS}' not in text_after or not grid
-            or list(map(int, grid.groups()[:3])) != meta['grid'] or int(grid[4]) != meta['native_cells']):
+            or list(map(int, grid.groups()[:3])) != meta['grid']
+            # The engine prints the cell count with six significant digits,
+            # including scientific notation; dimensions and statistics stay exact.
+            or float(grid[4]) != float(format(meta['native_cells'], '.6g'))):
         raise ValueError('native propagation version/thread/grid header mismatch')
     return dict(version='v0.37.0-rc3', threads=THREADS)
 

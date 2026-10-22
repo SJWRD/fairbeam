@@ -193,6 +193,17 @@ def abcd_reference(freq, plane_mm=12.):
 
 
 class OpenStubTests(unittest.TestCase):
+    def test_native_header_integer_and_rounded_scientific_cell_counts(self):
+        for n in (0,1,2):
+            meta=f.build(n,1)[2]
+            cells=meta['native_cells'];grid='x'.join(map(str,meta['grid']))
+            text=(f'{f.MARKER}\nopenEMS 64bit -- version v0.37.0-rc3\n'
+                f'fixed number of threads: 4\nFDTD simulation size: {grid} --> {cells:.6g} FDTD cells')
+            self.assertEqual(f.audit_header(text,meta),dict(version='v0.37.0-rc3',threads=4))
+            for bad in (text.replace(grid,grid+'0'),text.replace('threads: 4','threads: 8'),text.replace('v0.37.0-rc3','v0.36.0'),
+                    text.replace(f'{cells:.6g} FDTD',f'{cells+100} FDTD'),text+f.MARKER):
+                with self.assertRaises(ValueError):f.audit_header(bad,meta)
+
     def test_through_reference_is_the_matched_air_line(self):
         target = f.reference(kind='through')
         length = f.dimensions()['junctions_mm'][-1]*1e-3+.024
