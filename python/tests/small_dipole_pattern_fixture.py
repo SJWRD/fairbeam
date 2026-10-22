@@ -21,7 +21,8 @@ from tests import coupled_stripline_fixture as environment
 ROOT=Path(__file__).resolve().parents[2]
 FREQUENCIES=np.array([.9,1.,1.1])*1e9
 THETA=np.arange(0.,181.,2.);PHI=np.arange(0.,360.,10.)
-MESHES=(1,2,3);CONTROLS=('ordinary','time','dt','domain','feed')
+MESHES=(1,2,3);CONTROLS=('ordinary','time','dt','domain','feed','td')
+STUDY_CONTROLS=('time','dt','domain','feed')
 END_DB,CAP_S,THREADS,OVERSAMPLING=-90.,13.5e-9,4,8
 LENGTH,WIDTH,GAP=15.,.6,.4
 SURFACES=(30.,45.)
@@ -112,7 +113,8 @@ def build(n,control='ordinary',cap_s=None):
     arm.AddBox([-WIDTH/2,0,GAP/2],[WIDTH/2,0,tip],priority=10)
     reference=100. if control=='feed'else 50.
     sim.lumped_port(1,reference,[-WIDTH/2,0,-GAP/2],[WIDTH/2,0,GAP/2],'z')
-    boxes=[nf2ff(sim.csx,f'pattern_{k}',[-r]*3,[r]*3,frequency=FREQUENCIES.tolist())for k,r in enumerate(SURFACES)]
+    recording={}if control=='td'else dict(frequency=FREQUENCIES.tolist())
+    boxes=[nf2ff(sim.csx,f'pattern_{k}',[-r]*3,[r]*3,**recording)for k,r in enumerate(SURFACES)]
     for p in sim.csx.GetAllProperties():p.SetColor((128,128,128),alpha=p.GetFillColor()[3])
     if sim.csx.Update():raise ValueError('invalid geometry')
     required=[p.GetName()for p in sim.csx.GetAllProperties()if p.GetTypeString()in('Metal','LumpedElement','Excitation')]
@@ -124,7 +126,7 @@ def build(n,control='ordinary',cap_s=None):
         native_cells=int(np.prod([len(mesh[a])for a in 'xyz'])),declared_dt_s=float(dt),cap_s=cap,
         max_timesteps=math.ceil(cap/dt),end_db=END_DB,reference_ohm=reference,free_half_mm=free,
         pml_cells=8,pml_cell_mm=8.,length_mm=LENGTH,width_mm=WIDTH,gap_mm=GAP,
-        surfaces_mm=list(SURFACES),surface_names=[v.name for v in boxes],required_properties=required,
+        surfaces_mm=list(SURFACES),surface_names=[v.name for v in boxes],recording_domain='time'if control=='td'else'frequency',required_properties=required,
         expected_probe_indices=indices,voltage_names=list(port.U_filenames),current_names=list(port.I_filenames),
         source_duration_s=excitation.dgauss_duration_s(1.2e9),threads=THREADS,nf2ff_threads=THREADS,
         frequencies_hz=FREQUENCIES.tolist(),theta_deg=THETA.tolist(),phi_deg=PHI.tolist(),
@@ -220,8 +222,10 @@ def surface_inventory(raw,m):
 
 def farfield_axes(result):
     np.testing.assert_allclose(result.freq,FREQUENCIES,rtol=1e-6,atol=0)
-    np.testing.assert_allclose(np.rad2deg(result.theta),THETA,rtol=0,atol=2e-5)
-    np.testing.assert_allclose(np.rad2deg(result.phi),PHI,rtol=0,atol=3e-5)
+    # The native constructor stores float32 radians; avoid a second float32
+    # rounding in rad2deg, which can exceed a degree-space tolerance by one ULP.
+    np.testing.assert_array_equal(result.theta,np.deg2rad(THETA).astype(np.float32))
+    np.testing.assert_array_equal(result.phi,np.deg2rad(PHI).astype(np.float32))
     if abs(float(np.asarray(result.r).ravel()[0])-1)>1e-6:raise ValueError('far-field radius changed')
 
 

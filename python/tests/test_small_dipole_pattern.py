@@ -112,7 +112,7 @@ def compare(folder):
 
 
 def configurations():
-    return [(f'n{n}',n,'ordinary')for n in f.MESHES]+[(f'n2_{c}',2,c)for c in f.CONTROLS[1:]]
+    return [(f'n{n}',n,'ordinary')for n in f.MESHES]+[(f'n2_{c}',2,c)for c in f.STUDY_CONTROLS]
 
 
 def changes(first,second):
@@ -142,7 +142,7 @@ def study(root):
         a={k:(np.repeat(v[:1],2,axis=0)if k in ('e_theta','e_phi','prad_w','native_dmax')else v)for k,v in d.items()}
         b={k:(np.repeat(v[1:],2,axis=0)if k in ('e_theta','e_phi','prad_w','native_dmax')else v)for k,v in d.items()}
         surfaces.append(dict(name=name,**changes((m,a),(m,b))))
-    names=[('n1','n2'),('n2','n3')]+[('n2',f'n2_{c}')for c in f.CONTROLS[1:]]
+    names=[('n1','n2'),('n2','n3')]+[('n2',f'n2_{c}')for c in f.STUDY_CONTROLS]
     for first,second in names:
         if first not in data or second not in data:continue
         row=dict(first=first,second=second,**changes(data[first],data[second]))
@@ -250,9 +250,16 @@ class SmallDipolePatternTests(unittest.TestCase):
             with self.assertRaises(ValueError):f.surface_inventory(raw,m)
 
     def test_farfield_native_axes_cannot_be_relabelled(self):
-        r=Mock(freq=f.FREQUENCIES,theta=np.deg2rad(f.THETA),phi=np.deg2rad(f.PHI),r=np.array([1.]))
+        r=Mock(freq=f.FREQUENCIES,theta=np.deg2rad(f.THETA).astype(np.float32),phi=np.deg2rad(f.PHI).astype(np.float32),r=np.array([1.]))
         f.farfield_axes(r);r.freq=f.FREQUENCIES*2
         with self.assertRaises(AssertionError):f.farfield_axes(r)
+
+    def test_recording_domain_control_keeps_the_same_physical_model(self):
+        _,a,first=f.build(1);_,b,second=f.build(1,'td')
+        for key in ('mesh_mm','declared_dt_s','reference_ohm','length_mm','width_mm','gap_mm','surfaces_mm','expected_probe_indices'):
+            self.assertEqual(first[key],second[key])
+        self.assertEqual(first['recording_domain'],'frequency');self.assertEqual(second['recording_domain'],'time')
+        self.assertEqual(a[0].dump_type,10);self.assertEqual(b[0].dump_type,0)
 
     def test_invalid_models_and_requests_do_not_dispatch(self):
         for n in (True,0,4,1.5):
