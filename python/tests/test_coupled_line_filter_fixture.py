@@ -284,6 +284,35 @@ class CoupledFilterTests(unittest.TestCase):
                 self.assertEqual(group['group']['connection'],'parallel')
                 self.assertEqual(group['group']['members'][0]['polarity'],-1)
 
+    def test_zero_width_sources_use_exact_mesh_coordinates(self):
+        for n in f.MESHES:
+            for source in (1,2):
+                _,_,meta = f.build(n,source)
+                x = np.asarray(meta['mesh_mm']['x'])
+                for feed in meta['grouped_feeds']:
+                    self.assertTrue(np.any(x==feed['start'][0]))
+                    self.assertEqual(feed['start'][0],feed['stop'][0])
+                names=meta['required_properties']
+                self.assertEqual(sum('_port_excite_' in v for v in names),2)
+                self.assertEqual(sum('_port_resist_' in v for v in names),4)
+                self.assertTrue(set(meta['solids']).issubset(names))
+
+    def test_unused_source_is_refused_before_propagation(self):
+        _,_,meta = f.build(0,1,kind='through')
+        used = {name:[True] for name in meta['required_properties']}
+        source = next(name for name in used if '_port_excite_' in name)
+        used[source] = [False]
+        operator = dict(timestep_s=meta['declared_dt_s']/.72,grid=meta['grid'])
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp); freeze(root,0,'through','pec','ordinary')
+            with patch.object(f.CoupledFilterSimulation,'run',return_value=operator) as run, \
+                    patch.object(f,'usage',return_value=used):
+                with self.assertRaisesRegex(ValueError,'operator CFL/material-usage'):
+                    f.capture(root/'port1',0,1,kind='through')
+                self.assertEqual(run.call_count,1)
+                self.assertTrue(run.call_args.kwargs['setup_only'])
+                self.assertFalse((root/'port1/raw').exists())
+
     def test_source_and_plane_controls_preserve_physical_mesh_and_clock(self):
         ordinary = f.build(1,1)[2]
         for control in ('source','plane'):

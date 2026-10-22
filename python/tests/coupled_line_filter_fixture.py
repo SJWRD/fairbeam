@@ -250,6 +250,9 @@ def build(n, port, kind='filter', loss='pec', control='ordinary', cap_s=None):
     for endpoint, cy in enumerate(feeds):
         number, direction = endpoint+1, 1 if endpoint == 0 else -1
         source = -distance if endpoint == 0 else end+distance
+        # A zero-width transverse source must use the actual native grid
+        # coordinate, not a sub-ulp-different analytical endpoint sum.
+        source = float(x[np.argmin(abs(x-source))])
         lo, hi = cy-wf/2, cy+wf/2
         record = dict(number=number,R=Z0,start=[source,lo,-B/2],stop=[source,hi,0.],direction='z',
             excite=number == port,group=dict(connection='parallel',members=[dict(
@@ -272,6 +275,8 @@ def build(n, port, kind='filter', loss='pec', control='ordinary', cap_s=None):
                 indices[name] = [[ix+j-1,low,zl],[ix+j-1,high,zh]]
     for prop in sim.csx.GetAllProperties(): prop.SetColor((128,128,128),alpha=prop.GetFillColor()[3])
     if sim.csx.Update(): raise ValueError('invalid native geometry')
+    required = solids+[p.GetName() for p in sim.csx.GetAllProperties()
+        if '_port_resist_' in p.GetName() or '_port_excite_' in p.GetName()]
     smallest_gap = min(s['gap_mm'] for s in d['sections'])
     return sim, ports, dict(protocol='coupled-line-filter-v1',n=n,excited_port=port,kind=kind,loss=loss,
         control=control,dimensions=d,grid=grid,native_cells=cells,
@@ -279,6 +284,7 @@ def build(n, port, kind='filter', loss='pec', control='ordinary', cap_s=None):
         declared_dt_s=float(dt),cap_s=cap,max_timesteps=steps,end_db=end_db,threads=THREADS,
         source_duration_s=excitation.dgauss_duration_s(FREQUENCIES[-1]),solids=solids,
         expected_current_indices=indices,source_distance_mm=distance,native_copper=False,
+        required_properties=required,
         grouped_feeds=groups,minimum_nominal_gap_cells=smallest_gap/np.diff(y).min(),
         scope='Own homogeneous finite stripline; ideal modal circuit excludes open-end and width-junction fields')
 
@@ -340,7 +346,7 @@ def quality(meta):
         stopping=run.get('converged') is True and run.get('hit_timestep_limit') is False
             and bool(energies) and max(energies) <= meta['end_db']+1e-7,
         operator=0 < meta['declared_dt_s'] <= .8*op['run'].get('timestep_s', 0.),
-        geometry=meta['required_usage'] == op['required_usage'] and set(meta['required_usage']) == set(meta['solids'])
+        geometry=meta['required_usage'] == op['required_usage'] and set(meta['required_usage']) == set(meta['required_properties'])
             and all(v and all(v) for v in meta['required_usage'].values()),
         probes=meta['actual_current_indices'] == meta['expected_current_indices'],
         header=meta.get('native_header') == dict(version='v0.37.0-rc3', threads=THREADS),
@@ -372,10 +378,10 @@ def capture(out, n, port, kind='filter', loss='pec', control='ordinary', cap_s=N
     if sha(out/'operator-input.xml') != row['operator_input_sha256']:
         raise ValueError('operator input differs from the pre-field plan')
     op = dict(run=setup.run(str(out/'operator'), threads=THREADS, exact=True, echo=True, setup_only=True),
-        required_usage=usage(setup, meta['solids']), input_sha256=sha(out/'operator-input.xml'))
+        required_usage=usage(setup, meta['required_properties']), input_sha256=sha(out/'operator-input.xml'))
     save(out/'operator.json', op)
     if (not 0 < meta['declared_dt_s'] <= .8*op['run'].get('timestep_s', 0.)
-            or op['run'].get('grid') != meta['grid'] or set(op['required_usage']) != set(meta['solids'])
+            or op['run'].get('grid') != meta['grid'] or set(op['required_usage']) != set(meta['required_properties'])
             or not all(v and all(v) for v in op['required_usage'].values())):
         raise ValueError('operator CFL/material-usage preflight failed')
     if identity() != meta['source'] or runtime_identity() != meta['runtime']:
@@ -385,7 +391,7 @@ def capture(out, n, port, kind='filter', loss='pec', control='ordinary', cap_s=N
     stats = np.loadtxt(out/'raw/openEMS_stats.txt', comments='%')
     native = dict(cells=int(stats[0]), dt_s=float(stats[1]), timesteps=int(stats[2]),
         numerical_time_s=float(stats[3]), iteration_wall_s=float(stats[4]))
-    meta.update(native=native, run=sim.run_stats, operator=op, required_usage=usage(sim, meta['solids']))
+    meta.update(native=native, run=sim.run_stats, operator=op, required_usage=usage(sim, meta['required_properties']))
     vn, cn = probe_names(); values = []; tails = []; indices = {}; raw_hashes = {}
     for name in vn+cn:
         path = out/'raw'/name; data = np.loadtxt(path, comments='%', ndmin=2)
