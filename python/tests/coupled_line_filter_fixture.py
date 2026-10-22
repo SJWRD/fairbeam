@@ -25,14 +25,14 @@ ROOT = Path(__file__).resolve().parents[2]
 F0, FBW, RIPPLE_DB, Z0 = 2e9, .1, .5, 50.
 B, ER, ORDER = 3.2, 2.2, 3
 FREQUENCIES = np.linspace(1.5e9, 2.5e9, 401)
-MESHES, KINDS = (1, 2, 3), ('through', 'filter')
+MESHES, KINDS = (0, 1, 2, 3), ('through', 'filter')
 LOSSES = ('pec',)
 STUDY_CONTROLS = ('time', 'dt', 'sidewall', 'plane', 'source')
 DIAGNOSTIC_CONTROLS = ()
 CONTROLS = ('ordinary', *STUDY_CONTROLS)
 OVERSAMPLING = 4
 MARKER = 'FAIRBEAM-COUPLED-LINE-FILTER-PROPAGATION-BEGIN'
-FACTORS = {1: .5, 2: .75, 3: 1.}
+FACTORS = {0: .4, 1: .5, 2: .75, 3: 1.}
 CAP_S, END_DB, THREADS = 48e-9, -80., 4
 LIMITS = dict(s_abs=.02, phase_deg=2., mesh_s_abs=.005, mesh_phase_deg=.5,
     control_s_abs=.0025, control_phase_deg=.2, contour_s_abs=.0025,

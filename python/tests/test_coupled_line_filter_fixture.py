@@ -161,7 +161,7 @@ def study(root):
             change = f.difference(actual, results[base])
             controls.append(dict(loss=loss, control=control, **change,
                 passes=change['s_abs'] <= f.LIMITS['control_s_abs'] and change['phase_deg'] <= f.LIMITS['control_phase_deg']))
-    qualified = (not missing and not rejected and len(mesh) == 4 and len(controls) == 5
+    qualified = (not missing and not rejected and len(mesh) == 6 and len(controls) == 5
         and all(r['passes'] for r in mesh+controls)
         and all(r['native_complete'] and r['measurement_passes'] and r['point_target_passes'] for r in rows))
     return dict(qualified=qualified, missing=missing, rejected=rejected, rows=rows, mesh_changes=mesh,
@@ -254,10 +254,10 @@ class CoupledFilterTests(unittest.TestCase):
             for axis in (x,y,z):
                 h = np.diff(axis); self.assertTrue(np.all(h>0))
                 self.assertLessEqual(max(np.max(h[1:]/h[:-1]),np.max(h[:-1]/h[1:])),2+1e-10)
-        np.testing.assert_allclose(boundaries,np.broadcast_to(boundaries[0],(3,6)),atol=1e-12,rtol=0)
+        np.testing.assert_allclose(boundaries,np.broadcast_to(boundaries[0],(len(f.MESHES),6)),atol=1e-12,rtol=0)
 
     def test_invalid_reference_and_mesh_are_rejected(self):
-        for n in (True,0,4,1.):
+        for n in (True,-1,4,1.):
             with self.assertRaises(ValueError): f.mesh_lines(n)
             with self.assertRaises(ValueError): f.build(n,1)
         for frequency in ([],[0],[4e9],[np.nan],[2e9+1j]):
@@ -401,7 +401,7 @@ class CoupledFilterTests(unittest.TestCase):
     def test_missing_mesh_and_controls_cannot_qualify(self):
         with tempfile.TemporaryDirectory() as tmp:
             result = study(tmp); self.assertFalse(result['qualified'])
-            self.assertEqual(len(result['missing']), 11)
+            self.assertEqual(len(result['missing']), 13)
 
 def main():
     p = argparse.ArgumentParser(description=__doc__); mode = p.add_mutually_exclusive_group(required=True)
