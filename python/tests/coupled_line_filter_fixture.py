@@ -216,7 +216,7 @@ def build(n, port, kind='filter', loss='pec', control='ordinary', cap_s=None):
     # against the actual operator's bound before every propagation.
     dt = (.675 if control == 'dt' else .9)/(C0*np.sqrt(sum(
         1/(np.diff(a).min()*1e-3)**2 for a in (x, y, z))))
-    cap = CAP_S*(1.5 if control == 'time' else 1) if cap_s is None else float(cap_s)
+    cap = CAP_S*(2.25 if control == 'time' else 1) if cap_s is None else float(cap_s)
     if not np.isfinite(cap) or cap <= 0: raise ValueError('positive finite window required')
     steps = math.ceil(cap/dt); end_db = END_DB-(10 if control == 'time' else 0)
     sim = CoupledFilterSimulation(FREQUENCIES[0], FREQUENCIES[-1], excitation='dgauss',
