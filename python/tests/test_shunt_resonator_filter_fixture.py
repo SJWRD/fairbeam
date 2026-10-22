@@ -293,6 +293,13 @@ class ShuntResonatorTests(unittest.TestCase):
         row=meta['native_probe_geometry'][0]
         self.assertEqual(row['expected_indices']['port_it_1A'],[[77,9,87],[77,18,96]])
 
+    def test_fast_controls_do_not_stop_before_the_local_tail_window_is_quiet(self):
+        for kind in f.KINDS:
+            expected=-100. if kind=='filter' else -130.
+            self.assertEqual(f.build(0,1,kind=kind)[1]['end_db'],expected)
+            self.assertEqual(f.build(0,1,kind=kind,control='time')[1]['end_db'],expected-10)
+        self.assertEqual(f.LIMITS['terminal_tail_db'],-70.)
+
     def test_actual_electric_and_half_step_magnetic_clocks_are_required(self):
         dt=1e-13;stride=int(1/(2*f.FREQUENCIES[-1]*dt))//f.OVERSAMPLING
         m=dict(native=dict(dt_s=dt,numerical_time_s=3*stride*dt))
