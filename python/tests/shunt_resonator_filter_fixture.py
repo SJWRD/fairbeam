@@ -9,7 +9,7 @@ import json
 import re
 from pathlib import Path
 import numpy as np
-from openEMS.physical_constants import C0, Z0 as ETA0
+from openEMS.physical_constants import C0, EPS0, Z0 as ETA0
 from fairbeam import Simulation, excitation, multiport
 from fairbeam.network import network_s
 from tests.coax_resonator_fixture import save, sha
@@ -25,7 +25,9 @@ KINDS=('through','capacitor','stub','filter')
 CONTROLS=('ordinary','time','dt','boundary','plane','source')
 COARSE_MM=(.6,.45,.36)
 RO,RI,ROS=3.,3.*np.exp(-2*np.pi*Z0/ETA0),3.5
-GAP_MM=1.
+# 1 mm makes the two interior capacitors smaller than the native box's
+# vacuum capacitance; rc3 warns, skips C and still marks the primitive used.
+GAP_MM=2.
 STUB_X_MM=(-8.,0.,8.)
 CAP_X_MM=(-12.,-4.,4.,12.)
 END_DB,CAP_S,THREADS,OVERSAMPLING=-100.,120e-9,4,4
@@ -103,7 +105,11 @@ def reference(freq=FREQUENCIES,kind='filter',finite=True,plane_mm=28.):
         delay=plane_mm*1e-3/C0
         return network_s(f,[0,2],[(0,1,Z0,delay),(1,2,Z0,delay)],z_ref=Z0,
             admittances=[(1,-1,-1j/(Z0*np.tan(w*d['stub_delay_s'][1])))])
-    x=np.array([-plane_mm,-12.5,-11.5,-8.,-4.5,-3.5,0.,3.5,4.5,8.,11.5,12.5,plane_mm])
+    points=[-plane_mm]
+    for k,centre in enumerate(CAP_X_MM):
+        points.extend((centre-GAP_MM/2,centre+GAP_MM/2))
+        if k<3:points.append(STUB_X_MM[k])
+    x=np.array([*points,plane_mm])
     gaps=(1,4,7,10);stubs=(3,6,9)
     return network_s(f,[0,12],z_ref=Z0,
         lines=[(k,k+1,Z0,(x[k+1]-x[k])*1e-3/C0) for k in range(12) if k not in gaps],
@@ -181,6 +187,31 @@ def port_probe_geometry(sim):
     return result
 
 
+def minimum_box_capacitance(mesh,start,stop):
+    """Native parallel-C floor for this Cartesian, x-directed box, in farads.
+
+    rc3 Operator::Calc_LumpedElements uses inclusive transverse dual areas
+    and series axial edges, then requires C/unitGC >= EPS0. The primitive
+    usage flag remains true even when that test skips the capacitance.
+    """
+    grids=[np.asarray(mesh[a],float) for a in 'xyz'];indices=[]
+    for axis,g in enumerate(grids):
+        dual=(g[:-1]+g[1:])/2
+        lo,hi=[int(np.searchsorted(dual,v,side='left')) for v in (start[axis],stop[axis])]
+        if not 0<lo<=hi<len(g)-1 or (axis==0 and lo==hi):
+            raise ValueError('interior ordered native capacitor box required')
+        indices.append((lo,hi))
+    spans=[((g[hi]+g[hi+1])-(g[lo-1]+g[lo]))/2
+           for g,(lo,hi) in zip(grids[1:],indices[1:])]
+    lo,hi=indices[0]
+    return float(EPS0*spans[0]*spans[1]/(grids[0][hi]-grids[0][lo])*1e-3)
+
+
+def reject_lumped_warnings(text):
+    warnings=re.findall(r'^.*(?:Calc_LumpedElements|LumpedRLC::BuildExtension).*Warning:.*$',text,re.M)
+    if warnings:raise ValueError('native lumped model warning: '+'; '.join(warnings))
+
+
 class CoaxFilterSimulation(Simulation):
     def to_bundle(self,*args,**kwargs):
         raise ValueError('research circuit and native probe admission records are separate from Designer bundles')
@@ -225,8 +256,12 @@ def build(n,port,kind='filter',control='ordinary',cap_s=None):
     for k,(a,b) in enumerate(gaps):
         capacitance=dimensions['capacitance_f'][k if kind=='filter' else 0]
         name=f'coupling_C_{k}'
+        minimum=minimum_box_capacitance(dict(zip('xyz',(x,y,z))),[a,-RI,-RI],[b,RI,RI])
+        if capacitance<=minimum*(1+1e-6):
+            raise ValueError(f'{name}: capacitance must exceed native box floor {minimum:g} F')
         sim.lumped_capacitor(name,capacitance,[a,-RI,-RI],[b,RI,RI],'x',priority=6)
-        required.append(name);elements.append(dict(name=name,value_f=capacitance,start_mm=[a,-float(RI),-float(RI)],stop_mm=[b,float(RI),float(RI)]))
+        required.append(name);elements.append(dict(name=name,value_f=capacitance,minimum_native_c_f=minimum,
+            start_mm=[a,-float(RI),-float(RI)],stop_mm=[b,float(RI),float(RI)]))
     plane=24. if control=='plane' else 28.;feed=34. if control=='source' else 38.
     for number,sign in ((1,-1),(2,1)):
         sim.coaxial_port(number,[sign*48.,0.,0.],[sign*16.,0.,0.],'x',float(RI),RO,ROS,
@@ -273,6 +308,7 @@ def source_info(path, meta):
 
 
 def audit_header(text, meta):
+    reject_lumped_warnings(text)
     text_after = text.split(MARKER)[-1]
     grid = re.search(r'FDTD simulation size: (\d+)x(\d+)x(\d+) --> (\S+) FDTD cells', text_after)
     if (text.count(MARKER) != 1 or re.findall(r'openEMS 64bit -- version (\S+)', text_after) != ['v0.37.0-rc3']
@@ -348,6 +384,7 @@ def capture(out,n,port,kind='filter',control='ordinary',cap_s=None):
             or op['run'].get('grid')!=meta['grid'] or set(op['required_usage'])!=set(meta['required_properties'])
             or not all(v and all(v) for v in op['required_usage'].values())):
         raise ValueError('operator CFL/material-usage preflight failed')
+    reject_lumped_warnings((out.parent/f'port{port}.log').read_text())
     if identity()!=meta['source'] or runtime_identity()!=meta['runtime']:
         raise ValueError('source or runtime changed before fields')
     print(MARKER,flush=True)

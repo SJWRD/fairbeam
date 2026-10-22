@@ -185,12 +185,12 @@ def abcd_reference(freq=f.FREQUENCIES,finite=True,plane_mm=28.):
         return a
     total=identity()
     for k,c in enumerate(d['capacitance_f']):
-        if finite:total=total@line(plane_mm-12.5 if k==0 else 3.5)
+        if finite:total=total@line(plane_mm-12.-f.GAP_MM/2 if k==0 else 4.-f.GAP_MM/2)
         total=total@series(c)
         if k<3:
-            if finite:total=total@line(3.5)
+            if finite:total=total@line(4.-f.GAP_MM/2)
             total=total@shunt(d['stub_delay_s'][k])
-    if finite:total=total@line(plane_mm-12.5)
+    if finite:total=total@line(plane_mm-12.-f.GAP_MM/2)
     a,b,c,d=(total[:,j,k] for j,k in ((0,0),(0,1),(1,0),(1,1)))
     denominator=a+b/f.Z0+c*f.Z0+d;s=np.empty_like(total)
     s[:,0,0]=(a+b/f.Z0-c*f.Z0-d)/denominator;s[:,1,1]=(-a+b/f.Z0-c*f.Z0+d)/denominator
@@ -209,7 +209,7 @@ class ShuntResonatorTests(unittest.TestCase):
     def test_references_keep_prototype_approximation_and_connections_separate(self):
         k=int(np.argmin(abs(f.FREQUENCIES-3e9)))
         self.assertAlmostEqual(-20*np.log10(abs(f.reference(finite=False)[k,1,0])),31.371724311615125,places=8)
-        self.assertAlmostEqual(-20*np.log10(abs(f.reference()[k,1,0])),53.511720251906,places=8)
+        self.assertAlmostEqual(-20*np.log10(abs(f.reference()[k,1,0])),51.5593353955368,places=8)
         self.assertAlmostEqual(f.prototype_loss()[k],36.26418425071953,places=8)
         self.assertGreater(abs(f.reference()-f.reference(finite=False)).max(),.5)
 
@@ -253,6 +253,7 @@ class ShuntResonatorTests(unittest.TestCase):
             self.assertTrue(all(v.get('L') is None and v.get('R') is None and float(v.get('C'))>0 for v in native))
             for actual,element in zip(native,m['elements']):
                 self.assertLess(abs(float(actual.get('C'))/element['value_f']-1),5e-7)
+                self.assertGreater(element['value_f']/element['minimum_native_c_f'],1.8)
             shorts=sim.csx.GetPropertiesByName('branch_shorts')
             self.assertEqual(len(shorts[0].GetAllPrimitives()) if shorts else 0,stubs)
 
@@ -299,6 +300,45 @@ class ShuntResonatorTests(unittest.TestCase):
             self.assertEqual(f.build(0,1,kind=kind)[1]['end_db'],expected)
             self.assertEqual(f.build(0,1,kind=kind,control='time')[1]['end_db'],expected-10)
         self.assertEqual(f.LIMITS['terminal_tail_db'],-70.)
+
+    def test_inclusive_dual_area_rejects_the_old_small_capacitor_box(self):
+        mesh=dict(x=np.array([-2.,-1.,-.5,0.,.5,1.,2.]),
+                  y=np.array([-2.,-1.,0.,1.,2.]),z=np.array([-2.,-1.,0.,1.,2.]))
+        # Inclusive transverse nodes cover a 3 mm by 3 mm dual area.
+        small=f.minimum_box_capacitance(mesh,[-.5,-1.,-1.],[.5,1.,1.])
+        wide=f.minimum_box_capacitance(mesh,[-1.,-1.,-1.],[1.,1.,1.])
+        self.assertAlmostEqual(small,9e-3*f.EPS0,delta=1e-26)
+        self.assertAlmostEqual(wide,small/2,delta=1e-26)
+        c=f.synthesis()['capacitance_f'][1]
+        self.assertLess(c,small);self.assertGreater(c,wide)
+
+    def test_used_primitive_cannot_hide_a_native_capacitance_warning_before_fields(self):
+        warning='Operator::Calc_LumpedElements(): Warning: Lumped Element capacity is too small for its size! skipping. @ Property: C'
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp);out=root/'port1';body=b'<input/>'
+            source={'fixture':'frozen'};runtime={'engine':'frozen'}
+            meta=dict(excited_port=1,required_properties=['C'],declared_dt_s=.1,grid=[4,4,4])
+            sample=root/'input-sample';sample.write_bytes(body);digest=f.sha(sample)
+            f.save(root/'plan.json',dict(source=source,runtime=runtime,
+                ports=[dict(**meta,input_sha256=digest,operator_input_sha256=digest)]))
+            main,setup=Mock(),Mock()
+            main.fdtd.Write2XML.side_effect=lambda path:Path(path).write_bytes(body)
+            setup.fdtd.Write2XML.side_effect=lambda path:Path(path).write_bytes(body)
+            def operator_run(*args,**kwargs):
+                (root/'port1.log').write_text(warning+'\n')
+                return dict(timestep_s=1.,grid=[4,4,4])
+            setup.run.side_effect=operator_run
+            with patch.object(f,'build',side_effect=[(main,dict(meta)),(setup,dict(meta))]),\
+                    patch.object(f,'identity',return_value=source),patch.object(f,'runtime_identity',return_value=runtime),\
+                    patch.object(f,'usage',return_value={'C':[True]}):
+                with self.assertRaisesRegex(ValueError,'native lumped model warning'):f.capture(out,0,1)
+            main.run.assert_not_called()
+            self.assertFalse((out/'raw').exists())
+            self.assertNotIn(f.MARKER,(root/'port1.log').read_text())
+
+    def test_stored_native_header_cannot_admit_skipped_lumped_elements(self):
+        text='Operator::Calc_LumpedElements(): Warning: Lumped Element capacity is too small for its size! skipping.\n'+f.MARKER
+        with self.assertRaisesRegex(ValueError,'native lumped model warning'):f.audit_header(text,{})
 
     def test_actual_electric_and_half_step_magnetic_clocks_are_required(self):
         dt=1e-13;stride=int(1/(2*f.FREQUENCIES[-1]*dt))//f.OVERSAMPLING
