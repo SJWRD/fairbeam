@@ -295,7 +295,7 @@ class ShuntResonatorTests(unittest.TestCase):
 
     def test_fast_controls_do_not_stop_before_the_local_tail_window_is_quiet(self):
         for kind in f.KINDS:
-            expected=-100. if kind=='filter' else -130.
+            expected=-100. if kind=='filter' else -115.
             self.assertEqual(f.build(0,1,kind=kind)[1]['end_db'],expected)
             self.assertEqual(f.build(0,1,kind=kind,control='time')[1]['end_db'],expected-10)
         self.assertEqual(f.LIMITS['terminal_tail_db'],-70.)

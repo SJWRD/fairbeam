@@ -194,9 +194,10 @@ def build(n,port,kind='filter',control='ordinary',cap_s=None):
     dt=(.375 if control=='dt' else .5)/(C0*np.sqrt(sum(1/(np.diff(v).min()*1e-3)**2 for v in (x,y,z))))
     cap=CAP_S*(1.5 if control=='time' else 1.) if cap_s is None else float(cap_s)
     if not np.isfinite(cap) or cap<=0:raise ValueError('positive finite window required')
-    # A short control can meet the global energy criterion before its fixed
-    # 0.5 ns local-tail window is quiet. Keep that independent gate intact.
-    end=END_DB-(30 if kind!='filter' else 0)-(10 if control=='time' else 0)
+    # -100/-110 dB can stop before the fixed 0.5 ns local-tail window is quiet;
+    # -130 dB is below the observed calibration roundoff floor. Retain the
+    # independent local-tail gate rather than treating either stop as proof.
+    end=END_DB-(15 if kind!='filter' else 0)-(10 if control=='time' else 0)
     sim=CoaxFilterSimulation(FREQUENCIES[0],FREQUENCIES[-1],excitation='dgauss',
         boundaries=['PML_8','PML_8','PEC','PEC','PEC','PEC'],end_criteria_db=end,max_timesteps=math.ceil(cap/dt))
     for axis,lines in zip('xyz',(x,y,z)):sim.mesh.AddLine(axis,lines)
