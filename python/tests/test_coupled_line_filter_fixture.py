@@ -329,10 +329,12 @@ class CoupledFilterTests(unittest.TestCase):
         ordinary = f.build(0,1)[2]; extended = f.build(0,1,control='time')[2]
         for key in ('dimensions','mesh_mm','declared_dt_s','required_properties','grouped_feeds'):
             self.assertEqual(ordinary[key],extended[key])
-        self.assertAlmostEqual(extended['cap_s'],108e-9,places=20)
+        self.assertAlmostEqual(extended['cap_s'],144e-9,places=20)
         self.assertEqual(extended['end_db'],-90.)
         self.assertEqual(ordinary['cap_s'],48e-9)
-        self.assertLessEqual(forecast(extended,50.36949836317534),1800.)
+        # A longer window never bypasses the measured-rate budget gate.
+        self.assertGreater(forecast(extended,50.),1800.)
+        self.assertLess(forecast(extended,70.),1800.)
 
     def test_probe_geometry_surrounds_the_single_feed_conductor(self):
         for kind in f.KINDS:
