@@ -7,6 +7,7 @@ python -m tests.test_cap_coupled_bandpass_fixture --preflight --out C:/study/ban
 import argparse
 from datetime import datetime, timezone
 import json
+import re
 from pathlib import Path
 import subprocess
 import sys
@@ -62,6 +63,25 @@ def preflight(out, rate):
     return result
 
 
+def wait_finite(proc, log_path, seconds=1800.):
+    """Preserve the owned deadline and reject non-finite propagation energy.
+
+    A zero energy with -inf dB is valid; only the energy value is checked.
+    The caller's existing finally block terminates and releases its worker.
+    """
+    class Watched:
+        def __getattr__(self, name):
+            return getattr(proc, name)
+
+        def wait(self, timeout=None):
+            text=Path(log_path).read_text(encoding='utf-8', errors='replace')
+            if f.MARKER in text and re.search(r'Energy:\s*~\s*[+-]?(?:nan|inf)\b', text.split(f.MARKER)[-1], re.I):
+                raise ValueError('non-finite native propagation energy; source rejected')
+            return proc.wait(timeout=timeout)
+
+    return wait_owned(Watched(), seconds=seconds)
+
+
 def acquire(out, n=1, kind='filter', loss='pec', control='ordinary', rate=15., pilot_s=None, allow_cap=False, window_s=None, order=3):
     out = Path(out).resolve()
     if out.exists(): raise ValueError('fresh output directory required')
@@ -94,7 +114,7 @@ def acquire(out, n=1, kind='filter', loss='pec', control='ordinary', rate=15., p
             with (out/f'port{port}.log').open('x', encoding='utf-8') as log:
                 proc = popen_group(command, cwd=f.ROOT/'python', stdout=log, stderr=subprocess.STDOUT)
                 state.update(status='running', active_port=port, active_launcher_pid=proc.pid); f.save(progress, state)
-                try: code = wait_owned(proc, seconds=1800.)
+                try: code = wait_finite(proc, out/f'port{port}.log', seconds=1800.)
                 except BaseException as error: failure = repr(error); raise
                 finally:
                     if proc.poll() is None:
@@ -406,6 +426,34 @@ class CapCoupledTests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError,'operator CFL/material-usage'):f.capture(root/'port1',0,1,kind='through')
                 self.assertEqual(run.call_count,1);self.assertTrue(run.call_args.kwargs['setup_only'])
                 self.assertFalse((root/'port1/raw').exists())
+
+    def test_nonfinite_energy_rejects_only_the_owned_source_before_port_two(self):
+        for token in ('-nan(ind)', 'nan', 'inf', '-inf'):
+            proc=Mock(pid=123,win_job='owned-job');proc.poll.return_value=None
+            proc.wait.return_value=9
+            def launch(command, **kwargs):
+                kwargs['stdout'].write(f'{f.MARKER}\nEnergy: ~{token} (- 0.00dB)\n')
+                kwargs['stdout'].flush()
+                return proc
+            with tempfile.TemporaryDirectory() as tmp, patch(__name__+'.popen_group',side_effect=launch) as start, \
+                    patch(__name__+'.terminate_group') as stop, patch(__name__+'.release_group') as release:
+                out=Path(tmp)/'bad'
+                with self.assertRaisesRegex(ValueError,'non-finite native propagation energy'):
+                    acquire(out,n=0,kind='element',rate=1000.)
+                self.assertEqual(start.call_count,1)
+                self.assertFalse((out/'port2.worker.json').exists())
+                stop.assert_called_once_with(123,grace=0,job='owned-job')
+                release.assert_called_once_with(proc)
+                receipt=json.loads((out/'port1.worker.json').read_text())
+                self.assertIn('non-finite',receipt['failure'])
+                self.assertEqual(json.loads((out/'progress.json').read_text())['status'],'rejected')
+
+    def test_zero_native_energy_with_infinite_db_is_not_rejected(self):
+        proc=Mock();proc.wait.return_value=0
+        with tempfile.TemporaryDirectory() as tmp:
+            path=Path(tmp)/'native.log'
+            path.write_text(f'{f.MARKER}\nEnergy: ~0.00e+00 (-inf dB)\n')
+            self.assertEqual(wait_finite(proc,path),0)
 
     def test_missing_or_rejected_cases_cannot_qualify_any_design(self):
         with tempfile.TemporaryDirectory() as tmp:
