@@ -829,6 +829,8 @@ class _Lint:
                 value = self.ev(f"{w}.{key}", re[key])
                 if value is not None and value <= 0:
                     self.error(f"{w}.{key}", "resistor-r", "the resistance must be > 0 Ω" if key == "R" else "lumped values must be > 0")
+            if re.get("symbol", "auto") not in ("auto", "resistor", "capacitor", "inductor", "network"):
+                self.error(f"{w}.symbol", "resistor-r", "symbol must be auto, resistor, capacitor, inductor or network")
             if re.get("topology", "parallel") not in ("parallel", "series"):
                 self.error(f"{w}.topology", "resistor-r", "topology must be parallel or series")
             a, c = self.vec(f"{w}.start", re.get("start")), self.vec(f"{w}.stop", re.get("stop"))
@@ -1806,7 +1808,10 @@ class _Lint:
         try:
             check_design(d)
         except DesignError as e:
-            self.error(e.where or "", "expr" if ".group" in (e.where or "") or e.where == "mesh.refine_features" else "structure", e.detail)
+            code = "expr" if ".group" in (e.where or "") or e.where == "mesh.refine_features" else "structure"
+            if (e.where or "").startswith("resistors[") and (e.where or "").endswith(".symbol"):
+                code = "resistor-r"
+            self.error(e.where or "", code, e.detail)
             return self.out
         self.params()
         self.materials()

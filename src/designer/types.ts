@@ -2,6 +2,8 @@
 // the designer. Lengths in mm, frequencies in GHz; every value is a number or an expression over
 // the parameters ("W/2", "wavelength(f0) / 4").
 
+import type { ElementSymbol } from "../types";
+
 export type Expr = number | string;
 export type Vec3 = [Expr, Expr, Expr];
 export type Axis = "x" | "y" | "z";
@@ -147,6 +149,7 @@ export interface DesignPort {
 }
 
 export interface DesignResistor {
+  symbol?: ElementSymbol;
   name?: string;
   label?: string;
   R?: Expr;
