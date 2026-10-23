@@ -129,6 +129,7 @@ class Simulation:
         self.ports: list[dict] = []
         self._port_objs = []
         self._pending_coax = []
+        self._pending_planar = []
         self.lumped_elements: list[dict] = []
         #: thin metal built as sheets (fairbeam.design.thin_sheets); the bundle shows the drawn bricks
         self.thin_sheets: list[dict] = []
@@ -443,6 +444,79 @@ class Simulation:
             self._port_objs[index] = port
         pending.clear()
 
+    def planar_port(self, kind, number, start, stop, direction, excitation_direction, *,
+                    conductor="PEC", conductivity=None, thickness=.035, gap=None,
+                    feed_shift=0.0, measurement_shift=None, termination="open", reference_ohm=50.0,
+                    excite=True, priority=5, color=None, opacity=None):
+        """Native MSL/CPW line; creates only its strip, never a ground or a hidden extension.
+
+        Endpoints follow the native drawing-unit convention: MSL start is on the
+        strip, stop on its ground plane; CPW endpoints span the center-strip width.
+        Physical termination and real output-wave reference are independent.
+        """
+        from .planar import validate_planar
+        method = {"microstrip": "AddMSLPort", "cpw": "AddCPWPort"}.get(kind)
+        if method is None or not callable(getattr(self.fdtd, method, None)):
+            raise ValueError(f"This openEMS runtime has no native {method or kind}; no fallback source is substituted")
+        if isinstance(number, bool) or not isinstance(number, int) or number < 1 or any(p["number"] == number for p in self.ports):
+            raise ValueError("planar port number must be a unique positive integer")
+        if _EXCITE_ONLY is not None:
+            excite = number == _EXCITE_ONLY
+        record = dict(type=kind, number=number, start=list(start), stop=list(stop), direction=direction,
+                      excitation_direction=excitation_direction, conductor=conductor, feed_shift=feed_shift,
+                      measurement_shift=measurement_shift, termination=termination,
+                      reference_ohm=reference_ohm, excite=bool(excite), priority=priority)
+        if kind == "cpw":
+            record["gap"] = gap
+        k, e = validate_planar(record)
+        if not np.isfinite(thickness) or thickness <= 0 or (conductivity is not None and (not np.isfinite(conductivity) or conductivity <= 0)):
+            raise ValueError("planar metal conductivity and sheet thickness must be positive")
+        if isinstance(priority, bool) or not isinstance(priority, int) or priority < 0:
+            raise ValueError("planar priority must be a nonnegative integer")
+        record.update(R=float(reference_ohm), conductivity=conductivity, thickness=thickness,
+                      normalization="explicit positive real reference; independent of physical termination",
+                      qualification="experimental; mesh and source/boundary convergence required")
+        name = f"Planar port {number} strip"
+        if self.csx.GetPropertiesByName(name):
+            raise ValueError("planar generated strip property name already exists")
+        settings = dict(conductivity=conductivity, thickness=thickness, color=color, opacity=opacity)
+        metal = self.metal(name, **settings)
+        stop_strip = list(stop)
+        if kind == "microstrip":
+            stop_strip[e] = start[e]
+        metal.AddBox(start=start, stop=stop_strip, priority=priority)
+        native_prop = metal._sheet() if isinstance(metal, LossyMetal) else metal
+        self._pending_planar.append((len(self.ports), record, name, native_prop, settings))
+        self.ports.append(record)
+        self._port_objs.append(None)
+        return record
+
+    def microstrip_port(self, number, start, stop, direction, excitation_direction, **kw):
+        return self.planar_port("microstrip", number, start, stop, direction, excitation_direction, **kw)
+
+    def cpw_port(self, number, start, stop, direction, excitation_direction, gap, **kw):
+        return self.planar_port("cpw", number, start, stop, direction, excitation_direction, gap=gap, **kw)
+
+    def finalize_planar_ports(self):
+        from .planar import NativePlanarPort, validate_mesh
+        pending = getattr(self, "_pending_planar", [])
+        checks = [validate_mesh(self, record) for _, record, _, _, _ in pending]
+        for (index, record, name, staged, settings), check in zip(pending, checks):
+            self.csx.DeleteProperty(staged)
+            metal = self.metal(name, **settings)
+            prop = metal._sheet() if isinstance(metal, LossyMetal) else metal
+            kw = dict(priority=record["priority"], FeedShift=record["feed_shift"],
+                      MeasPlaneShift=record["measurement_shift"],
+                      Feed_R=0 if record["termination"] == "short" else np.inf,
+                      excite=1.0 if record["excite"] else 0.0)
+            method = self.fdtd.AddMSLPort if record["type"] == "microstrip" else self.fdtd.AddCPWPort
+            args = (record["gap"],) if record["type"] == "cpw" else ()
+            native = method(record["number"], prop, record["start"], record["stop"], record["direction"],
+                            record["excitation_direction"], *args, **kw)
+            record.update(check)
+            self._port_objs[index] = NativePlanarPort(native, record["reference_ohm"])
+        pending.clear()
+
     def lumped_resistor(self, name: str, R: float, start, stop, direction: str, label: str | None = None,
                         priority: int = 5):
         """A lumped resistor (openEMS LumpedElement, R only) across ``start``-``stop`` along
@@ -612,6 +686,7 @@ class Simulation:
         if engine != "cpu" and any(p.get("type") == "coaxial" for p in self.ports):
             raise ValueError("experimental native coaxial ports currently support CPU runs only; CUDA/Metal excitation and probe parity is not qualified")
         self.finalize_coaxial_ports()
+        self.finalize_planar_ports()
         # refuse meshes that would exhaust memory (about 90 bytes per cell in the CPU engine)
         cells = int(np.prod([max(len(self.mesh.GetLines(a)) - 1, 1) for a in "xyz"]))
         limit = int(float(os.environ.get("FAIRBEAM_MAX_CELLS", 40e6)))
@@ -714,6 +789,10 @@ class Simulation:
                 **({"native_tem_z_re": _rf_values(native_coax_z.real), "native_tem_z_im": _rf_values(native_coax_z.imag),
                     "reference_plane": p_meta["reference_plane"], "normalization": p_meta["normalization"]}
                    if native_coax_z is not None else {}),
+                **({"native_line_z_re": _rf_values(p.native_line_z.real), "native_line_z_im": _rf_values(p.native_line_z.imag),
+                    "beta_re": _rf_values(np.real(p.beta)), "beta_im": _rf_values(np.imag(p.beta)),
+                    "reference_plane": p_meta["reference_plane"], "normalization": p_meta["normalization"]}
+                   if p_meta.get("type") in ("microstrip", "cpw") else {}),
             }
             if "reference_impedance" in p_meta:
                 ref = p_meta["reference_impedance"]
@@ -972,6 +1051,7 @@ class Simulation:
 
     def to_bundle(self, model: dict, params: list[dict], name: str | None = None) -> dict:
         self.finalize_coaxial_ports()
+        self.finalize_planar_ports()
         from ._meta import BUNDLE_SCHEMA, __version__
         from .geometry import read_structure
         import CSXCAD

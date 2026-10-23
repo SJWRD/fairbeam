@@ -87,6 +87,23 @@ export default {
    await s.fill(l,'unknown_inductance');assert.equal(await l.evaluate(el=>el.getAttribute('aria-invalid')),'true');
    await s.fill(l,'1e-9');assert.equal(await l.evaluate(el=>el.getAttribute('aria-invalid')),'false');
   });
+  await s.step('RLC symbol selection is visual, undoable and persists',async()=>{
+   const field=await s.wait('#dz-resistors-0--symbol');
+   const before=await s.store((_,m)=>JSON.stringify(m.s.draft.resistors[0]));
+   for(const value of ['capacitor','inductor','network','resistor','auto']) {
+    await field.select(value);
+    assert.equal(await s.store((_,m)=>m.s.draft.resistors[0].symbol),value);
+   }
+   await field.select('capacitor');
+   const after=await s.store((_,m)=>JSON.stringify(m.s.draft.resistors[0]));
+   const a=JSON.parse(before),b=JSON.parse(after);delete a.symbol;delete b.symbol;assert.deepEqual(a,b);
+   await s.store((_,m)=>m.s.undo());assert.equal(await field.evaluate(el=>el.value),'auto');
+   await s.store((_,m)=>m.s.redo());assert.equal(await field.evaluate(el=>el.value),'capacitor');
+   await s.store(async(_,m)=>m.s.save());
+   const id=await s.store((_,m)=>m.s.file().id);
+   const saved=await s.page.evaluate(async id=>(await(await fetch(`/api/designs/${id}`)).json()).design,id);
+   assert.equal(saved.resistors[0].symbol,'capacitor');
+  });
   await s.step('new parameter and import diagnostics use the selected UI language',async()=>{
    s.consoleAllow.push(/Failed to load resource:.*422/);
    await s.store((_,m)=>m.s.setParamAsks([{key:'for'}]));await s.wait('.np');

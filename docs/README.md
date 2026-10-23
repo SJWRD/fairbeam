@@ -38,6 +38,7 @@ the separately opted-in Elmer integration.
 | [Research preparation](RESEARCH-PREPARATION.md) | Floquet channel plans and bounded Design-to-Elmer mesh export; no solver execution |
 | [Writing models](MODELS.md) | Model files (`MODEL`, `PARAMS`, `build`), an example, templates and the in-app editor |
 | [Automatic meshing](MESHING.md) | `sim.auto_mesh()`: options, rules, report, validation against hand meshes |
+| [Native planar ports](PLANAR-PORTS.md) | Experimental microstrip/CPW feeds, final-grid probes, physical termination, real references and bounded validation controls |
 | [Run server and Run panel](RUN-SERVER.md) | `fairbeam serve`, the Run panel, sweeps, comparison overlays, the optimizer in the UI |
 | [Optimizer](OPTIMIZE.md) | Goals, driven ports, algorithms, output and simulated examples |
 | [Studies](STUDIES.md) | `sweep`, `converge`, `touchstone` and the study file format |

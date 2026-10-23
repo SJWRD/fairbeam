@@ -122,7 +122,7 @@ try {
   const home = readFileSync(`${root}src/home/Home.tsx`, 'utf8');
   assert.match(picker, /void openUserProject\(file\)/, 'header picker uses the guard');
   assert.match(header, /if \(f\) void openUserProject\(f\)/, 'header Open uses the guard');
-  assert.match(app, /fileDropHandlers\(setDragging, \(file\) => void openDroppedFile\(file\)\)/, 'file drops use the feedback router');
+  assert.match(app, /fileDropHandlers\(\(on\) => setDragging\(on && !pcbImportOpen\(\) && !cstImportOpen\(\)\), \(file\) => void openDroppedFile\(file\)\)/, 'file drops use the feedback router and suppress the hint during PCB import');
   assert.match(readFileSync(`${root}src/runner/dropFile.ts`, 'utf8'), /if \(\/\\\.\(json\|fb\)\$\/i\.test\(file\.name\)\) \{ await openUserProject\(file\); return; \}/, 'JSON and native document drops use the open guard');
   assert.match(home, /openUserProject\(p.file\)/, 'Start examples use the guard');
 

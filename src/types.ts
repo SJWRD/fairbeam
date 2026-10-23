@@ -78,7 +78,7 @@ export type DispersionPole =
 export interface Port {
   number: number;
   /** "lumped" (openEMS LumpedPort) or "waveguide" (RectWGPort, one TE mode) */
-  type: "lumped" | "waveguide" | "coaxial";
+  type: "lumped" | "waveguide" | "coaxial" | "microstrip" | "cpw";
   /** lumped: port resistance; waveguide: TE wave impedance at the band centre (ohm) */
   R: number;
   direction: "x" | "y" | "z";
@@ -96,7 +96,11 @@ export interface Port {
   dielectric?: string | null;
   feed_shift?: number;
   measurement_shift?: number;
-  termination?: "open" | "short";
+  termination?: "open" | "short" | "pml";
+  excitation_direction?: "x" | "y" | "z";
+  gap?: number;
+  reference_ohm?: number;
+  actual_source_plane?: number;
   /** coaxial: the snapped measurement plane (along the axis) and its offset from start, after meshing */
   reference_plane?: number;
   actual_measurement_shift?: number;
@@ -111,8 +115,11 @@ export interface Port {
   };
 }
 
+export type ElementSymbol = "auto" | "resistor" | "capacitor" | "inductor" | "network";
+
 /** Lumped circuit element that is not a port (e.g. a Wilkinson isolation resistor). */
 export interface LumpedElement {
+  symbol?: ElementSymbol;
   name: string;
   label: string;
   type: "resistor" | "rlc";

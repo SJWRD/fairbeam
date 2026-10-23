@@ -13,10 +13,16 @@ export interface HistoryStep { index: number; label: string; at: number; target:
 export interface HistoryMark { text: string; undo: string[]; redo: string[]; history: HistoryEntry[]; position: number; file: string | undefined; metadataRevision: number; sessionId: string; documentRevision: number }
 
 export interface DesignerSessionEffects { edited?: (previewChanged: boolean) => void; restored?: (previewChanged: boolean) => void; disposed?: () => void }
-/** Sweep plans are persisted and undoable, but neither geometry nor the design check inputs. */
+/** Sweep plans and symbol choices are saved and undoable without rebuilding geometry. */
 function previewContent(text: string): string {
   const { parameter_sweep: _sweep, ...content } = JSON.parse(text);
+  for (const r of content.resistors ?? []) delete r.symbol;
   return JSON.stringify(content);
+}
+function withElementSymbols(design: Design): Design {
+  const copy = structuredClone(design);
+  for (const r of copy.resistors ?? []) if (r.symbol === undefined) r.symbol = "auto";
+  return copy;
 }
 /** How long a note (a success or a warning that is not sticky) stays at the top of Properties. */
 export const NOTE_MS = 6000;
@@ -89,17 +95,22 @@ export function createDesignerSession(effects: DesignerSessionEffects = {}) {
       delete copy.python_source_model;
       delete copy.python_source_hash;
       delete copy.parameter_sweep;
+      for (const r of (copy.resistors ?? []) as Design["resistors"]) delete r.symbol;
       delete copy.wcs; // the drawing frame is UI state saved with the design, not geometry
       return JSON.stringify(copy);
     }
 
     /** The draft as JSON, once per change: the dirty flag and the local backup both follow it. */
     const draftText = createMemo(() => (loaded() ? JSON.stringify(draft) : ""));
+    const savedDesignText = createMemo(() => {
+      const design = file()?.design;
+      return design ? JSON.stringify(withElementSymbols(design)) : "";
+    });
 
     const dirty = createMemo(() => {
       const f = file();
       // track the whole draft: any nested edit re-evaluates
-      return !!f && loaded() && (persistencePending() || resultsPending() || draftText() !== JSON.stringify(f.design));
+      return !!f && loaded() && (persistencePending() || resultsPending() || draftText() !== savedDesignText());
     });
 
     let lastKey = "";
@@ -356,6 +367,7 @@ export function createDesignerSession(effects: DesignerSessionEffects = {}) {
       documentChangeObserver?.();
       if (disposed) return;
       const previous = file();
+      const design = withElementSymbols(next.design);
       forgetSaveNote();
       asyncState.replaceDocument();
       batch(() => {
@@ -364,15 +376,16 @@ export function createDesignerSession(effects: DesignerSessionEffects = {}) {
         setPendingResultsToken("[]");
         // Keep JSON key order independent when replacing a different document.
         if (previous?.id !== next.id) setDraft(reconcile({} as Design));
-        setDraft(reconcile(structuredClone(next.design)));
-        resetHistory(next.design);
+        setDraft(reconcile(design));
+        resetHistory(design);
         setServerErrors({}); setServerChecks([]); setChecksTicket(null);
         setConflict(null); setSelection({ type: "design" }); setSaving(false);
       });
     }
     function restoreBackup(design: Design, at: number) {
       if (disposed || !file()) return;
-      setUndoStack([JSON.stringify(file()!.design)]);
+      design = withElementSymbols(design);
+      setUndoStack([savedDesignText()]);
       setDraft(reconcile(structuredClone(design)));
       history.push({ text: JSON.stringify(design), label: "Restored backup", at, target: "design" });
       historyPosition = 1; notifyHistory();

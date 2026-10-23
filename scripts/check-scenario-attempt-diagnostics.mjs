@@ -21,7 +21,9 @@ class FixturePage extends EventEmitter {
   }
   async screenshot({ path }) {
     if (this.screenshotError) throw this.screenshotError;
-    await writeFile(path, 'fixture screenshot');
+    const bytes = Buffer.from('fixture screenshot');
+    if (path) await writeFile(path, bytes);
+    return bytes;
   }
 }
 

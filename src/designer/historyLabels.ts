@@ -25,7 +25,7 @@ export function mergesWithPrevious(prev: MergeState, key: string, now: number, a
   return isTextInput(active) && active === prev.el;
 }
 
-const FIELDS = ["start", "stop", "center", "radius", "height", "length", "width", "thickness", "axis", "material", "color", "name", "label", "component", "priority", "points", "eps_r", "tan_d", "conductivity", "kind", "direction", "number", "mode", "excite", "offset", "angle", "copies", "step", "factors", "origin", "plane", "f_min", "f_max", "boundaries", "pad", "key", "default", "unit", "min", "max", "resistance", "cut"] as const;
+const FIELDS = ["start", "stop", "center", "radius", "height", "length", "width", "thickness", "axis", "material", "color", "name", "label", "component", "priority", "points", "eps_r", "tan_d", "conductivity", "kind", "direction", "number", "mode", "excite", "offset", "angle", "copies", "step", "factors", "origin", "plane", "f_min", "f_max", "boundaries", "pad", "key", "default", "unit", "min", "max", "resistance", "symbol", "cut"] as const;
 const ALIAS: Record<string, string> = { fmin: "f_min", fmax: "f_max", R: "resistance", r: "radius" };
 
 /** The last field of a path, in words: "parts[0].primitives[1].length" -> "length". */

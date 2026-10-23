@@ -889,6 +889,8 @@ export const finitePortWarning = (number: number): string =>
   `port ${number}: finite-width source exported as an axial line; transverse size is not preserved. Recheck the feed model.`;
 
 export function cstMacro(b: Bundle, opt: CstOptions = DEFAULT_CST_OPTIONS, extras: CstExtras = {}): { text: string; warnings: string[]; files: CstFile[]; parameters: CstParameter[]; notes: string[] } {
+  if (opt.includePorts && b.ports.some((p) => p.type === "microstrip" || p.type === "cpw"))
+    throw new Error("Native planar ports require an explicit modal-feed definition for VBA macro export; no substitute port is exported.");
   if (opt.includePorts && b.ports.some((p) => p.group))
     throw new Error("Grouped ports cannot be exported as independent discrete ports. Export geometry without ports instead.");
   const m = new Macro();

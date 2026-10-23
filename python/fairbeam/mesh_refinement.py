@@ -8,6 +8,8 @@ REQUIRED_CELLS = 3
 
 def required_cells(feature):
     """Slanted strips need connectivity; gaps retain the three-cell target."""
+    if "target_cells" in feature:
+        return feature["target_cells"]
     if feature.get("kind") == "strip" and sum(abs(v) > 1e-9 for v in feature["normal"]) > 1:
         return 1.0
     return REQUIRED_CELLS
@@ -93,7 +95,9 @@ def refinement_caps(features, min_cell=None):
     """(lo, hi, h) per axis; leave 10% headroom for fill's single-cell rule."""
     caps = [[] for _ in range(3)]
     for f in features:
-        target = 1.1 if required_cells(f) == 1 else REQUIRED_CELLS
+        target = required_cells(f)
+        if target == 1:
+            target = 1.1
         h = f["width"] / (target * 1.1 * sum(abs(v) for v in f["normal"]))
         h = max(h, min_cell or 0.0)
         for a, component in enumerate(f["normal"]):

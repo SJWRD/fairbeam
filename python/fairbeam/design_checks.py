@@ -48,7 +48,7 @@ END_DB_MAX = -10
 
 # checks that src/designer/checks.ts also runs; the rest need the resolved geometry or the bundle
 CHEAP = frozenset({
-    "coax-port", "coax-mesh",
+    "coax-port", "coax-mesh", "planar-port",
     "expr", "param-range", "part-name-duplicate", "part-empty", "brick-flat", "brick-inverted", "radius",
     "inner-radius", "cylinder-length", "polygon-points", "polygon-area", "polygon-self-intersect",
     "linpoly-length", "polyhedron", "polyhedron-flat", "copies", "mu-r", "eps-r", "tan-d", "tan-d-freq", "f-min", "f-order", "f-ratio", "ff-band", "nf2ff-pec",
@@ -61,6 +61,7 @@ CHEAP = frozenset({
 
 # Plain-language guidance shared by server checks and the live CHEAP checks.
 EXPLANATIONS = {
+    "planar-port": "A native planar port creates only its center strip. Supply the matching ground and dielectric, resolve its gaps and metal planes, and keep three equally spaced measurement planes outside PML. A real wave reference is independent of the physical feed termination. No fallback port is used.",
     "port-reference": 'A complex power-wave reference is supported only on lumped ports and must contain exactly real and imag expressions. It is separate from the physical source resistance.',
     "boolean-transform-angle": "A live Boolean needs axis-aligned operands so its result stays exact. Use quarter-turn rotations for its operands, or materialise the Boolean before applying an arbitrary angle.",
     "sheet-transform-angle": "Zero-thickness metal sheets must stay parallel to the solver's coordinate planes. A lossy sheet must also keep its original plane normal because openEMS uses local CSXCAD bounding-box axes to set tangential loss. Rotate within the sheet plane, or give the metal finite thickness and refine the mesh.",
@@ -753,6 +754,13 @@ class _Lint:
             self.error("ports", "no-port", "no port is excited: mark at least one port as excited (driven) before running")
         physical = [(i, w, feed) for i, po in enumerate(ports) for w, feed in port_feeds(po, f"ports[{i}]")]
         for i, w, po in physical:
+            if po.get("type") in ("microstrip", "cpw"):
+                from .planar import resolved_planar
+                try:
+                    resolved_planar(po, self.d.get("materials", []), lambda value, key: evaluate(value, self.names))
+                except (ValueError, DesignError, TypeError) as error:
+                    self.error(w, "planar-port", str(error))
+                continue
             if po.get("type") == "coaxial":
                 self.warn(w, "coax-mesh", "experimental coaxial CPU port: curved-conductor mesh can shift phase and impedance; refine the mesh and compare results before relying on them")
                 from .coax import resolved_coax
@@ -821,6 +829,8 @@ class _Lint:
                 value = self.ev(f"{w}.{key}", re[key])
                 if value is not None and value <= 0:
                     self.error(f"{w}.{key}", "resistor-r", "the resistance must be > 0 Ω" if key == "R" else "lumped values must be > 0")
+            if re.get("symbol", "auto") not in ("auto", "resistor", "capacitor", "inductor", "network"):
+                self.error(f"{w}.symbol", "resistor-r", "symbol must be auto, resistor, capacitor, inductor or network")
             if re.get("topology", "parallel") not in ("parallel", "series"):
                 self.error(f"{w}.topology", "resistor-r", "topology must be parallel or series")
             a, c = self.vec(f"{w}.start", re.get("start")), self.vec(f"{w}.stop", re.get("stop"))
@@ -912,7 +922,7 @@ class _Lint:
         if self.endpoint_contacts is not None:
             feeds += [(f"resistors[{i}]", element, False) for i, element in enumerate(self.d.get("resistors", []))]
         for w, po, is_port in feeds:
-            if po.get("type") in ("waveguide", "coaxial"):
+            if po.get("type") in ("waveguide", "coaxial", "microstrip", "cpw"):
                 continue   # a guide's cross-section, not a feed between two conductors
             try:
                 a = [evaluate(x, self.names) for x in po["start"]]
