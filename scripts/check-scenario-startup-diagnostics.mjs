@@ -84,6 +84,7 @@ export async function startupDiagnosticsSelfTest(browser) {
     if (record.captureErrors.length) {
       console.error('Startup diagnostics self-test capture errors:', JSON.stringify(record.captureErrors));
     }
+    assert.deepEqual(record.captureErrors, [], 'the real-browser fixture must capture every diagnostic artifact');
     assert.match(record.error, /\.home/);
     assert.equal(record.dom.regions['.home'].length, 0);
     assert.equal(record.dom.regions['.loading'][0].visible, true);

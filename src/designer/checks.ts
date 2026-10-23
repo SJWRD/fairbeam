@@ -28,7 +28,7 @@ export interface Check {
  * `port-at-null` stays server-only on both sides: the patch/substrate/ground test needs resolved
  * geometry, so the browser keeps the server warning and its conditional explanation intact. */
 export const CHEAP = new Set([
-  "coax-port", "coax-mesh", "expr", "param-range", "part-name-duplicate", "part-empty", "brick-flat", "brick-inverted", "radius",
+  "coax-port", "coax-mesh", "planar-port", "expr", "param-range", "part-name-duplicate", "part-empty", "brick-flat", "brick-inverted", "radius",
   "inner-radius", "cylinder-length", "polygon-points", "polygon-area", "polygon-self-intersect",
   "linpoly-length", "polyhedron", "polyhedron-flat", "copies", "mu-r", "eps-r", "tan-d", "tan-d-freq", "f-min", "f-order", "f-ratio", "ff-band", "nf2ff-pec",
   "cells-per-wavelength", "end-criterion", "port-length", "port-volume", "port-r", "port-reference", "port-overlap", "no-port",
@@ -39,6 +39,7 @@ export const CHEAP = new Set([
 
 /** Keep CHEAP wording in sync with Python EXPLANATIONS (checked by check-designer). */
 export const EXPLANATIONS: Readonly<Record<string, string>> = {
+  "planar-port": "A native planar port creates only its center strip. Supply the matching ground and dielectric, resolve its gaps and metal planes, and keep three equally spaced measurement planes outside PML. A real wave reference is independent of the physical feed termination. No fallback port is used.",
   "coax-mesh": "Native openEMS parity was verified on a synthetic air-line control, not every design. Energy decay alone does not prove accuracy. Compare S-parameters and impedance across at least two transverse refinements and check the snapped measurement plane. CUDA/Metal are not qualified.",
   "coax-port": "An axial coaxial TEM port needs concentric PEC conductors, a nondispersive dielectric, ordered radii and feed/probe planes inside its length. Check its radii, material references and offsets before running.",
   "port-reference": "A complex power-wave reference is supported only on lumped ports and must contain exactly real and imag expressions. It is separate from the physical source resistance.",
@@ -607,8 +608,10 @@ export function designChecks(d: Design): Check[] {
     }
     (d.ports ?? []).flatMap((port, i) => portFeedEntries(port, `ports[${i}]`)).forEach(([w, port]) => { for (const end of ["start", "stop"] as const) {
       const coords = port[end].map((v) => { try { return evaluate(v, names); } catch { return NaN; } });
-      // a coaxial port's centerline needs no transverse line (design.py build): only its ends along the axis
-      const checked = (axis: Axis) => port.type !== "coaxial" || axis === port.direction;
+      // Native planar admission checks the final probe/metal planes instead of
+      // forcing free in-plane strip edges onto mesh lines (design.py build).
+      const checked = (axis: Axis) => port.type !== "microstrip" && port.type !== "cpw"
+        && (port.type !== "coaxial" || axis === port.direction);
       AXES.forEach((axis, k) => { const lines = resolved[axis]; if (checked(axis) && lines && Number.isFinite(coords[k]) && !lines.some((line) => Math.abs(line-coords[k]) <= 1e-6)) error(`${w}.${end}[${k}]`, "expr", `port ${end} coordinate must lie on a manual ${axis} mesh line (within 1e-6 mm)`); });
     }});
   }
@@ -685,6 +688,32 @@ export function designChecks(d: Design): Check[] {
   const boxes: [number, number[][], number][] = [];
   ports.flatMap((port, i) => portFeedEntries(port, `ports[${i}]`).map(([w, po]) => ({ i, w, po }))).forEach(({ i, w, po }) => {
     const wg = po.type === "waveguide";
+    if (po.type === "microstrip" || po.type === "cpw") {
+      const a = vec(`${w}.start`, po.start), b = vec(`${w}.stop`, po.stop);
+      const k = AXES.indexOf(po.direction), e = AXES.indexOf(po.excitation_direction as Axis);
+      const feed = ev(`${w}.feed_shift`, po.feed_shift ?? 0), meas = ev(`${w}.measurement_shift`, po.measurement_shift);
+      const ref = ev(`${w}.reference_ohm`, po.reference_ohm ?? 50);
+      if (!a || !b || feed === null || meas === null || ref === null) return;
+      let problem = "";
+      const length = Math.abs(b[k]-a[k]), other = 3-k-e;
+      if (e < 0 || e === k) problem = "planar propagation and excitation directions must differ";
+      else if (!length) problem = "planar line must have nonzero propagation length";
+      else if (po.type === "microstrip" && (a[e] === b[e] || a[other] === b[other])) problem = "microstrip box must span strip width and strip-to-ground height";
+      else if (po.type === "cpw" && (a[e] === b[e] || a[other] !== b[other])) problem = "CPW box must span the center strip in width, remain in one plane and have a positive gap";
+      else if (!(0 <= feed && feed < length && 0 < meas && meas < length)) problem = "planar feed offset must be inside the line and measurement offset strictly inside its length";
+      else if (po.excite !== false && feed >= meas) problem = "planar measurement plane must be beyond the excitation plane";
+      else if (ref <= 0) problem = "planar reference impedance must be positive and real";
+      else if (!["open","short","pml"].includes(po.termination ?? "open")) problem = "planar physical termination must be open, short or pml";
+      else if ("group" in po || "reference_impedance" in po || "Feed_R" in po || "feed_R" in po) problem = "planar ports do not support grouped feeds, complex references or finite feed resistance";
+      if (po.type === "cpw") {
+        const gap = ev(`${w}.gap`, po.gap);
+        if (gap !== null && gap <= 0) problem = "CPW box must span the center strip in width, remain in one plane and have a positive gap";
+      }
+      const metal = d.materials.find((m) => m.name === po.conductor);
+      if (!metal || metal.kind !== "metal") problem = "planar conductor must reference a metal material";
+      if (problem) error(w,"planar-port",problem);
+      return;
+    }
     if (po.type === "coaxial") {
       warn(w, "coax-mesh", "experimental coaxial CPU port: curved-conductor mesh can shift phase and impedance; refine the mesh and compare results before relying on them");
       const a = vec(`${w}.start`, po.start), c = vec(`${w}.stop`, po.stop);

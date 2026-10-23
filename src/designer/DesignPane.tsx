@@ -1001,11 +1001,12 @@ function PortInspector(props: { i: number }) {
   const numError = () => draft.ports.some((q, j) => j !== props.i && q.number === p().number) ? t("props.port.numberUnique") : undefined;
   const numberId = () => fieldId(`${base()}.number`);
   const coax = () => p().type === "coaxial";
-  const lumped = () => p().type !== "waveguide" && !coax();
+  const planar = () => p().type === "microstrip" || p().type === "cpw";
+  const lumped = () => p().type === "lumped";
   const wg = () => p().type === "waveguide";
   return (
     <div class="dz-form">
-      <h3 class="dz-h">{t(coax() ? "props.port.titleCoaxial" : wg() ? "props.port.titleWaveguide" : "props.port.titleLumped", { n: p().number })}</h3>
+      <h3 class="dz-h">{t(planar() ? "props.port.titlePlanar" : coax() ? "props.port.titleCoaxial" : wg() ? "props.port.titleWaveguide" : "props.port.titleLumped", { n: p().number })}</h3>
       <VecField label={t(wg() ? "props.port.startWaveguide" : "props.start")} value={p().start} path={`${base()}.start`} onChange={(k, v) => set((q) => { q.start[k] = v; }, `start${k}`)} onPicked={(v) => set((q) => { q.start = v; }, "start")} />
       <VecField label={t(wg() ? "props.port.stopWaveguide" : "props.stop")} value={p().stop} path={`${base()}.stop`} onChange={(k, v) => set((q) => { q.stop[k] = v; }, `stop${k}`)} onPicked={(v) => set((q) => { q.stop = v; }, "stop")} />
       <Show when={wg()}><WaveguideFields i={props.i} /></Show>
@@ -1013,7 +1014,16 @@ function PortInspector(props: { i: number }) {
         <button class="seg-btn" role="radio" aria-checked={lumped()} tabindex={lumped() ? 0 : -1} onClick={() => setPortType(props.i, "lumped")}>{t("props.port.lumped")}</button>
         <button class="seg-btn" role="radio" aria-checked={wg()} disabled={!!p().group} title={p().group ? t("props.port.group.removeBeforeWaveguide") : undefined} tabindex={wg() ? 0 : -1} onClick={() => setPortType(props.i, "waveguide")}>{t("props.port.waveguide")}</button>
         <button class="seg-btn" role="radio" aria-checked={coax()} disabled={!!p().group} title={p().group ? t("props.port.group.removeBeforeCoaxial") : undefined} tabindex={coax() ? 0 : -1} onClick={() => setPortType(props.i, "coaxial")}>{t("props.port.coaxial")}</button>
+        <For each={["microstrip","cpw"] as const}>{(kind) => <button class="seg-btn" role="radio" aria-checked={p().type === kind} disabled={!!p().group} tabindex={p().type === kind ? 0 : -1} onClick={() => setPortType(props.i,kind)}>{t(`props.port.${kind}`)}</button>}</For>
       </div>
+      <Show when={planar()}>
+        <SelectField label={t("props.port.excitationDirection")} value={p().excitation_direction ?? "z"} options={AXES} onChange={(v) => set((q) => { q.excitation_direction = v; }, "excitation_direction")} />
+        <SelectField label={t("props.port.planarConductor")} value={p().conductor ?? ""} options={[{value:"",label:t("props.port.chooseConductor")},...draft.materials.filter((m)=>m.kind==="metal").map((m)=>({value:m.name,label:m.name}))]} onChange={(v)=>set((q)=>{q.conductor=v;},"conductor")} />
+        <Show when={p().type === "cpw"}><ExprField label={t("props.port.cpwGap")} unit="mm" value={p().gap} path={`${base()}.gap`} onChange={(v)=>set((q)=>{q.gap=v;},"gap")} /></Show>
+        <For each={["feed_shift","measurement_shift","reference_ohm"] as const}>{(key)=><ExprField label={t(key==="feed_shift"?"props.port.feedShift":key==="measurement_shift"?"props.port.measurementShift":"props.port.realReference")} unit={key==="reference_ohm"?"Ω":"mm"} value={p()[key]} path={`${base()}.${key}`} onChange={(v)=>set((q)=>{q[key]=v;},key)} />}</For>
+        <SelectField label={t("props.port.termination")} value={p().termination ?? "open"} options={[{value:"open",label:t("props.port.open")},{value:"short",label:t("props.port.short")},{value:"pml",label:t("props.port.pmlTermination")}]} onChange={(v)=>set((q)=>{q.termination=v;},"termination")} />
+        <p class="note">{t("props.port.notePlanar")}</p>
+      </Show>
       <Show when={coax()}>
         <For each={["r_i", "r_o", "r_os", "feed_shift", "measurement_shift"] as const}>{(key) => <ExprField label={t(({ r_i: "props.port.innerRadius", r_o: "props.port.outerRadius", r_os: "props.port.shellRadius", feed_shift: "props.port.feedShift", measurement_shift: "props.port.measurementShift" })[key])} unit="mm" value={p()[key]} path={`${base()}.${key}`} onChange={(v) => set((q) => { q[key] = v; }, key)} />}</For>
         <SelectField label={t("props.port.conductor")} id={fieldId(`${base()}.conductor`)} value={p().conductor ?? ""} options={[{ value: "", label: t("props.port.chooseConductor") }, ...draft.materials.filter((m) => m.kind === "metal" && m.conductivity == null).map((m) => ({ value: m.name, label: m.name }))]} onChange={(v) => set((q) => { q.conductor = v; }, "conductor")} />
@@ -1060,7 +1070,7 @@ function PortInspector(props: { i: number }) {
           q.group.members.push({ start: [...q.start], stop: [...q.stop], direction: q.direction, polarity: 1 });
         }, "group.add")}>{t("props.port.group.add")}</button>
       </Show>
-      <p class="note">{t(coax() ? "props.port.noteCoaxial" : wg() ? "props.port.noteWaveguide" : "props.port.noteLumped")}</p>
+      <Show when={!planar()}><p class="note">{t(coax() ? "props.port.noteCoaxial" : wg() ? "props.port.noteWaveguide" : "props.port.noteLumped")}</p></Show>
     </div>
   );
 }

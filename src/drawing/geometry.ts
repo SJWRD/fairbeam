@@ -563,13 +563,18 @@ export interface PortView {
  * start/stop are corners of the guide cross-section) the guide axis from the excitation plane to
  * the probe plane. */
 export function portLine(p: Bundle["ports"][number]): [Vec3, Vec3] {
-  if (p.type !== "waveguide") return [p.start, p.stop];
+  if (p.type !== "waveguide" && p.type !== "microstrip" && p.type !== "cpw") return [p.start, p.stop];
   const n = "xyz".indexOf(p.direction);
   const c = p.start.map((x, i) => (x + p.stop[i]) / 2) as Vec3;
   const a: Vec3 = [...c];
   const b: Vec3 = [...c];
   a[n] = p.start[n];
   b[n] = p.stop[n];
+  if (p.type === "microstrip" || p.type === "cpw") {
+    const sign = Math.sign(p.stop[n]-p.start[n]);
+    a[n] = p.actual_source_plane ?? p.start[n]+sign*(p.feed_shift ?? 0);
+    b[n] = p.reference_plane ?? p.start[n]+sign*(p.measurement_shift ?? 0);
+  }
   return [a, b];
 }
 

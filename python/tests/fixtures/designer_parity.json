@@ -326,6 +326,11 @@
      "set": {"ports[0].group": {"connection":"series","members":[{"start":["feed+2",0,0],"stop":["feed+2",0,"h"],"direction":"z","polarity":-1}]}}}
   ],
   "cases": [
+    {"name":"planar port excitation cannot follow propagation","set":{"ports":[{"type":"microstrip","number":1,"direction":"x","excitation_direction":"x","start":[0,-1,1],"stop":[10,1,0],"conductor":"copper","measurement_shift":5}]},"expect":["error|planar-port|ports[0]"]},
+    {"name":"planar real reference must be positive","set":{"ports":[{"type":"microstrip","number":1,"direction":"x","excitation_direction":"z","start":[0,-1,1],"stop":[10,1,0],"conductor":"copper","measurement_shift":5,"reference_ohm":0}]},"expect":["error|planar-port|ports[0]"]},
+    {"name":"CPW gap must be positive","set":{"ports":[{"type":"cpw","number":1,"direction":"x","excitation_direction":"y","start":[0,-1,1],"stop":[10,1,1],"gap":0,"conductor":"copper","measurement_shift":5}]},"expect":["error|planar-port|ports[0]"]},
+    {"name":"native planar transverse edges need no manual mesh line","set":{"ports":[{"type":"cpw","number":1,"direction":"x","excitation_direction":"y","start":[0,-1,1],"stop":[10,1,1],"gap":0.5,"conductor":"copper","feed_shift":2,"measurement_shift":5}],"mesh.mode":"manual","mesh.lines":{"x":[-100,0,2,4,5,6,10,100],"y":[-100,-2,-0.5,0,0.5,2,100],"z":[-100,0,1,2,100]}},"expect":[]},
+    {"name":"planar measurement follows its source","set":{"ports":[{"type":"cpw","number":1,"direction":"x","excitation_direction":"y","start":[0,-1,1],"stop":[10,1,1],"gap":0.5,"conductor":"copper","measurement_shift":3,"feed_shift":5}]},"expect":["error|planar-port|ports[0]"]},
     {"name": "coaxial radii must be ordered", "set": {"ports": [{"type":"coaxial","number":1,"direction":"z","start":[0,0,0],"stop":[0,0,10],"r_i":2,"r_o":1,"r_os":3,"conductor":"PEC","dielectric":null,"feed_shift":0,"measurement_shift":5,"termination":"open","excite":true}]}, "expect": ["error|coax-port|ports[0]", "warning|coax-mesh|ports[0]"]},
     {"name": "feature refinement requires a boolean", "set": {"mesh.refine_features": "true"}, "expect": ["error|expr|mesh.refine_features"]},
     {"name":"group members are checked like physical ports","set":{"ports[0].group":{"connection":"parallel","members":[{"start":["feed+2",0,0],"stop":["feed+2",0,"h"],"direction":"z"}]}},"expect":[]},

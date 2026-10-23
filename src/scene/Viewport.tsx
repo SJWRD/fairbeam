@@ -686,7 +686,11 @@ export default function Viewport() {
       const portR = portMarkerRadius(radius, b.mesh.x);
       for (const p of b.ports) {
         const wg = p.type === "waveguide";
-        const g = wg ? waveguidePortObject(p.start, p.stop, p.direction, c.port, portR) : portObject(p.start, p.stop, c.port, portR, p.direction);
+        const planar = p.type === "microstrip" || p.type === "cpw";
+        const k = "xyz".indexOf(p.direction), sign = Math.sign(p.stop[k]-p.start[k]);
+        const from = p.start.map((v,j) => j === k ? p.actual_source_plane ?? v+sign*(p.feed_shift ?? 0) : (v+p.stop[j])/2) as [number,number,number];
+        const to = from.map((v,j) => j === k ? p.reference_plane ?? p.start[k]+sign*(p.measurement_shift ?? 0) : v) as [number,number,number];
+        const g = wg ? waveguidePortObject(p.start, p.stop, p.direction, c.port, portR) : portObject(planar ? from : p.start, planar ? to : p.stop, c.port, portR, p.direction);
         g.name = `port-${p.number}`;
         // a grouped port's additional feeds: glyphs of their own, rescaled and highlighted with the port's
         const members = (p.group?.members ?? []).map((m) => portObject(m.start, m.stop, c.port, portR, m.direction));
@@ -699,7 +703,7 @@ export default function Viewport() {
             setHighlight: (on, hl) => { own.setHighlight(on, hl); for (const m of members) m.userData.setHighlight(on, hl); },
           };
         }
-        const text = p.type === "coaxial" ? t("viewport.portCoaxial", { n: p.number }) : wg ? t("viewport.portWaveguide", { n: p.number, mode: p.mode ?? "TE10" }) : `P${p.number} · ${fmt.num(p.R, 6)} Ω`;
+        const text = p.type === "coaxial" ? t("viewport.portCoaxial", { n: p.number }) : wg ? t("viewport.portWaveguide", { n: p.number, mode: p.mode ?? "TE10" }) : `P${p.number}${planar ? " · "+t(p.type === "cpw" ? "props.port.cpw" : "props.port.microstrip") : ""} · ${fmt.num(p.R, 6)} Ω`;
         const l = label(text, "vp-label vp-label-port");
         portLabels.set(p.number, { el: l.element, base: text });
         l.position.copy(g.userData.labelAnchor);

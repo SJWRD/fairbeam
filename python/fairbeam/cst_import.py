@@ -2771,6 +2771,9 @@ class _Importer:
                       "differences, mostly at the top of the band")
             self.made("port", str(num), f"lumped, 50 ohm across the coax gap (pin r {_num_text(r)}, outer R {_num_text(R)} mm)")
             return
+        if self._planar_line_at_port(k, [[self.val(x) for x in row] for row in g]):
+            raise _Refuse("A planar transmission-line port cannot be imported as rectangular TE10. "
+                          "Geometry is retained; define a supported feed and reference plane explicitly.")
         depth = _mul(a, 0.1)
         start = [g[0][0], g[1][0], g[2][0]]
         stop = [g[0][1], g[1][1], g[2][1]]
@@ -2784,6 +2787,54 @@ class _Importer:
         self.ports.append({"type": "waveguide", "number": num, "mode": "TE10", "a": a, "b": b, "start": start, "stop": stop,
                            "direction": AXES[k]})
         self.made("port", str(num), "waveguide TE10")
+
+    def _planar_line_at_port(self, k: int, g: list[list[float]]) -> bool:
+        """Conservative strip-on-slab detector, not an eigenmode classifier.
+
+        Only untransformed boxes and planar polygon sheets/extrusions are
+        considered. Unknown sections keep the existing reported approximation;
+        exact Fairbeam records and the coax path have already been handled.
+        """
+        metal, slabs = [], []
+        plane, tol = g[k][0], 1e-6
+        for solid in self.solids.values():
+            material = self.materials.get(solid["material"].lower(), {})
+            is_metal = material.get("kind") == "metal"
+            if not is_metal and (solid.get("cavity") or self.val(material.get("eps_r", 1.0)) <= 1):
+                continue
+            for piece in solid["pieces"]:
+                if piece.get("transforms"):
+                    continue
+                for prim in piece["primitives"]:
+                    if prim.get("kind") not in ("box", "polygon", "linpoly"):
+                        continue
+                    try:
+                        bounds = prim_bbox(resolve_primitive(prim, self.values, solid["name"], 0))
+                    except DesignError:
+                        continue
+                    lo, hi = bounds
+                    if not lo[k] - tol <= plane <= hi[k] + tol:
+                        continue
+                    if any(hi[a] < min(g[a]) - tol or lo[a] > max(g[a]) + tol
+                           for a in range(3) if a != k):
+                        continue
+                    (metal if is_metal else slabs).append(bounds)
+        for lo, hi in slabs:
+            for normal in (a for a in range(3) if a != k):
+                width = 3 - normal - k
+                h = hi[normal] - lo[normal]
+                if h <= tol or hi[width] - lo[width] < 3 * h:
+                    continue
+                for a, b in metal:
+                    # A narrow conductor on either slab interface, with both
+                    # lateral edges inside the aperture, cannot be a TE10 wall.
+                    thin = b[normal] - a[normal] <= min(THIN_METAL, h * .1) + tol
+                    on_face = any(abs(a[normal] - face) <= tol or abs(b[normal] - face) <= tol
+                                  for face in (lo[normal], hi[normal]))
+                    inside = min(g[width]) + tol < a[width] < b[width] < max(g[width]) - tol
+                    if thin and on_face and inside:
+                        return True
+        return False
 
     def _coax(self, k: int, g: list[list[float]]):
         """(centre u, centre v, pin radius, outer radius, eps_r) of a coaxial line crossing the port
