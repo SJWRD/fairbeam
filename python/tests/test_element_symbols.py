@@ -5,6 +5,7 @@ import unittest
 from pathlib import Path
 from fairbeam.design import blank_design, check_design, read_design, DesignError
 from fairbeam.preview import build_preview
+from fairbeam.design_checks import lint
 
 
 class ElementSymbols(unittest.TestCase):
@@ -20,6 +21,8 @@ class ElementSymbols(unittest.TestCase):
                 with self.assertRaises(DesignError) as error:
                     check_design(d)
                 self.assertEqual(error.exception.where, "resistors[0].symbol")
+                findings = lint(d, {})
+                self.assertTrue(any(x["path"] == "resistors[0].symbol" and x["code"] == "resistor-r" for x in findings))
 
     def test_legacy_and_explicit_symbols_round_trip(self):
         with tempfile.TemporaryDirectory() as tmp:
