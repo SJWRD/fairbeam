@@ -37,6 +37,10 @@ for (const type of ["microstrip","cpw"]) {
   assert.match(files.find(f=>f.path==="README.md").data,/geometry only/);
   const bad=structuredClone(bundle);bad.ports[0].R=50;
   assert.equal(validateBundle(bad).bundle.ports.length,0);
+  for (const changes of [{excitation_direction:"yz"},{excitation_direction:""},{Feed_R:50},{feed_R:50}]) {
+    const invalid=structuredClone(bundle);Object.assign(invalid.ports[0],changes);
+    assert.equal(validateBundle(invalid).bundle.ports.length,0,JSON.stringify(changes));
+  }
   const manual=structuredClone(design);
   manual.mesh={mode:"manual",lines:{x:[-50,-24,-13,-12,-11,0,50],y:[-15,-2,-1.6,-.5,0,.5,1.6,2,15],z:[-5,-1,0,1,2,5]}};
   assert.equal(designChecks(manual).some(c=>c.severity==="error"&&c.path.startsWith("ports[")),false);

@@ -253,6 +253,7 @@ export function validateBundle(raw: unknown): Validation {
       if (p.type !== "microstrip" && p.type !== "cpw") return true;
       if (!isVec3(p.start) || !isVec3(p.stop)) return false;
       const a = p.start as number[], b = p.stop as number[];
+      if (!["x", "y", "z"].includes(p.excitation_direction as string)) return false;
       const k = "xyz".indexOf(p.direction as string), e = "xyz".indexOf(p.excitation_direction as string);
       if (k < 0 || e < 0 || k === e) return false;
       const n = 3-k-e, length = Math.abs(b[k]-a[k]), feed = p.feed_shift ?? 0;
@@ -262,7 +263,7 @@ export function validateBundle(raw: unknown): Validation {
         && isNum(p.reference_ohm) && p.reference_ohm > 0 && p.R === p.reference_ohm
         && ["open","short","pml"].includes(String(p.termination ?? "open"))
         && typeof p.conductor === "string" && !!p.conductor
-        && !("group" in p) && !("reference_impedance" in p)
+        && !("group" in p) && !("reference_impedance" in p) && !("Feed_R" in p) && !("feed_R" in p)
         && (p.type === "microstrip" ? a[e] !== b[e] && a[n] !== b[n]
           : a[e] !== b[e] && a[n] === b[n] && isNum(p.gap) && p.gap > 0);
     };

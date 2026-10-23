@@ -253,7 +253,7 @@ class NativePlanarPort:
                                        ("i",self.native.I_filenames,self.native.it_tot)):
             axes = [np.loadtxt(Path(path)/filename, comments="%", usecols=0) for filename in filenames]
             t = axes[0]
-            if t.ndim != 1 or len(t) != len(values) or len(t) < 2 or np.any(np.diff(t) <= 0):
+            if t.ndim != 1 or len(t) != len(values) or len(t) < 2 or not np.isfinite(t).all() or np.any(np.diff(t) <= 0):
                 raise ValueError("native planar probe time axes are inconsistent with their wave arrays")
             if any(not np.array_equal(t, other) for other in axes[1:]):
                 raise ValueError("native planar probes must have identical time axes within each voltage/current set")

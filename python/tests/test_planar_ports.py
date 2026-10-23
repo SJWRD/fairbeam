@@ -30,6 +30,22 @@ def design(kind="microstrip", reverse=False):
 
 
 class PlanarPortTests(unittest.TestCase):
+    def test_native_probe_clock_must_be_finite_and_increasing(self):
+        from unittest.mock import patch
+        from fairbeam.planar import NativePlanarPort
+        native = SimpleNamespace(CalcPort=lambda *args, **kwargs: None,
+            Z_ref=np.ones(3)*50, U_filenames=["u"], I_filenames=["i"],
+            ut_tot=np.ones(3), it_tot=np.ones(3))
+        port = NativePlanarPort(native, 50)
+        for clock in ([0, 1, float("nan")], [0, 1, float("inf")], [0, 1, 1]):
+            with self.subTest(clock=clock), patch("numpy.loadtxt", return_value=np.array(clock)):
+                with self.assertRaisesRegex(ValueError, "time axes"):
+                    port.CalcPort("unused", [1, 2, 3])
+        with patch("numpy.loadtxt", return_value=np.array([0., 1., 2.])):
+            port.CalcPort("unused", [1, 2, 3])
+            np.testing.assert_array_equal(port.u_time, [0, 1, 2])
+            np.testing.assert_array_equal(port.i_time, [0, 1, 2])
+
     def test_native_kind_reference_plane_and_reversed_line(self):
         for kind in ("microstrip","cpw"):
             for reverse in (False,True):
