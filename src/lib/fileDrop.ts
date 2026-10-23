@@ -19,12 +19,16 @@ const editable = (t: EventTarget | null): boolean =>
 export const leftDropZone = (e: DragEvent): boolean =>
   !(e.currentTarget instanceof Node && e.relatedTarget instanceof Node && e.currentTarget.contains(e.relatedTarget));
 
+// A modal owns its file interaction; never open a background project through it.
+const insideModal = (target: EventTarget | null): boolean =>
+  typeof Element !== "undefined" && target instanceof Element && !!target.closest('[role="dialog"][aria-modal="true"]');
+
 export function fileDropHandlers(setDragging: (on: boolean) => void, open: (f: File) => void) {
   return {
     onDragOver: (e: DragEvent) => {
       if (carriesFiles(e.dataTransfer)) {
         e.preventDefault();
-        setDragging(true);
+        setDragging(!insideModal(e.target));
       } else if (carriesLink(e.dataTransfer) && !editable(e.target)) {
         e.preventDefault(); // accept it, only so that the drop below can cancel the navigation
       }
@@ -34,6 +38,7 @@ export function fileDropHandlers(setDragging: (on: boolean) => void, open: (f: F
       setDragging(false);
       if (carriesFiles(e.dataTransfer)) {
         e.preventDefault();
+        if (insideModal(e.target)) return;
         const f = e.dataTransfer?.files?.[0];
         if (f) open(f);
       } else if (carriesLink(e.dataTransfer) && !editable(e.target)) {

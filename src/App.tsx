@@ -68,7 +68,7 @@ export default function App() {
   onMount(()=>{window.addEventListener("fairbeam:screenshot",onScreenshot);onCleanup(()=>window.removeEventListener("fairbeam:screenshot",onScreenshot));});
   const [dragging, setDragging] = createSignal(false);
   // Tree-part drags remain local; file drops report their outcome wherever they arrive.
-  const drop = fileDropHandlers((on) => setDragging(on && !pcbImportOpen()), (file) => void openDroppedFile(file));
+  const drop = fileDropHandlers((on) => setDragging(on && !pcbImportOpen() && !cstImportOpen()), (file) => void openDroppedFile(file));
   const [booting, setBooting] = createSignal(true);
   const [leftClosed, setLeftClosed] = createSignal(false);
   const [rightClosed, setRightClosed] = createSignal(false);
@@ -516,7 +516,7 @@ export default function App() {
           <ResearchDialog />
         </PanelBoundary>
       </Show>
-      <Show when={dragging() && !pcbImportOpen()}>
+      <Show when={dragging() && !pcbImportOpen() && !cstImportOpen()}>
         <div class="drop-hint" aria-hidden="true">{t("app.dropHint")}</div>
       </Show>
     </div>

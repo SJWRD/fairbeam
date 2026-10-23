@@ -51,6 +51,35 @@ export default {
       await s.wait('[data-toast-key="file-drop"]',await s.T('app.dropUnsupported',{name:'photo.png'}));
       await clearToasts();
     });
+    await s.step('modal file drags never cover or open the background app',async()=>{
+      for (const kind of ['cst','pcb']) {
+        await clearToasts();
+        await s.page.evaluate(async(kind)=>{
+          if(kind==='cst')(await import('/src/lib/cstImport.ts')).setCstImportOpen(true);
+          else (await import('/src/lib/pcbImport.ts')).setPcbImportOpen(true);
+        },kind);
+        await s.wait(kind==='cst'?'#ci-title':'#pi-title');
+        const result=await s.page.evaluate(()=>{
+          const dialog=document.querySelector('[role="dialog"][aria-modal="true"]');
+          const child=dialog.querySelector('h2');
+          const data=new DataTransfer();data.items.add(new File(['bad data'],'background.json'));
+          child.dispatchEvent(new DragEvent('dragover',{bubbles:true,cancelable:true,dataTransfer:data}));
+          const covered=!!document.querySelector('.drop-hint');
+          child.dispatchEvent(new DragEvent('dragleave',{bubbles:true,relatedTarget:null,dataTransfer:data}));
+          return {covered,sticky:dialog.classList.contains('pi-dragging')};
+        });
+        assert.deepEqual(result,{covered:false,sticky:false});
+        if(kind==='cst') {
+          await s.page.evaluate(()=>{
+            const data=new DataTransfer();data.items.add(new File(['bad data'],'background.json'));
+            document.querySelector('#ci-title').dispatchEvent(new DragEvent('drop',{bubbles:true,cancelable:true,dataTransfer:data}));
+          });
+          assert.equal(await s.page.$('[data-toast-key="file-drop"]'),null);
+          assert.ok(await s.page.$('#ci-title'));
+        }
+        await s.press('Escape');
+      }
+    });
     await s.step('drops on Start explain unsupported files and hidden reference context',async()=>{
       for(const [name,key] of [['macro.bas','app.dropCst'],['board.dxf','app.dropPcb'],['photo.png','app.dropUnsupported'],['ref.s1p','app.dropReferenceContext']]) {
         await clearToasts();await drop(name,'bad data');await s.wait('[data-toast-key="file-drop"]',await s.T(key,{name}));
