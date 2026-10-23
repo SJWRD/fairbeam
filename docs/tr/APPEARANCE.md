@@ -1,13 +1,32 @@
 # Görünümü özelleştirme
 
-Genel ayarlar → Tema ve yazı tipi, arayüz yüzeyleri için beş hazır ayar sunar: Mevcut, Okyanus, Orman, Erik ve Yüksek kontrast. Vurgu rengi bağımsızdır (Bakır, Mavi, Yeşil mavi, Mor). Grafik kontrollerinden ortak sekiz seri paletini ve çizgi kalınlığını (1,5; 2 veya 3) seçebilirsiniz. Görünüm kontrollerinden arka plan ve ızgara paletini seçebilirsiniz.
+**Genel ayarlar › Tema ve yazı tipi** arayüzü, grafikleri ve 3B görünümü ayarlar. Geometri, malzemeler ve simülasyon verileri değişmez.
 
-Vurgu, birincil grafik çizgisi, görünüm arka planı veya ızgara rengini değiştirmek için Özel renkler bölümünü genişletin. Seçili hazır ayara dönmek için ilgili özel rengi kapatın. Özel vurgu renginde düğme metni okunaklı kontrast için siyah veya beyaz olur; özel çizgi ve ızgara renklerini siz seçersiniz, bu nedenle arka planda görünür kalan renkler kullanın. Bu kontroller ortak görüntüleme değerlerini etkiler; geometriyi, malzemeleri, simülasyon girdilerini veya dışa aktarılan model verilerini değiştirmez.
+## Uyumlu temalar
 
-Seçimler, açık/koyu tema değişimleri de dahil olmak üzere yerel olarak saklanır. Saklanan veya içe aktarılan ayarlar yalnızca desteklenen seçenek değerlerini ve altı basamaklı onaltılık renkleri kabul eder. Geçersiz görünüm alanları, geçerli genel ayarları silmeden birbirinden bağımsız olarak varsayılanlarına döner.
+- **Forest · koyu yeşil**: koyu tema, Orman arayüz paleti, Yeşil mavi vurgu, Ayrışan renkler grafikleri ve Arduvaz 3B arka planı.
+- **Academic · açık mavi**: açık tema, Okyanus arayüz paleti, Mavi vurgu, Ayrışan renkler grafikleri ve Sıcak kâğıt 3B arka planı.
 
-Üst çubuk ve Ayarlar bölümündeki tema kontrolleri eşzamanlı kalır: grafik veya görünüm seçeneğini değiştirmek, yeniden başlatmada eski bir temayı geri getirmez. Daha güçlü kontrast ve Yumuşak renkler grafik paletleri açık modda daha güçlü çizgi kontrastı sunar. Özgün varsayılan açık palet, üçüncü, dördüncü ve beşinci çizgi renklerinin daha düşük kontrastı da dahil olmak üzere bilinçli olarak korunmuştur.
+Tema uygulamak özel renkleri kapatır, varsayılan Plex yazı tiplerini ve **Normal · 2 piksel** çizgi kalınlığını geri getirir. Simülasyon tercihleri korunur. Ardından her ayarı ayrı değiştirebilirsiniz.
 
-Her hazır ayar satırının ayrı bir sıfırlama kontrolü vardır. Özel renkleri, ilgili özel renk seçeneğini kapatarak ayrı ayrı sıfırlayabilirsiniz. Görünümü sıfırla, temayı ve yazı tiplerini de sıfırlar. Varsayılan Mevcut/Bakır ayarları, mevcut grafik/görünüm paletleri, 2 kalınlığı, kapalı özel renkler ve Plex yazı tipleri özgün stil değerlerini değiştirmez.
+## Yazı tipleri ve paletler
 
-Doğrulama: `node --experimental-strip-types scripts/check-appearance-presets.mjs`, mevcut genel ayarlar/i18n/tür denetimleri ve dar görünümde İngilizce ve Türkçe S13 tarayıcı senaryosu.
+| Ayar | Seçenekler |
+| --- | --- |
+| Arayüz yazı tipi | IBM Plex Sans (varsayılan), Sistem sans serif, Arial / Helvetica |
+| Sayı ve kod yazı tipi | IBM Plex Mono (varsayılan), Sistem eş aralıklı, Consolas |
+| Arayüz paleti | Mevcut (varsayılan), Okyanus, Orman, Erik, Daha güçlü kontrast |
+| Vurgu rengi | Bakır (varsayılan), Mavi, Yeşil mavi, Mor |
+| Grafik renkleri | Mevcut (varsayılan), Ayrışan renkler, Yumuşak renkler |
+| Grafik çizgi kalınlığı | İnce · 1.5 piksel, Normal · 2 piksel, Kalın · 3 piksel |
+| 3B arka plan ve ızgara | Mevcut (varsayılan), Arduvaz, Sıcak kâğıt, Mavi çizim |
+
+Her palet satırının kendi **Sıfırla** düğmesi vardır. Yazı tipi bulunamazsa yerel alternatif kullanılır; sayı ve kod için ayrı eş aralıklı yazı tipi korunur. **Ayrışan renkler** ve **Yumuşak renkler** açık temada daha güçlü çizgi kontrastı sunar. Varsayılan palet, bazı çizgilerinin daha düşük kontrastı da dahil olmak üzere korunur.
+
+## Özel renkler
+
+Vurgu, birincil grafik çizgisi, 3B arka plan veya ızgara rengini değiştirmek için **Özel renkler** bölümünü genişletin. Özel rengi kapatmak seçili palete döner. Vurgu düğmelerinde okunaklılık için siyah veya beyaz metin seçilir; özel grafik ve ızgara rengini arka planda görünür kalacak şekilde siz seçersiniz.
+
+## Kaydetme ve sıfırlama
+
+Seçimler yerel olarak saklanır; yeniden başlatma ve açık/koyu tema geçişlerinde korunur. Geçersiz saklanan seçenekler, geçerli diğer ayarları silmeden varsayılanına döner. **Görünümü sıfırla**; temayı, yazı tiplerini, Mevcut/Bakır paletlerini, Normal · 2 piksel çizgiyi geri getirir ve özel renkleri kapatır.

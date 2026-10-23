@@ -30,6 +30,7 @@ export function renderRoadmap(data) {
   for (const area of data.areas ?? []) {
     for (const item of area.items ?? []) {
       const where = `roadmap.json: ${area.name} › ${item.title}`;
+      if (area.legacySnapshot && item.links?.length) throw new Error(`${where}: legacy snapshot references are unverified`);
       if (!item.title || !item.description) throw new Error(`${where}: title and description are required`);
       if (!STATES.some((s) => s.id === item.status)) throw new Error(`${where}: unknown status "${item.status}"`);
       if (item.status === "available" && !/^(next|\d+\.\d+\.\d+)$/.test(item.release ?? "")) throw new Error(`${where}: an available item needs a release (x.y.z or next)`);
@@ -105,7 +106,9 @@ export function renderRoadmap(data) {
   const date = new Date(`${data.updated}T12:00:00Z`);
   const day = date.toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric", timeZone: "UTC" });
 
-  return externalLinksInHtml(`<p class="rm-intro">${count("available")} features available, ${count("development")} in development and ${count("planned")} planned. Availability refers to the stated release; future plans may change. Updated <time datetime="${esc(data.updated)}">${day}</time>.</p>
+  const legacyNote = data.areas.some(area => area.legacySnapshot)
+    ? '<p class="note">Legacy entries retain the historical 0.7.0 snapshot; their first release and former issue references have not been reverified.</p>' : "";
+  return externalLinksInHtml(`<p class="rm-intro">${count("available")} features available, ${count("development")} in development and ${count("planned")} planned. Availability refers to the stated release; future plans may change. Updated <time datetime="${esc(data.updated)}">${day}</time>.</p>${legacyNote}
     <div class="rm-board" id="roadmap-board">
       <div class="rm-tabs" role="tablist" aria-label="Roadmap by state" hidden>${tabs}
       </div>

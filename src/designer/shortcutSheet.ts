@@ -3,6 +3,7 @@
 // in the web build (Ctrl+T opens a tab, Ctrl+W closes it, Ctrl+Tab switches tabs: the page never
 // receives them). No DOM, so check-shortcuts.mjs runs it for real.
 import type { ShortcutId } from "./shortcuts.ts";
+import { isMacPlatform } from "../lib/shortcut.ts";
 
 export type SheetGroup = "edit" | "view" | "panels" | "tools" | "boolean" | "mouse";
 
@@ -13,7 +14,7 @@ export interface SheetRow { id: ShortcutId | ExtraId; label: string; context: st
 
 /** group order and, in each group, the row order: the common commands first */
 export const SHEET_ORDER: Readonly<Record<SheetGroup, readonly (ShortcutId | ExtraId)[]>> = {
-  edit: ["save", "undo", "redo", "saveAs", "duplicate", "delete", "rename", "transform", "close", "cancel"],
+  edit: ["save", "undo", "redo", "saveAs", "newDesign", "openDocument", "duplicate", "delete", "rename", "transform", "close", "cancel"],
   view: ["fit", "cameras", "mainTabs", "mainTabsLocal", "closeShown", "markers"],
   panels: ["help", "tree", "dock", "side", "ribbon", "panes"],
   tools: ["run", "brick", "drawSolid", "base", "extrudeFace", "export"],
@@ -22,17 +23,20 @@ export const SHEET_ORDER: Readonly<Record<SheetGroup, readonly (ShortcutId | Ext
 };
 
 /** chords the browser keeps: Ctrl/⌘+T, Ctrl/⌘+W, Ctrl+Tab */
-export const BROWSER_RESERVED: ReadonlySet<ShortcutId> = new Set<ShortcutId>(["transform", "close", "mainTabs"]);
+export const BROWSER_RESERVED: ReadonlySet<ShortcutId> = new Set<ShortcutId>(["transform", "close", "mainTabs", "newDesign", "openDocument"]);
+/** These commands currently have real key equivalents only in the AppKit menu. */
+export const MAC_NATIVE_ONLY: ReadonlySet<ShortcutId> = new Set<ShortcutId>(["newDesign", "openDocument"]);
 
 type Entry = { label: string; context: string; key: string };
 
 /** The sheet's groups with their rows. In the browser (desktop false) a reserved chord stays listed,
  * marked desktop-only, so the user learns why it does nothing there. */
-export function shortcutSheet(table: Record<ShortcutId, Entry>, extras: Record<ExtraId, Entry>, desktop: boolean): { group: SheetGroup; rows: SheetRow[] }[] {
+export function shortcutSheet(table: Record<ShortcutId, Entry>, extras: Record<ExtraId, Entry>, desktop: boolean, mac = isMacPlatform()): { group: SheetGroup; rows: SheetRow[] }[] {
   const entry = (id: ShortcutId | ExtraId): Entry | undefined => (id in table ? table[id as ShortcutId] : extras[id as ExtraId]);
   return (Object.keys(SHEET_ORDER) as SheetGroup[]).map((group) => ({
     group,
     rows: SHEET_ORDER[group].flatMap((id) => {
+      if (!mac && MAC_NATIVE_ONLY.has(id as ShortcutId)) return [];
       const e = entry(id);
       return e ? [{ id, label: e.label, context: e.context, key: e.key, desktopOnly: !desktop && BROWSER_RESERVED.has(id as ShortcutId) }] : [];
     }),

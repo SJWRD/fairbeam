@@ -5,13 +5,14 @@
     "npm run roadmap reads the links' states with gh and rewrites status, release and updated; it keeps everything else.",
     "status: available (merged, and every linked issue closed as completed), development (an open PR, a linked issue with an open PR, part of the work merged, or started: true), planned (open issues only).",
     "release: the first tag that contains the merge commit, e.g. 0.3.0, or next (merged, not released yet; shown as nextRelease).",
-    "started: true marks an item whose work has begun before its first PR. Items without links keep the status and release written here."
+    "started: true marks an item whose work has begun before its first PR. Items without links keep the status and release written here.",
+    "Legacy pre-0.7.0 cards retain their historical release baseline. Their former issue numbers no longer identify the same work in the current repository, so those unverified links were removed. Only verified current-repository links are refreshed."
   ],
-  "updated": "2026-10-06",
+  "updated": "2026-10-20",
   "repo": "ismailakdag/fairbeam",
-  "issueUrl": null,
+  "issueUrl": "https://github.com/ismailakdag/fairbeam/issues",
   "releaseUrl": "https://github.com/ismailakdag/fairbeam-releases/releases/tag/v{version}",
-  "nextRelease": "0.7.1",
+  "nextRelease": null,
   "areas": [
     {
       "name": "Designer",
@@ -19,130 +20,113 @@
         {
           "title": "Visual designer",
           "description": "Draw a parametric model, set up the simulation, run it and read the results in one window.",
-          "links": [35],
           "status": "available",
           "release": "0.7.0"
         },
         {
           "title": "One-row ribbon",
           "description": "Home, Modeling, Transform, Simulation, Optimize and Post-processing on one row; the tree, dock and properties collapse, next to a Python side panel.",
-          "links": [55, 77, 147],
           "status": "available",
           "release": "0.7.0"
         },
         {
           "title": "Draw in 3D and extrude faces",
           "description": "Draw a brick's base and then its height in the 3D view, or extrude a picked face into a new part.",
-          "links": [144, 146],
           "status": "available",
           "release": "0.7.0"
         },
         {
           "title": "One Transform dialog",
           "description": "Translate, scale, rotate and mirror in one dialog (Ctrl+T), with a live preview.",
-          "links": [56, 61, 143],
           "status": "available",
           "release": "0.7.0"
         },
         {
           "title": "Booleans, polygons included",
           "description": "Add, subtract and intersect shapes, including polygons, with a colour-coded preview.",
-          "links": [80, 135, 156],
           "status": "available",
           "release": "0.7.0"
         },
         {
           "title": "Pick points, align and measure",
           "description": "Use vertices, edge midpoints and face centres for corners and origins; align parts and measure between points.",
-          "links": [66, 135],
           "status": "available",
           "release": "0.7.0"
         },
         {
           "title": "Shortcuts and modeling history",
           "description": "A sheet of the keyboard shortcuts, and the session's modeling history.",
-          "links": [81, 84, 133],
           "status": "available",
           "release": "0.7.0"
         },
         {
           "title": "A tree with context menus",
           "description": "Right-click menus on every node, show and hide, and drag and drop of parts into components.",
-          "links": [44, 49, 79, 128, 132, 160],
           "status": "available",
           "release": "0.7.0"
         },
         {
           "title": "Parameters in the dock",
           "description": "A table of every parameter next to Checks, with CSV and JSON import and export.",
-          "links": [53, 59, 148],
           "status": "available",
           "release": "0.7.0"
         },
         {
           "title": "Checks that explain themselves",
           "description": "Click a warning to see what was found, why it matters and how to fix it.",
-          "links": [64, 70],
           "status": "available",
           "release": "0.7.0"
         },
         {
           "title": "Ports that find their ground",
           "description": "Add port here says what the port connects to and offers the other metals it found.",
-          "links": [65, 67],
           "status": "available",
           "release": "0.7.0"
         },
         {
           "title": "Import VBA macro",
           "description": "A CST-compatible VBA macro or history list becomes a design, manual mesh lines included, with a report of what was skipped or changed.",
-          "links": [168, 170],
           "status": "available",
           "release": "0.7.0"
         },
         {
           "title": "Save As",
           "description": "Save a design under a new name, in the app and from the File menu; Undo and Redo work from the menus too.",
-          "links": [163, 167],
           "status": "available",
           "release": "0.7.0"
         },
         {
           "title": "Checks for misplaced metal",
           "description": "New warnings for metal that overhangs its substrate or floats off the structure.",
-          "links": [177],
           "status": "available",
           "release": "0.7.0"
         },
         {
           "title": "Surface current in the ribbon",
           "description": "Simulation › Monitors has its own Surface current button, next to Far field.",
-          "links": [176],
           "status": "available",
           "release": "0.7.0"
         },
         {
           "title": "Start templates",
           "description": "A half-wave dipole, a quarter-wave monopole, an open-ended waveguide, a printed sleeve dipole and a two-port microstrip line to start from.",
-          "links": [],
           "status": "available",
           "release": "0.7.0"
         },
         {
           "title": "Import PCB artwork",
           "description": "DXF, Gerber and Excellon files become a design: Home › Import PCB, or fairbeam import-pcb.",
-          "links": [],
           "status": "available",
           "release": "0.7.0"
         },
         {
           "title": "One-click check fixes",
           "description": "Common design checks offer a fix you can apply with one click.",
-          "links": [],
           "status": "available",
           "release": "0.7.0"
         }
-      ]
+      ],
+      "legacySnapshot": "0.7.0"
     },
     {
       "name": "Simulation",
@@ -150,123 +134,107 @@
         {
           "title": "Automatic meshing",
           "description": "The FDTD mesh is built from the geometry. In the dipole and patch checks, resonance differs from converged hand-tuned meshes by about 0.1% or less.",
-          "links": [],
           "status": "available",
           "release": "0.7.0"
         },
         {
           "title": "Multi-port S-parameters",
           "description": "Full S-matrices of filters, dividers, couplers and arrays, with Touchstone export.",
-          "links": [],
           "status": "available",
           "release": "0.7.0"
         },
         {
           "title": "Sweeps and optimizer",
           "description": "Sweep one or two parameters, or let the optimizer tune them towards your goals.",
-          "links": [],
           "status": "available",
           "release": "0.7.0"
         },
         {
           "title": "Metal GPU engine",
           "description": "The optional Metal engine reduced solver time in the documented benchmarks; agreement depends on the model and stopping settings.",
-          "links": [],
           "status": "available",
           "release": "0.7.0"
         },
         {
           "title": "CUDA GPU engine",
           "description": "Optional CUDA builds support NVIDIA GPUs under Windows; solver times depend on the model and runtime.",
-          "links": [10, 14, 17, 19],
           "status": "available",
           "release": "0.7.0"
         },
         {
           "title": "Thin copper as sheets",
           "description": "Realistic 35 µm PCB copper is simulated as sheets, so runs keep a practical time step.",
-          "links": [38, 46],
           "status": "available",
           "release": "0.7.0"
         },
         {
           "title": "Convergence checks",
           "description": "Preflight checks block known invalid setups and flag some convergence risks; check convergence after the run.",
-          "links": [39, 46],
           "status": "available",
           "release": "0.7.0"
         },
         {
           "title": "Thin copper in exported models",
           "description": "A design exported to Python builds the same copper sheets as the designer's own run.",
-          "links": [63],
           "status": "available",
           "release": "0.7.0"
         },
         {
           "title": "Auto mesh mode",
           "description": "The mesh settings are picked for each design, and any field can be overridden.",
-          "links": [145],
           "status": "available",
           "release": "0.7.0"
         },
         {
           "title": "Parameter sweeps",
           "description": "Sequences over up to six parameters each, checked before they run, queued, and compared run by run.",
-          "links": [151, 155],
           "status": "available",
           "release": "0.7.0"
         },
         {
           "title": "A stronger optimizer",
           "description": "Live progress, the best result kept, any number of parameters, and Bayesian, CMA-ES, particle-swarm, genetic and trust-region searches.",
-          "links": [150],
           "status": "available",
           "release": "0.7.0"
         },
         {
           "title": "No run without a port",
           "description": "A design with no port, or no excited port, is refused with a check instead of failing.",
-          "links": [166],
           "status": "available",
           "release": "0.7.0"
         },
         {
           "title": "Examples keep their mesh",
           "description": "Supported example-to-design conversions preserve recorded mesh lines. Review conversion limits and compare a new run before relying on equivalence.",
-          "links": [164, 165, 169],
           "status": "available",
           "release": "0.7.0"
         },
         {
           "title": "Optimizer skips misplaced metal",
           "description": "Candidates the design checks refuse are skipped without a simulation and shown as Skipped.",
-          "links": [177],
           "status": "available",
           "release": "0.7.0"
         },
         {
           "title": "GPU build by default",
           "description": "A compatible GPU runtime is preferred when the GPU startup preference is enabled; the CPU engine remains available.",
-          "links": [176],
           "status": "available",
           "release": "0.7.0"
         },
         {
           "title": "Mesh convergence",
           "description": "Refine the automatic mesh until the comparison meets tolerances or reaches the run limit; the study may report Not converged.",
-          "links": [],
           "status": "available",
           "release": "0.7.0"
         },
         {
           "title": "Run-quality warnings",
           "description": "A run that did not converge, or whose numbers look suspicious, is flagged in the tree and on its results.",
-          "links": [],
           "status": "available",
           "release": "0.7.0"
         }
-      ]
+      ],
+      "legacySnapshot": "0.7.0"
     },
     {
       "name": "Results",
@@ -274,130 +242,113 @@
         {
           "title": "Far field, currents and beam steering",
           "description": "3D patterns, gain and efficiency, surface currents, and array beams steered after the run.",
-          "links": [],
           "status": "available",
           "release": "0.7.0"
         },
         {
           "title": "Drawings, reports and fabrication files",
           "description": "Dimensioned drawings, publication figures, a PDF report, and Gerber and drill files.",
-          "links": [],
           "status": "available",
           "release": "0.7.0"
         },
         {
           "title": "VBA macro export",
           "description": "Export supported geometry and settings as a CST-compatible VBA macro; verify the reconstructed model in the target program.",
-          "links": [],
           "status": "available",
           "release": "0.7.0"
         },
         {
           "title": "Solver times on reference machines",
           "description": "See how long the same model takes on an Apple M5 Pro and a Ryzen 9 with CUDA.",
-          "links": [30, 31],
           "status": "available",
           "release": "0.7.0"
         },
         {
           "title": "Every run kept",
           "description": "Each run keeps its own result, and Results opens the newest run instead of the preview.",
-          "links": [40, 42],
           "status": "available",
           "release": "0.7.0"
         },
         {
           "title": "Results in the design tree",
           "description": "Each run appears under its design, with its S-parameters, far fields, currents and log.",
-          "links": [52, 58],
           "status": "available",
           "release": "0.7.0"
         },
         {
           "title": "Post-processing tab",
           "description": "Selecting a result opens its plot, compare and export tools in the ribbon.",
-          "links": [55],
           "status": "available",
           "release": "0.7.0"
         },
         {
           "title": "Markers",
           "description": "Resonances, a two-marker bandwidth, hover read-outs and your own markers, with a table.",
-          "links": [154, 158],
           "status": "available",
           "release": "0.7.0"
         },
         {
           "title": "Compare runs",
           "description": "Runs side by side, with the parameters that differ marked; copy or save several runs at once.",
-          "links": [127, 131, 136],
           "status": "available",
           "release": "0.7.0"
         },
         {
           "title": "Complex formats and Touchstone",
           "description": "Copy data and CSV in dB, phase, Re/Im or magnitude/phase, and Touchstone export.",
-          "links": [100, 113, 152],
           "status": "available",
           "release": "0.7.0"
         },
         {
           "title": "Result tabs",
           "description": "Results open as tabs in the main area, with an A/B/C table of the runs.",
-          "links": [172],
           "status": "available",
           "release": "0.7.0"
         },
         {
           "title": "Animated surface currents",
           "description": "Phase-resolved surface currents play as a smooth animation in the 3D view.",
-          "links": [174],
           "status": "available",
           "release": "0.7.0"
         },
         {
           "title": "Gain and polarization in patterns",
           "description": "3D patterns and cuts in directivity, gain, realized gain, or RHCP and LHCP for circular polarization.",
-          "links": [180],
           "status": "available",
           "release": "0.7.0"
         },
         {
           "title": "Far-field card in the 3D view",
           "description": "Dmax, gain, realized gain, radiation, mismatch and total efficiency and the main lobe, next to the pattern.",
-          "links": [180],
           "status": "available",
           "release": "0.7.0"
         },
         {
           "title": "Efficiency result",
           "description": "1D Results › Efficiency: mismatch efficiency over the band, with the radiation and total efficiency, per driven port.",
-          "links": [180],
           "status": "available",
           "release": "0.7.0"
         },
         {
           "title": "Efficiency over the band",
           "description": "Optional radiation and total efficiency curves are computed after the solver finishes, with additional post-processing time.",
-          "links": [179],
           "status": "available",
           "release": "0.7.0"
         },
         {
           "title": "Result summaries",
           "description": "Headline numbers for each run in the tree and the Runs table, Tables › Summary, and a comparison table of the parameters that differ, to copy or save as CSV.",
-          "links": [],
           "status": "available",
           "release": "0.7.0"
         },
         {
           "title": "2D field maps with phase and animation",
           "description": "The Field map tab shows E and H planes as heat maps; Phase and Animate play a time-harmonic animation, in 2D and 3D.",
-          "links": [],
           "status": "available",
           "release": "0.7.0"
         }
-      ]
+      ],
+      "legacySnapshot": "0.7.0"
     },
     {
       "name": "Desktop app",
@@ -405,88 +356,77 @@
         {
           "title": "Desktop app for macOS and Windows",
           "description": "Installs its own Python and openEMS on first start, for your account, without admin rights.",
-          "links": [1, 2],
           "status": "available",
           "release": "0.7.0"
         },
         {
           "title": "Updates in the app",
           "description": "With your confirmation, updates are installed after their payload signature is checked against the configured updater key. This is separate from Developer ID signing and Apple notarization.",
-          "links": [],
           "status": "available",
           "release": "0.7.0"
         },
         {
           "title": "Sturdier on Windows",
           "description": "Proxy settings are supported, verified downloads are reused on retry, partial downloads restart, and the app manages the run-server process tree.",
-          "links": [4, 7, 8, 15, 18, 25, 27, 29],
           "status": "available",
           "release": "0.7.0"
         },
         {
           "title": "Clean updates and uninstall",
           "description": "On Windows, uninstall removes owned application resources. Runtime data and settings remain unless you select Delete the application data; workspaces remain in either case.",
-          "links": [36],
           "status": "available",
           "release": "0.7.0"
         },
         {
           "title": "GPU preference on Windows",
           "description": "“Prefer the GPU build” on the setup screen now works on Windows too.",
-          "links": [20, 37],
           "status": "available",
           "release": "0.7.0"
         },
         {
           "title": "Sharp on scaled displays",
           "description": "Layouts fit 125 % and 150 % Windows scaling and follow each monitor's pixel density.",
-          "links": [48],
           "status": "available",
           "release": "0.7.0"
         },
         {
           "title": "Start, Design and Examples",
           "description": "Examples open read-only with their results. Supported examples can be copied to an editable design; unsupported geometry is explained.",
-          "links": [51, 76, 153, 157],
           "status": "available",
           "release": "0.7.0"
         },
         {
           "title": "Native menus and settings",
           "description": "File, Edit, View, Window and Help menus, an About dialog, general settings and native Save As for exports.",
-          "links": [139, 159],
           "status": "available",
           "release": "0.7.0"
         },
         {
           "title": "Unsaved-change prompts",
           "description": "Unsaved-change prompts offer Save, Discard or Cancel during supported close actions.",
-          "links": [41, 43, 99, 118],
           "status": "available",
           "release": "0.7.0"
         },
         {
           "title": "A window that fits",
           "description": "The window opens at a size that fits the screen, or maximized on smaller screens.",
-          "links": [176],
           "status": "available",
           "release": "0.7.0"
         },
         {
           "title": "Turkish and English interface",
           "description": "General settings › Language, native menus included, and a Decimal separator setting.",
-          "links": [],
           "status": "available",
           "release": "0.7.0"
         },
         {
           "title": "Searchable example picker",
           "description": "Find an example by name, with new 867 MHz collinear and Yagi examples.",
-          "links": [],
           "status": "available",
           "release": "0.7.0"
         }
-      ]
+      ],
+      "legacySnapshot": "0.7.0"
     },
     {
       "name": "Performance & quality",
@@ -494,72 +434,329 @@
         {
           "title": "Validated results",
           "description": "Checked against analytical results.",
-          "links": [],
           "status": "available",
           "release": "0.7.0"
         },
         {
           "title": "Benchmarks on Mac and Windows",
           "description": "Fourteen reference examples have recorded Windows and macOS timings, with differences and limitations documented.",
-          "links": [9, 13],
           "status": "available",
           "release": "0.7.0"
         },
         {
           "title": "Honest efficiency figures",
           "description": "Efficiencies above 100 % are flagged, and runs report the end criterion they reached.",
-          "links": [11],
           "status": "available",
           "release": "0.7.0"
         },
         {
           "title": "A faster, steadier designer",
           "description": "The 3D view reuses its geometry, and edits survive slow loads, saves and previews.",
-          "links": [24, 28],
           "status": "available",
           "release": "0.7.0"
         },
         {
           "title": "Keyboard access",
           "description": "Keyboard navigation and shortcuts are available; see the documented keyboard controls and limitations.",
-          "links": [26],
           "status": "available",
           "release": "0.7.0"
         },
         {
           "title": "Projects open reliably",
           "description": "A preview arriving mid-load can no longer replace the project you asked for.",
-          "links": [62],
           "status": "available",
           "release": "0.7.0"
         },
         {
           "title": "Faster meshing of detailed designs",
           "description": "Automatic meshing uses indexed geometry processing for detailed polygon designs.",
-          "links": [71],
           "status": "available",
           "release": "0.7.0"
         },
         {
           "title": "A quicker designer",
           "description": "The designer includes improvements to loading, checking and saving.",
-          "links": [72, 73, 74],
           "status": "available",
           "release": "0.7.0"
         },
         {
           "title": "Large designs stay responsive",
           "description": "Geometry processing and asynchronous state handling have been optimized; responsiveness depends on design size and hardware.",
-          "links": [104, 105, 137, 138],
           "status": "available",
           "release": "0.7.0"
         },
         {
           "title": "Horn efficiency",
           "description": "The horn has about 99.3% raw efficiency at 10 GHz; its lossless-normalized result is 100%.",
-          "links": [12, 162],
           "status": "available",
           "release": "0.7.0"
+        }
+      ],
+      "legacySnapshot": "0.7.0"
+    },
+    {
+      "name": "Recent desktop work",
+      "items": [
+        {
+          "title": "Portable .fb projects",
+          "description": "Native Open and Save, adjacent result attachments and portable project identity.",
+          "links": [
+            168
+          ],
+          "status": "available",
+          "release": "0.8.0"
+        },
+        {
+          "title": "Coordinated appearance themes",
+          "description": "Forest and Academic themes combine interface, chart and viewport settings.",
+          "links": [
+            174
+          ],
+          "status": "available",
+          "release": "0.8.2"
+        },
+        {
+          "title": "Experimental Elmer workflows",
+          "description": "Opt-in eigenmode and driven-antenna experiments with bounded geometry and separate qualification limits.",
+          "links": [
+            139
+          ],
+          "status": "available",
+          "release": "0.7.5"
+        },
+        {
+          "title": "Experimental coaxial TEM ports",
+          "description": "Native CPU coaxial ports with explicit geometry and mesh requirements.",
+          "links": [
+            132
+          ],
+          "status": "available",
+          "release": "0.7.3"
+        },
+        {
+          "title": "Render and export workflows",
+          "description": "Render dialog, design import and named export packages.",
+          "links": [
+            17
+          ],
+          "status": "available",
+          "release": "0.7.1"
+        },
+        {
+          "title": "Document and unsaved-work protection",
+          "description": "Archive permissions, draft ownership and result-index checks.",
+          "links": [
+            177
+          ],
+          "status": "available",
+          "release": "0.8.3"
+        },
+        {
+          "title": "Reviewed workflow corrections",
+          "description": "Integrated fixes for save, units, compute, runtime and native document flows.",
+          "links": [
+            258
+          ],
+          "status": "available",
+          "release": "next"
+        },
+        {
+          "title": "Check maintenance and Compare focus",
+          "description": "Repair standalone checks and preserve focused result rows during index refresh.",
+          "links": [
+            260
+          ],
+          "status": "available",
+          "release": "next"
+        }
+      ]
+    },
+    {
+      "name": "Open feature requests",
+      "items": [
+        {
+          "title": "Circular polarization and axial ratio",
+          "description": "Requested scope and acceptance criteria are tracked in the linked issue.",
+          "links": [
+            228
+          ],
+          "status": "planned"
+        },
+        {
+          "title": "Group delay and unwrapped phase",
+          "description": "Requested scope and acceptance criteria are tracked in the linked issue.",
+          "links": [
+            229
+          ],
+          "status": "planned"
+        },
+        {
+          "title": "Mesh bottleneck inspector",
+          "description": "Requested scope and acceptance criteria are tracked in the linked issue.",
+          "links": [
+            230
+          ],
+          "status": "planned"
+        },
+        {
+          "title": "Pattern cut analyzer",
+          "description": "Requested scope and acceptance criteria are tracked in the linked issue.",
+          "links": [
+            231
+          ],
+          "status": "planned"
+        },
+        {
+          "title": "Optimizer band and radiation goals",
+          "description": "Requested scope and acceptance criteria are tracked in the linked issue.",
+          "links": [
+            232
+          ],
+          "status": "planned"
+        },
+        {
+          "title": "Sweep trend charts",
+          "description": "Requested scope and acceptance criteria are tracked in the linked issue.",
+          "links": [
+            233
+          ],
+          "status": "planned"
+        },
+        {
+          "title": "Frequency-driven patch starters",
+          "description": "Requested scope and acceptance criteria are tracked in the linked issue.",
+          "links": [
+            234
+          ],
+          "status": "planned"
+        },
+        {
+          "title": "MIMO and diversity metrics",
+          "description": "Requested scope and acceptance criteria are tracked in the linked issue.",
+          "links": [
+            235
+          ],
+          "status": "planned"
+        },
+        {
+          "title": "Gain and axial ratio across frequency",
+          "description": "Requested scope and acceptance criteria are tracked in the linked issue.",
+          "links": [
+            236
+          ],
+          "status": "planned"
+        },
+        {
+          "title": "Port post-processing",
+          "description": "Requested scope and acceptance criteria are tracked in the linked issue.",
+          "links": [
+            237
+          ],
+          "status": "planned"
+        },
+        {
+          "title": "Local mesh refinement boxes",
+          "description": "Requested scope and acceptance criteria are tracked in the linked issue.",
+          "links": [
+            238
+          ],
+          "status": "planned"
+        },
+        {
+          "title": "Network convergence criteria",
+          "description": "Requested scope and acceptance criteria are tracked in the linked issue.",
+          "links": [
+            239
+          ],
+          "status": "planned"
+        },
+        {
+          "title": "Matching-network exploration",
+          "description": "Requested scope and acceptance criteria are tracked in the linked issue.",
+          "links": [
+            240
+          ],
+          "status": "planned"
+        },
+        {
+          "title": "Wideband laminate materials",
+          "description": "Requested scope and acceptance criteria are tracked in the linked issue.",
+          "links": [
+            241
+          ],
+          "status": "planned"
+        },
+        {
+          "title": "Far-field angular resolution",
+          "description": "Requested scope and acceptance criteria are tracked in the linked issue.",
+          "links": [
+            242
+          ],
+          "status": "planned"
+        },
+        {
+          "title": "Array and beam-steering extensions",
+          "description": "Requested scope and acceptance criteria are tracked in the linked issue.",
+          "links": [
+            243
+          ],
+          "status": "planned"
+        },
+        {
+          "title": "Array view in the designer",
+          "description": "Requested scope and acceptance criteria are tracked in the linked issue.",
+          "links": [
+            244
+          ],
+          "status": "planned"
+        },
+        {
+          "title": "Electrically small antenna metrics",
+          "description": "Requested scope and acceptance criteria are tracked in the linked issue.",
+          "links": [
+            245
+          ],
+          "status": "planned"
+        },
+        {
+          "title": "Co-polar and cross-polar patterns",
+          "description": "Requested scope and acceptance criteria are tracked in the linked issue.",
+          "links": [
+            246
+          ],
+          "status": "planned"
+        },
+        {
+          "title": "Requirement masks",
+          "description": "Requested scope and acceptance criteria are tracked in the linked issue.",
+          "links": [
+            247
+          ],
+          "status": "planned"
+        },
+        {
+          "title": "Far field at new frequencies",
+          "description": "Requested scope and acceptance criteria are tracked in the linked issue.",
+          "links": [
+            248
+          ],
+          "status": "planned"
+        },
+        {
+          "title": "Normal-incidence unit-cell studies",
+          "description": "Requested scope and acceptance criteria are tracked in the linked issue.",
+          "links": [
+            249
+          ],
+          "status": "planned"
+        },
+        {
+          "title": "Windows project association follow-up",
+          "description": "Requested scope and acceptance criteria are tracked in the linked issue.",
+          "links": [
+            166
+          ],
+          "status": "planned"
         }
       ]
     }

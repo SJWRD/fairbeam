@@ -126,9 +126,7 @@ Paylaşılan Fairbeam kaydı, en son kurulan yola aittir. Kaldırma işlemi kayd
 tırnak içine alınmış komut hâlâ bu kurulumu gösteriyorsa siler; uzantının varsayılan değeri ile
 diğer uygulamaların kayıtları korunur. Bu davranış
 [Microsoft'un dosya türü yönergelerine](https://learn.microsoft.com/en-us/windows/win32/shell/fa-file-types)
-uyar. Yayımlanmış 0.7.8 sürümü `.fb` kaydı oluşturmuyordu. Yeni ilke, kaynak/model denetimleri ve
-yükleyici derlemesiyle doğrulanır; kurulum sonrası Birlikte aç görünürlüğü, açılış ve kurulum/kaldırma
-davranışı yayımdan önce geçici bir Windows ortamında denenmelidir.
+uyar. **.fb dosyalarını açma.** Bazı kurulumlarda Fairbeam ilk **Birlikte aç** listesinde görünmez. Dosyaya sağ tıklayıp **Birlikte aç › Başka bir uygulama seçin** yolunu kullanın; bilgisayardan uygulama seçme seçeneğiyle `%LOCALAPPDATA%\Fairbeam\fairbeam.exe` dosyasını bulun ve kalıcı seçim için **Her zaman** seçin. Son seçeneğin adı Windows sürümüne göre değişebilir. Fairbeam içinden **Proje aç…** komutu da kullanılabilir.
 
 - Resmi openEMS derlemesi yalnızca CPU kullanır. Fairbeam'in kurulum ekranı ve Genel ayarlar, isteğe bağlı NVIDIA derlemesini ayrı bir yönetilen `gpu-runtime` klasörüne kurabilir; CPU ortamı kullanılabilir kalır. Seçilen ortam sonraki uygulama açılışında devreye girer; ortam ikisini de bildiriyorsa Çalıştır iletişim kutusu CPU ve GPU seçeneklerini sunar. Ayrı bir Fairbeam yükleyicisi veya CUDA araç takımı gerekmez. Harici GPU kurulumları desteklenmeye devam eder. [GPU.md](GPU.md) belgesine bakın.
 - Sembolik bağlantılar geliştirici modu veya yönetici yetkisi gerektirir. Çalıştırma sunucusu bunlara bağımlı değildir (bağlantı oluşturacağı yerde model dosyasını kopyalar); `clean-sim` komutunun bağlantıları izlemediğini kontrol eden test, gerekli yetki yoksa bu kısmı atlar.

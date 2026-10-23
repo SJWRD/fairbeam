@@ -24,8 +24,11 @@ mod account;
 // the one-time import from the previous app and its removal (Help › Remove …)
 mod antenlab_import;
 mod i18n;
+mod leave_reply;
 #[cfg(target_os = "macos")]
 mod macos_update;
+#[cfg(target_os = "macos")]
+mod macos_quit;
 mod paths;
 mod native_document;
 mod runtime;
@@ -42,7 +45,7 @@ use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
-use std::sync::mpsc::{self, RecvTimeoutError};
+use std::sync::mpsc;
 use std::sync::Mutex;
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
@@ -74,6 +77,8 @@ struct Shell {
     gpu_progress: Mutex<Value>,
     /// a close or quit waiting for the viewer's decision
     leaving: Mutex<Option<LeaveRequest>>,
+    /// A recent broken-handler reply; it never reserves the viewer or skips a fresh probe.
+    script_error: Mutex<ScriptErrorMarker>,
     /// numbers the close/quit requests (the viewer ignores a decision made for an older one)
     leave_seq: Mutex<u64>,
     /// where each running download was asked to go, by URL (WKWebView's "finished" has no path)
@@ -95,12 +100,34 @@ enum Leave {
 struct LeaveRequest {
     id: u64,
     leave: Leave,
-    /// the viewer did not answer (hung page, script error): the next request leaves without asking
+    /// a live but hung callback: the next explicit request leaves without asking
     silent: bool,
     /// Updates obtain consent without destroying the window or exiting the process.
     update_reply: Option<mpsc::Sender<bool>>,
     /// Final consent reserves the shell until installation finishes or fails.
     approved: bool,
+}
+
+#[derive(Default)]
+struct ScriptErrorMarker {
+    at: Option<Instant>,
+}
+
+impl ScriptErrorMarker {
+    /// Consume the previous failure once. An expired error starts a new window, not an exit.
+    fn failed(&mut self, now: Instant) -> bool {
+        if self.at.take().and_then(|previous| now.checked_duration_since(previous))
+            .is_some_and(|elapsed| elapsed <= Duration::from_secs(60))
+        {
+            return true;
+        }
+        self.at = Some(now);
+        false
+    }
+
+    fn clear(&mut self) {
+        self.at = None;
+    }
 }
 
 impl LeaveRequest {
@@ -197,50 +224,25 @@ fn ask_viewer(app: AppHandle, id: u64) {
             finish_leave(&app, id, leave != Leave::Update);
             return;
         }
-        let answer = match rx.recv_timeout(Duration::from_secs(2)) {
-            Ok(answer) => answer,
-            Err(RecvTimeoutError::Timeout) => {
-                if leave == Leave::Update {
-                    finish_leave(&app, id, false);
-                    return;
-                }
-                // the page is busy or hung: keep waiting, but a second request leaves
-                set_silent(true);
-                match rx.recv() {
-                    Ok(answer) => {
-                        set_silent(false);
-                        answer
-                    }
-                    Err(_) => return,
-                }
+        match leave_reply::wait(rx, leave == Leave::Update, &set_silent) {
+            leave_reply::Reply::Pending => {
+                // A recovered handler owns an unsaved-work/run question again. A later script
+                // error in that question must not inherit an earlier escape opportunity.
+                clear_script_error(&app, id);
+                thread::sleep(Duration::from_millis(150));
             }
-            Err(RecvTimeoutError::Disconnected) => {
-                if leave == Leave::Update {
-                    finish_leave(&app, id, false);
-                    return;
-                }
-                set_silent(true);
-                return;
-            }
-        };
-        // the answer comes as JSON (a quoted string)
-        match answer.trim().trim_matches('"') {
-            "pending" => thread::sleep(Duration::from_millis(150)),
-            "cancel" => {
+            leave_reply::Reply::Cancel => {
+                // A terminal callback failure must also settle a pending AppKit termination.
+                // finish_leave checks ownership before clearing the request or replying NO.
                 finish_leave(&app, id, false);
                 return;
             }
-            "close" => {
-                finish_leave(&app, id, true);
+            leave_reply::Reply::ScriptError => {
+                script_failed_leave(&app, id);
                 return;
             }
-            _ => {
-                if leave == Leave::Update {
-                    finish_leave(&app, id, false);
-                    return;
-                }
-                // a script error: stay open this time, a second request leaves
-                set_silent(true);
+            leave_reply::Reply::Close => {
+                finish_leave(&app, id, true);
                 return;
             }
         }
@@ -256,6 +258,44 @@ fn leave_script(leave: Leave, id: u64) -> String {
     format!("typeof window.fairbeamWindowClose === 'function' ? window.fairbeamWindowClose('{kind}', {id}) : '{missing}'")
 }
 
+fn clear_script_error(app: &AppHandle, id: u64) {
+    let shell = app.state::<Shell>();
+    let guard = shell.leaving.lock().unwrap();
+    if guard.as_ref().is_some_and(|req| req.id == id) {
+        shell.script_error.lock().unwrap().clear();
+    }
+}
+
+/// A broken handler cannot consent. Clear the request and settle AppKit in one main-thread
+/// callback so a new explicit request always re-probes after NO. Only a second recent error,
+/// without an intervening valid answer, may use the ordinary exit path.
+fn script_failed_leave(app: &AppHandle, id: u64) {
+    let handle = app.clone();
+    if let Err(error) = app.run_on_main_thread(move || {
+        let leave = {
+            let shell = handle.state::<Shell>();
+            let mut guard = shell.leaving.lock().unwrap();
+            if guard.as_ref().map(|req| req.id) != Some(id) { return; }
+            let mut req = guard.take().unwrap();
+            if req.leave == Leave::Update {
+                shell.script_error.lock().unwrap().clear();
+                req.answer_update(false);
+                return;
+            }
+            let repeated = shell.script_error.lock().unwrap().failed(Instant::now());
+            repeated.then_some(req.leave)
+        };
+        if let Some(leave) = leave {
+            leave_now(&handle, leave);
+        } else {
+            #[cfg(target_os = "macos")]
+            macos_quit::reply(&handle, false);
+        }
+    }) {
+        shelllog::write(app, &format!("Could not settle the failed close handler: {error}"));
+    }
+}
+
 /// End request `id`; leave when the viewer said so.
 fn finish_leave(app: &AppHandle, id: u64, leave: bool) {
     let taken = {
@@ -264,6 +304,7 @@ fn finish_leave(app: &AppHandle, id: u64, leave: bool) {
         if guard.as_ref().map(|r| r.id) != Some(id) {
             return;
         }
+        shell.script_error.lock().unwrap().clear();
         if let Some(req) = guard.as_mut().filter(|r| r.leave == Leave::Update) {
             req.answer_update(leave);
             if !leave {
@@ -275,11 +316,16 @@ fn finish_leave(app: &AppHandle, id: u64, leave: bool) {
     };
     if let (true, Some(req)) = (leave, taken) {
         leave_now(app, req.leave);
+    } else {
+        #[cfg(target_os = "macos")]
+        macos_quit::reply(app, false);
     }
 }
 
 /// Leave without asking again; the server stops on RunEvent::Exit.
 fn leave_now(app: &AppHandle, leave: Leave) {
+    #[cfg(target_os = "macos")]
+    if leave != Leave::Update && macos_quit::reply(app, true) { return; }
     match (leave, app.get_webview_window("main")) {
         (Leave::Update, _) => {} // update consent is never permission to quit
         // destroy, not close: close would raise CloseRequested and ask again
@@ -334,6 +380,53 @@ pub(crate) fn approve_update(app: AppHandle) -> Option<UpdatePermit> {
 fn update_committing(app: &AppHandle) -> bool {
     app.state::<Shell>().leaving.lock().unwrap().as_ref()
         .is_some_and(|r| r.leave == Leave::Update && r.approved)
+}
+
+#[cfg(test)]
+mod script_error_tests {
+    use super::ScriptErrorMarker;
+    use std::time::{Duration, Instant};
+
+    #[test]
+    fn recent_second_error_is_one_shot() {
+        let mut marker = ScriptErrorMarker::default();
+        let now = Instant::now();
+        assert!(!marker.failed(now));
+        assert!(marker.failed(now + Duration::from_secs(59)));
+        assert!(marker.at.is_none(), "the repeat consumes the marker");
+        assert!(!marker.failed(now + Duration::from_secs(60)));
+    }
+
+    #[test]
+    fn exact_window_boundary_is_recent_but_expired_error_only_rearms() {
+        let now = Instant::now();
+        let mut boundary = ScriptErrorMarker::default();
+        assert!(!boundary.failed(now));
+        assert!(boundary.failed(now + Duration::from_secs(60)));
+
+        let mut expired = ScriptErrorMarker::default();
+        assert!(!expired.failed(now));
+        let later = now + Duration::from_secs(60) + Duration::from_nanos(1);
+        assert!(!expired.failed(later));
+        assert_eq!(expired.at, Some(later));
+    }
+
+    #[test]
+    fn valid_answer_clears_the_previous_error() {
+        let now = Instant::now();
+        let mut marker = ScriptErrorMarker::default();
+        assert!(!marker.failed(now));
+        marker.clear();
+        assert!(!marker.failed(now + Duration::from_secs(1)));
+    }
+
+    #[test]
+    fn a_future_timestamp_cannot_grant_exit_or_panic() {
+        let now = Instant::now();
+        let mut marker = ScriptErrorMarker { at: Some(now + Duration::from_secs(1)) };
+        assert!(!marker.failed(now));
+        assert_eq!(marker.at, Some(now));
+    }
 }
 
 #[cfg(test)]
@@ -761,7 +854,11 @@ mod external_link_tests {
         );
         assert_eq!(
             external_url("research"),
-            Some("https://github.com/ismailakdag/fairbeam/blob/main/docs/RESEARCH-SOLVERS.md")
+            Some("https://fairbeam.org/docs/experimental-solvers.html")
+        );
+        assert_eq!(
+            external_url("research-tr"),
+            Some("https://fairbeam.org/docs/tr/experimental-solvers.html")
         );
         assert_eq!(
             external_url("issues"),
@@ -1817,7 +1914,8 @@ fn external_url(link: &str) -> Option<&'static str> {
         "source" => "https://github.com/ismailakdag/fairbeam",
         "repository" => "https://github.com/ismailakdag/fairbeam-releases",
         "docs" => "https://fairbeam.org/guide.html",
-        "research" => "https://github.com/ismailakdag/fairbeam/blob/main/docs/RESEARCH-SOLVERS.md",
+        "research" => "https://fairbeam.org/docs/experimental-solvers.html",
+        "research-tr" => "https://fairbeam.org/docs/tr/experimental-solvers.html",
         "issues" => "https://github.com/ismailakdag/fairbeam-releases/issues/new/choose",
         "openems" => "https://github.com/thliebig/openEMS",
         "licenses" => concat!("https://github.com/ismailakdag/fairbeam/blob/v", env!("CARGO_PKG_VERSION"), "/THIRD-PARTY-NOTICES.md"),
@@ -1905,8 +2003,74 @@ fn action_enabled(handle: &AppHandle, id: &str) -> bool {
     enabled
 }
 
+fn native_action_accelerator(id: &str, macos: bool) -> Option<&'static str> {
+    // WKWebView's prevented keys stay with the page; unhandled keys reach AppKit. Keep the
+    // existing WebView2 shortcut ownership until its native accelerator path is verified.
+    if !macos { return None; }
+    match id {
+        "file-new" => Some("CmdOrCtrl+N"),
+        "file-open" => Some("CmdOrCtrl+O"),
+        "file-save" => Some("CmdOrCtrl+S"),
+        "file-save-as" => Some("CmdOrCtrl+Shift+S"),
+        "view-tree" => Some("Ctrl+Shift+1"),
+        "view-dock" => Some("Ctrl+Shift+2"),
+        "view-properties" => Some("Ctrl+Shift+3"),
+        "view-ribbon" => Some("Ctrl+F1"),
+        "view-zoom-in" => Some("CmdOrCtrl+="),
+        "view-zoom-out" => Some("CmdOrCtrl+-"),
+        "view-zoom-reset" => Some("CmdOrCtrl+0"),
+        _ => None,
+    }
+}
+
+fn native_action_label(id: &str, label: &str, macos: bool) -> String {
+    // AppKit renders its real accelerators. Other platforms keep the WebView-owned shortcut hints.
+    if macos { return label.to_owned(); }
+    let hint = match id {
+        "file-save" => "Ctrl+S",
+        "view-tree" => "Ctrl+Shift+1",
+        "view-dock" => "Ctrl+Shift+2",
+        "view-properties" => "Ctrl+Shift+3",
+        "view-ribbon" => "Ctrl+F1",
+        _ => return label.to_owned(),
+    };
+    format!("{label}    {hint}")
+}
+
+#[cfg(test)]
+mod native_menu_hint_tests {
+    use super::{native_action_accelerator, native_action_label};
+
+    #[test]
+    fn webview_owned_shortcuts_have_visible_non_macos_hints() {
+        for (id, label, hint) in [
+            ("file-save", "Save", "Ctrl+S"),
+            ("view-tree", "Model tree", "Ctrl+Shift+1"),
+            ("view-dock", "Results", "Ctrl+Shift+2"),
+            ("view-properties", "Özellikler", "Ctrl+Shift+3"),
+            ("view-ribbon", "Minimize Ribbon", "Ctrl+F1"),
+        ] {
+            assert_eq!(native_action_label(id, label, false), format!("{label}    {hint}"));
+            assert_eq!(native_action_accelerator(id, false), None, "the page still owns {id}");
+            assert_eq!(native_action_label(id, label, true), label, "AppKit renders the shortcut for {id}");
+            assert!(native_action_accelerator(id, true).is_some());
+        }
+    }
+
+    #[test]
+    fn other_menu_labels_and_non_macos_accelerators_are_unchanged() {
+        for id in ["file-new", "file-open", "file-save-as", "view-zoom-in", "view-zoom-out", "view-zoom-reset", "file-open-recent:1"] {
+            for macos in [false, true] {
+                assert_eq!(native_action_label(id, "Translated label", macos), "Translated label");
+            }
+            assert_eq!(native_action_accelerator(id, false), None);
+        }
+    }
+}
+
 fn action_item(handle: &AppHandle, id: &str, label: &str) -> tauri::Result<MenuItem<tauri::Wry>> {
-    MenuItem::with_id(handle, id, label, action_enabled(handle, id), None::<&str>)
+    MenuItem::with_id(handle, id, native_action_label(id, label, cfg!(target_os = "macos")), action_enabled(handle, id),
+        native_action_accelerator(id, cfg!(target_os = "macos")))
 }
 
 fn set_menu_item_enabled_in_items(
@@ -1969,6 +2133,7 @@ fn sync_native_menu_availability(
 
 fn action_submenu(
     handle: &AppHandle,
+    id: Option<&str>,
     title: &str,
     entries: &[(&str, &str)],
 ) -> tauri::Result<Submenu<tauri::Wry>> {
@@ -1980,7 +2145,10 @@ fn action_submenu(
         .iter()
         .map(|i| i as &dyn tauri::menu::IsMenuItem<tauri::Wry>)
         .collect::<Vec<_>>();
-    Submenu::with_items(handle, title, true, &refs)
+    match id {
+        Some(id) => Submenu::with_id_and_items(handle, id, title, true, &refs),
+        None => Submenu::with_items(handle, title, true, &refs),
+    }
 }
 
 fn app_menu(handle: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
@@ -1988,16 +2156,6 @@ fn app_menu(handle: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
     // the menus in the viewer's language (src-tauri/src/i18n.rs)
     let lang = i18n::lang(&load_settings(handle));
     let tx = |key: &str| i18n::text(lang, key);
-    let command = if cfg!(target_os = "macos") {
-        "⌘"
-    } else {
-        "Ctrl+"
-    };
-    let control = if cfg!(target_os = "macos") {
-        "⌃"
-    } else {
-        "Ctrl+"
-    };
     let close_window = MenuItem::with_id(
         handle,
         "close-window",
@@ -2040,17 +2198,13 @@ fn app_menu(handle: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
         .iter()
         .map(|(id, label)| (*id, label.as_str()))
         .collect::<Vec<_>>();
-    let export = action_submenu(handle, &tx("export"), &export_refs)?;
+    let export = action_submenu(handle, None, &tx("export"), &export_refs)?;
     let file_actions = vec![
         action_item(handle, "file-new", &tx("file-new"))?,
         action_item(handle, "file-import-cst", &tx("file-import-cst"))?,
         action_item(handle, "file-import-pcb", &tx("file-import-pcb"))?,
         action_item(handle, "file-open", &tx("file-open"))?,
-        action_item(
-            handle,
-            "file-save",
-            &format!("{}    {command}S", tx("file-save")),
-        )?,
+        action_item(handle, "file-save", &tx("file-save"))?,
         action_item(handle, "file-save-as", &tx("file-save-as"))?,
         action_item(handle, "file-close", &tx("file-close"))?,
         #[cfg(target_os = "macos")]
@@ -2095,22 +2249,10 @@ fn app_menu(handle: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
         ("view-start", tx("view-start")),
         ("view-design", tx("view-design")),
         ("view-examples", tx("view-examples")),
-        (
-            "view-tree",
-            format!("{}    {control}Shift+1", tx("view-tree")),
-        ),
-        (
-            "view-dock",
-            format!("{}    {control}Shift+2", tx("view-dock")),
-        ),
-        (
-            "view-properties",
-            format!("{}    {control}Shift+3", tx("view-properties")),
-        ),
-        (
-            "view-ribbon",
-            format!("{}    {control}F1", tx("view-ribbon")),
-        ),
+        ("view-tree", tx("view-tree")),
+        ("view-dock", tx("view-dock")),
+        ("view-properties", tx("view-properties")),
+        ("view-ribbon", tx("view-ribbon")),
         ("view-iso", tx("view-iso")),
         ("view-top", tx("view-top")),
         ("view-front", tx("view-front")),
@@ -2126,9 +2268,10 @@ fn app_menu(handle: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
         .iter()
         .map(|(id, label)| (*id, label.as_str()))
         .collect::<Vec<_>>();
-    let view_menu = action_submenu(handle, &tx("view"), &view_refs)?;
+    let view_menu = action_submenu(handle, None, &tx("view"), &view_refs)?;
     let mut help_labels = vec![
         ("help-shortcuts", tx("help-shortcuts")),
+        #[cfg(not(target_os = "macos"))]
         ("about", tx("about")),
         ("help-docs", tx("help-docs")),
         ("help-issues", tx("help-issues")),
@@ -2140,7 +2283,7 @@ fn app_menu(handle: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
         .iter()
         .map(|(id, label)| (*id, label.as_str()))
         .collect::<Vec<_>>();
-    let help_menu = action_submenu(handle, &tx("help"), &help_refs)?;
+    let help_menu = action_submenu(handle, Some(tauri::menu::HELP_SUBMENU_ID), &tx("help"), &help_refs)?;
     let window_menu = Submenu::with_id_and_items(
         handle,
         tauri::menu::WINDOW_SUBMENU_ID,
@@ -2149,7 +2292,18 @@ fn app_menu(handle: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
         &[
             &PredefinedMenuItem::minimize(handle, Some(&tx("minimize")))?,
             &PredefinedMenuItem::maximize(handle, Some(&tx("maximize")))?,
+            #[cfg(target_os = "macos")]
+            &PredefinedMenuItem::separator(handle)?,
+            #[cfg(target_os = "macos")]
+            &PredefinedMenuItem::fullscreen(handle, None)?,
+            #[cfg(not(target_os = "macos"))]
             &action_item(handle, "window-fullscreen", &tx("window-fullscreen"))?,
+            #[cfg(target_os = "macos")]
+            &PredefinedMenuItem::separator(handle)?,
+            #[cfg(target_os = "macos")]
+            &PredefinedMenuItem::bring_all_to_front(handle, Some(&tx("bring-all-to-front")))?,
+            #[cfg(target_os = "macos")]
+            &PredefinedMenuItem::separator(handle)?,
             &close_window,
         ],
     )?;
@@ -2300,6 +2454,8 @@ fn main() {
         })
         .invoke_handler(tauri::generate_handler![splash_state, retry, install_runtime, use_default_workspace, use_managed, set_prefer_gpu, set_gpu_build, choose_python, reveal_download, reveal_design, save_download, get_general_settings, set_update_check_on_start, check_updates_now, set_language, sync_native_menu_availability, open_workspace, pick_workspace_folder, pick_blender_executable, set_workspace_folder, install_gpu_runtime, set_gpu_runtime_enabled, open_external_link, remember_recent_design, telemetry::telemetry_status, telemetry::telemetry_set_consent, telemetry::telemetry_preview, telemetry::telemetry_reset_id, antenlab_import::take_imported_viewer_prefs, native_document::native_document_open, native_document::native_document_save, native_document::native_document_next_open, native_document::native_document_dismiss_pending, native_document::native_document_restore, native_document::native_document_archive])
         .setup(|app| {
+            #[cfg(target_os = "macos")]
+            macos_quit::install(app.handle()).map_err(std::io::Error::other)?;
             native_document::queue_startup_arguments(app.handle());
             // the menu reads the saved recent designs, so it is built once the path resolver exists
             // (Builder::menu runs before setup and panicked: state() called before manage())

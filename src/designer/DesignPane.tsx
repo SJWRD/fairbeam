@@ -5,7 +5,7 @@
 // the geometry preview in the 3D view follows the unsaved draft.
 import { createEffect, createSignal, createUniqueId, For, onCleanup, onMount, Show, type JSX } from "solid-js";
 import { Box, CircleAlert, CircleCheck, Cone, Info, MousePointer2, Scissors, Spline, Torus, CopyPlus, Cylinder, FlipHorizontal2, Globe, Hexagon, Plus, Trash2, Triangle, TriangleAlert } from "lucide-solid";
-import { setSimSettingsOpen, setSimSettingsSection } from "../runner/designRun";
+import { openSimSettings } from "./simSettingsState";
 import { radioGroupKeys } from "../lib/a11y";
 import { tryEvaluate } from "./expr";
 import { shown as fmt } from "./displayNumber.ts";
@@ -28,7 +28,7 @@ import { deleteVertex, insertVertexAt, pickedVertex, pickVertex, toggleVertexEdi
 import { edgeMidpoint, isVertexPrimitive } from "./vertexModel";
 import { saveDesignMaterial } from "./userMaterialsStore";
 import { conductorLabel, libraryLabel, libraryNote, materialKindLabel } from "./MaterialLibrary";
-import { hasKey, localeTag, t } from "../i18n";
+import { fmt as numberFormat, hasKey, localeTag, t } from "../i18n";
 import NumberField from "../components/NumberField";
 import { OptimizationInspector, ParamInspector, RunInspector } from "./PropsExtras";
 import { resultFocus } from "./resultFocus";
@@ -36,7 +36,6 @@ import { isReservedName } from "../lib/legacy";
 import { restoreBooleanPart } from "./booleanUi";
 
 const AXES: Axis[] = ["x", "y", "z"];
-const BOUNDARIES = ["MUR", "PML_8", "PEC", "PMC"];
 const SIDES = ["x−", "x+", "y−", "y+", "z−", "z+"];
 // labels are i18n keys (t(s.label) where shown)
 export const SHAPES: { kind: ShapeKind; label: string; icon: typeof Box }[] = [
@@ -859,7 +858,7 @@ function PrimitiveInspector(props: { i: number; j: number; editLabel?: boolean }
                   <Plus size={13} aria-hidden="true" /> {t("props.point")}
                 </button>
               </fieldset>
-              <p class="note">{t("props.wire.note")}</p>
+              <p class="note">{t("props.wire.note", { min: numberFormat.num(0.02) })}</p>
             </>
           );
         })()}
@@ -1102,75 +1101,31 @@ function ResistorInspector(props: { i: number }) {
   );
 }
 
+/** The modal is the single settings editor, including for paths revealed by Checks. */
 function SimulationInspector() {
   const s = () => draft.simulation;
-  const bounds = () => (typeof s().boundaries === "string" ? Array(6).fill(s().boundaries) : (s().boundaries as string[]));
-  const allSame = () => bounds().every((b) => b === bounds()[0]);
-  const setB = (k: number, v: string) => edit((d) => {
-    const b = typeof d.simulation.boundaries === "string" ? Array(6).fill(d.simulation.boundaries) : [...d.simulation.boundaries];
-    b[k] = v;
-    d.simulation.boundaries = b.every((x) => x === b[0]) ? b[0] : b;
-  }, `boundaries${k}`);
-  const freqs = () => (draft.far_field.frequencies ?? []).map(String).join(", ");
-  const frequencyIssues = () => (draft.far_field.frequencies ?? []).map((_, k) => ({
-    issue: issues()[`far_field.frequencies[${k}]`],
-    id: `${fieldId(`far_field.frequencies[${k}]`)}-message`,
-  })).filter((item) => !!item.issue);
-  // the text as typed while the field has focus (re-joining the list on every key ate the commas)
-  const [freqText, setFreqText] = createSignal<string | null>(null);
+  const boundaries = () => typeof s().boundaries === "string" ? s().boundaries : (s().boundaries as string[]).map((b, i) => `${SIDES[i]} ${b}`).join(" · ");
+  const mode = () => draft.mesh.mode === "manual" ? "manual" : draft.mesh.mode === "design" ? "design" : "auto";
   return (
     <div class="dz-form">
       <h3 class="dz-h">{t("props.sim")}</h3>
-      <button class="btn btn-ghost btn-sm" onClick={() => setSimSettingsOpen(true)}>{t("props.sim.open")}</button>
-      <div class="dz-pair">
-        <ExprField label="f min" unit="GHz" value={s().f_min} path="simulation.f_min" onChange={(v) => edit((d) => { d.simulation.f_min = v; }, "fmin")} />
-        <ExprField label="f max" unit="GHz" value={s().f_max} path="simulation.f_max" onChange={(v) => edit((d) => { d.simulation.f_max = v; }, "fmax")} />
-      </div>
-      <fieldset class="dz-vec">
-        <legend class="dz-label">{t("props.sim.boundaries")}</legend>
-        <div class="cluster-sm">
-          <For each={BOUNDARIES}>{(b) => (
-            <button class="btn btn-ghost btn-sm" aria-pressed={allSame() && bounds()[0] === b} onClick={() => edit((d) => { d.simulation.boundaries = b; }, "boundaries")}>{t("props.sim.allBoundaries", { b })}</button>
-          )}</For>
-        </div>
-        <div class="dz-bounds">
-          <For each={SIDES}>{(side, k) => (
-            <label class="dz-field dz-compact"><span class="dz-label">{side}</span>
-              <select class="rp-select dz-input" value={bounds()[k()]} onChange={(e) => setB(k(), e.currentTarget.value)}>
-                <For each={BOUNDARIES}>{(b) => <option value={b}>{b}</option>}</For>
-              </select>
-            </label>
-          )}</For>
-        </div>
-      </fieldset>
-      <label class="dz-field">
-        <span class="dz-label">{t("props.sim.end")} <span class="dz-unit">dB</span></span>
-        <NumberField class="rp-input dz-input mono" max="-10" step="5" value={s().end_criteria_db ?? -60}
-          onInput={(e) => { const v = Number(e.currentTarget.value); edit((d) => { d.simulation.end_criteria_db = v; }, "end"); }} />
-      </label>
-      <h4 class="dz-h4">{t("props.sim.mesh")}</h4>
-      <Show when={!draft.mesh.mode || draft.mesh.mode === "auto"}>
-      <ExprField label={t("props.sim.cpw")} value={draft.mesh.cells_per_wavelength} path="mesh.cells_per_wavelength" onChange={(v) => edit((d) => { d.mesh.cells_per_wavelength = v; }, "cpw")} />
-      <InspectorAdvanced>
-      <label class="dz-field dz-compact"><span class="dz-label">{t("props.sim.edgeRule")}</span><select class="rp-select dz-input" value={draft.mesh.edge_rule ?? "thirds"} onChange={(e) => edit((d) => { d.mesh.edge_rule = e.currentTarget.value === "edge" ? "edge" : undefined; }, "edge-rule")}><option value="thirds">{t("props.sim.edgeRule.thirds")}</option><option value="edge">{t("props.sim.edgeRule.edge")}</option></select></label>
-      <ExprField compact label={t("props.sim.maxRatio")} value={draft.mesh.max_ratio ?? 1.4} path="mesh.max_ratio" onChange={(v) => edit((d) => { d.mesh.max_ratio = v === 1.4 ? undefined : v; }, "max-ratio")} />
-      <ExprField compact optional label={t("props.sim.airCpw")} value={draft.mesh.air_cells_per_wavelength ?? ""} path="mesh.air_cells_per_wavelength" onChange={(v) => edit((d) => { d.mesh.air_cells_per_wavelength = v === "" ? null : v; }, "air-cpw")} />
-      </InspectorAdvanced>
-      <ExprField optional label={t("props.sim.pad")} unit="mm" value={draft.mesh.pad ?? ""} path="mesh.pad" onChange={(v) => edit((d) => { d.mesh.pad = v === "" ? null : v; }, "pad")} />
-      </Show>
-      <Show when={draft.mesh.mode === "manual"}><p class="note">{t("props.sim.manualLines", { x: draft.mesh.lines?.x.length ?? 0, y: draft.mesh.lines?.y.length ?? 0, z: draft.mesh.lines?.z.length ?? 0 })}</p><button class="btn btn-ghost btn-sm" onClick={() => { setSimSettingsSection("mesh"); setSimSettingsOpen(true); }}>{t("props.sim.toAuto")}</button></Show>
-      <Show when={draft.mesh.mode === "design"}><button class="btn btn-ghost btn-sm" onClick={() => { setSimSettingsSection("mesh"); setSimSettingsOpen(true); }}>{t("props.sim.autoSettings")}</button></Show>
-      <h4 class="dz-h4">{t("props.sim.farField")}</h4>
-      <label class="dz-check"><input type="checkbox" checked={draft.far_field.enabled} onChange={(e) => { const c = e.currentTarget.checked; edit((d) => { d.far_field.enabled = c; }, "ff"); }} /> {t("props.sim.farField.compute")}</label>
-      <Show when={draft.far_field.enabled}>
-        <VecField label={t("props.sim.phaseCenter")} value={draft.far_field.phase_center ?? ["", "", ""]} path="far_field.phase_center" onChange={(k, v) => edit((d) => { const p = d.far_field.phase_center ?? [0, 0, 0]; p[k] = v; d.far_field.phase_center = p; }, `phase-center-${k}`)} />
-        <TextField label={t("props.sim.frequencies")} mono value={freqText() ?? freqs()} id={fieldId("far_field.frequencies")}
-          describedBy={frequencyIssues().map((item) => item.id).join(" ") || undefined}
-          invalid={frequencyIssues().some((item) => item.issue?.severity === "error")}
-          onBlur={() => setFreqText(null)}
-          onChange={(v) => { setFreqText(v); edit((d) => { const list = v.split(",").map((x) => x.trim()).filter(Boolean).map(toExpr); d.far_field.frequencies = list; }, "fff"); }} />
-        <For each={draft.far_field.frequencies ?? []}>{(_, k) => <GroupIssue path={`far_field.frequencies[${k()}]`} />}</For>
-      </Show>
+      <button class="btn btn-ghost btn-sm" onClick={() => openSimSettings()}>{t("props.sim.open")}</button>
+      <dl class="kv">
+        <dt>f min</dt><dd class="mono">{String(s().f_min)} GHz</dd>
+        <dt>f max</dt><dd class="mono">{String(s().f_max)} GHz</dd>
+        <dt>{t("props.sim.boundaries")}</dt><dd>{boundaries()}</dd>
+        <dt>{t("props.sim.end")}</dt><dd class="mono">{s().end_criteria_db ?? -60} dB</dd>
+        <dt>{t("sim.mesh.mode")}</dt><dd>{t(`sim.mesh.mode.${mode()}`)}</dd>
+        <Show when={mode() === "auto"}>
+          <dt>{t("props.sim.cpw")}</dt><dd class="mono">{String(draft.mesh.cells_per_wavelength ?? 20)}</dd>
+        </Show>
+        <Show when={mode() === "manual"}>
+          <dt>{t("props.sim.mesh")}</dt><dd>{t("props.sim.manualLines", { x: draft.mesh.lines?.x.length ?? 0, y: draft.mesh.lines?.y.length ?? 0, z: draft.mesh.lines?.z.length ?? 0 })}</dd>
+        </Show>
+        <Show when={draft.far_field.enabled}>
+          <dt>{t("props.sim.frequencies")}</dt><dd class="mono">{(draft.far_field.frequencies ?? []).map(String).join(", ")} GHz</dd>
+        </Show>
+      </dl>
     </div>
   );
 }

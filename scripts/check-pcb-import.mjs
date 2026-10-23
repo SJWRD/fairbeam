@@ -30,8 +30,12 @@ assert.match(ribbon, /onClick=\{\(\) => setPcbImportOpen\(true\)\}/, "Home ribbo
 assert.match(ribbon, /t\("ribbon\.home\.importPcb"\)/);
 const shell = read("src-tauri/src/main.rs"), shellText = read("src-tauri/src/i18n.rs");
 assert.match(shell, /action_item\(handle, "file-import-pcb", &tx\("file-import-pcb"\)\)\?/, "native File menu entry");
-assert.ok(shell.indexOf('"file-import-pcb"') > shell.indexOf('"file-import-cst"') && shell.indexOf('"file-import-pcb"') < shell.indexOf('"file-open"'), "native entry follows the CST import");
-assert.match(shellText, /\("file-import-pcb", "Import PCB artwork…", "PCB çizimini içe aktar…"\)/, "native menu text, sentence case in en and tr");
+const fileActions = shell.match(/let file_actions = vec!\[([\s\S]*?)\n    \];/)?.[1];
+assert.ok(fileActions, "native File menu action list exists");
+const fileActionIds = [...fileActions.matchAll(/action_item\(handle, "([^"]+)"/g)].map((match) => match[1]);
+assert.deepEqual(fileActionIds.slice(0, 4), ["file-new", "file-import-cst", "file-import-pcb", "file-open"],
+  "the actual native File menu places PCB after CST and before Open");
+assert.match(shellText, /\("file-import-pcb", "Import PCB Artwork…", "PCB Çizimini İçe Aktar…"\)/, "native menu text, title case in en and tr");
 for (const key of ["app.notice.pcbImportDesktop", "home.importPcb.button", "home.importPcb.note", "home.importPcb.title", "ribbon.home.importPcb", "ribbon.home.importPcbTitle"]) {
   assert.ok(key in en && key in tr, `${key} in both languages`);
 }

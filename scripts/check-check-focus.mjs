@@ -11,14 +11,14 @@ const built = await build({
     resolveId(id) { if (id.endsWith('check-focus-entry')) return '\0check-focus-entry'; },
     load(id) {
       if (id !== '\0check-focus-entry') return;
-      return ['designer/store', 'state', 'workspace', 'runner/store'].map((path, i) =>
+      return ['designer/store', 'state', 'workspace', 'runner/store', 'designer/simSettingsState'].map((path, i) =>
         `export * as m${i} from ${JSON.stringify(`${root}src/${path}.ts`)};`).join('\n');
     },
   }],
   build: { write: false, minify: false, lib: { entry: 'check-focus-entry', formats: ['es'] } },
 });
 const code = (Array.isArray(built) ? built[0] : built).output[0].code;
-const { m0: store, m1: state, m2: workspace, m3: runner } =
+const { m0: store, m1: state, m2: workspace, m3: runner, m4: settings } =
   await import(`data:text/javascript;base64,${Buffer.from(code).toString('base64')}`);
 const design = {
   schema: 'fairbeam.design/1', model: { id: 'check', name: 'Check' }, params: [],
@@ -60,6 +60,16 @@ assert.equal(events.length, 2);
 store.focusPath('parts[1].primitives[0].radius', { frame: true, focus: false });
 assert.equal(frames.length, 0, 'unresolved geometry must not send non-finite bounds');
 assert.equal(store.selectionBounds({ type: 'simulation' }), null);
+store.focusPath('mesh.max_ratio');
+assert.deepEqual(store.selection(), {type:'simulation'});
+assert.deepEqual(settings.simSettingsFocus(), {path:'mesh.max_ratio'});
+assert.equal(settings.simSettingsOpen(), true);
+assert.equal(frames.length, 0, 'simulation focus waits for the lazy modal instead of a global next-frame DOM lookup');
+settings.setSimSettingsOpen(false);
+assert.equal(settings.simSettingsFocus(), null, 'canceling the loading dialog clears its queued check');
+settings.openSimSettings('currents');
+assert.equal(settings.simSettingsSection(), 'currents', 'ribbon monitor actions retain their explicit entry point');
+settings.setSimSettingsOpen(false);
 
 // A probe feed between a ground plane and a patch frames the patch (the smallest metal it touches),
 // not the whole ground and not the dielectric; a feed touching no metal keeps its own box.

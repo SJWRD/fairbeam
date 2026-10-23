@@ -4,6 +4,7 @@ import { addResultToComparison as addRun, copyResultData as copyData, exportResu
 import type { ResultView } from "./resultFocus";
 import { resultExportStem } from "../lib/resultExportNames";
 import { t } from "../i18n";
+import { MAX_COMPARE } from "./navModel";
 
 export type TreeResultRef = { file: string; view: ResultView; f?: number; map?: number };
 
@@ -33,6 +34,6 @@ export async function exportResultCsv(ref: TreeResultRef): Promise<string> {
 }
 
 export async function addResultToComparison(ref: Pick<TreeResultRef, "file">): Promise<string> {
-  if (!await addRun(ref.file)) throw new Error(t("tree.result.compareFull"));
+  if (!await addRun(ref.file)) throw new Error(t("tree.note.compareFull", { max: MAX_COMPARE }));
   return t("tree.result.addedToComparison");
 }

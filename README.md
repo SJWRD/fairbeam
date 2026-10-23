@@ -61,11 +61,12 @@ Results are checked against analytical references ([validation](docs/VALIDATION.
 
 ## Status
 
-Fairbeam is in active development (0.x releases). The Python pipeline, the designer and the desktop app work
+Fairbeam is in active development (0.x releases). The current desktop release is available from
+the [downloads page](https://fairbeam.org/#download). The Python pipeline, the designer and the desktop app work
 end to end on macOS (Apple silicon) and on Windows 11. The project file format is versioned, and
 breaking changes bump its version. The fabrication outputs
 have not yet been checked by a fab. Known gaps and plans are in
-[the roadmap](docs/ARCHITECTURE.md#roadmap).
+[the roadmap](https://fairbeam.org/roadmap.html#roadmap), which distinguishes released work, changes awaiting a release and planned features.
 
 ## Use and limitations
 

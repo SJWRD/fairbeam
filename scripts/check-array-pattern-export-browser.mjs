@@ -75,7 +75,8 @@ try{
   const before=new Set(await readdir(downloads));await s.click('results.toolbar.csvTitle',{within:'.dock',sel:'button'});let csvFile;
   for(let i=0;i<100;i++){csvFile=(await readdir(downloads)).find(name=>!before.has(name)&&name.endsWith('.csv'));if(csvFile)break;await new Promise(r=>setTimeout(r,100));}
   assert.ok(csvFile,'browser downloads a CSV');const csv=await readFile(join(downloads,csvFile),'utf8');
-  assert.deepEqual(csv.trimEnd().split(/\r?\n/).map(row=>row.split(',')),table,'CSV and clipboard contain the same full precision overlay');
+  assert.equal(csv.charCodeAt(0),0xfeff,'toolbar CSV begins with a UTF-8 BOM');
+  assert.deepEqual(csv.slice(1).trimEnd().split(/\r?\n/).map(row=>row.split(',')),table,'CSV and clipboard contain the same full precision overlay');
   // The radio selects the 3D view only; both plotted curves and their exported grids remain.
   await s.click('dock.results.element',{params:{port:2},sel:'button[role=radio]',within:'.dock'});
   assert.equal(await copy(),text,'3D Element toggle cannot discard the plotted Array trace');

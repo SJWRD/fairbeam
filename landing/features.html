@@ -216,11 +216,15 @@
                   <tr><th scope="col">Check</th><th scope="col" class="num">Fairbeam</th><th scope="col" class="num">Reference</th></tr>
                 </thead>
                 <tbody>
-                  <tr><th scope="row">Dipole D<sub>max</sub></th><td class="num">2.13–2.15&nbsp;dBi</td><td class="num">2.11&nbsp;dBi (theory)</td></tr>
+                  <tr><th scope="row">Dipole D<sub>max</sub></th><td class="num">2.13–2.17&nbsp;dBi</td><td class="num">2.11&nbsp;dBi (theory)</td></tr>
                   <tr><th scope="row">Patch resonance</th><td class="num">2.455&nbsp;GHz</td><td class="num">2.513&nbsp;GHz (TL model), −2.3&nbsp;%</td></tr>
+                  <tr><th scope="row">Horn directivity at 10 GHz</th><td class="num">15.52&nbsp;dBi</td><td class="num">15.39&nbsp;dBi (aperture model)</td></tr>
+                  <tr><th scope="row">Helix boresight axial ratio</th><td class="num">0.9&nbsp;dB</td><td class="num">0.6&nbsp;dB (Kraus)</td></tr>
+                  <tr><th scope="row">WR-90 through-guide |S21|, 8–12 GHz</th><td class="num">0 ± 0.004&nbsp;dB</td><td class="num">0&nbsp;dB (lossless guide)</td></tr>
+                  <tr><th scope="row">NIST slab permittivity extraction</th><td class="num">εr′ within 0.4%</td><td class="num">Known dielectric slab</td></tr>
                 </tbody>
               </table>
-              <p class="note">Dipole: three lengths, 50 to 66 mm, end criterion −60 dB. Patch: converged mesh, against a transmission-line model. Details and commands in the validation notes of the repository.</p>
+              <p class="note">Dipole: three lengths, 50 to 66 mm, end criterion −60 dB. Patch: converged mesh, against a transmission-line model. Details and commands are in the <a href="docs/validation.html">validation notes</a>.</p>
             </div>
           </div>
 
@@ -238,7 +242,7 @@
                 <tr><th scope="row">Sierpinski monopole</th><td class="num">2.0&nbsp;M</td><td class="num">12.0</td><td class="num">2.7</td><td class="num">61.1</td><td class="num">65.7</td><td class="num">3.4</td></tr>
               </tbody>
             </table>
-            <p class="note">For the documented same-timestep Windows CPU / macOS Metal comparisons, S-parameter magnitudes above −30 dB agree within 0.1 dB and Dmax within 0.004 dB. Other comparisons have different bounds; see the benchmark notes. The optional GPU engine is a separate beta fork of openEMS.</p>
+            <p class="note">For the documented same-timestep Windows CPU / macOS Metal comparisons, S-parameter magnitudes above −30 dB agree within 0.1 dB and Dmax within 0.004 dB. Other comparisons have different bounds; see the <a href="docs/benchmarks.html">benchmark notes</a>. The optional GPU engine is a separate beta fork of openEMS.</p>
           </div>
 
           <div class="table-grid">
@@ -299,7 +303,7 @@
           <dl class="status-list">
             <div>
               <dt>Development preview</dt>
-              <dd>The designer, the solver pipeline and the results work end to end. The file formats are versioned (<code>fairbeam.design/1</code> for designs, <code>fairbeam.project/1</code> for results); breaking changes bump the version.</dd>
+              <dd>The designer, the solver pipeline and the results work end to end. The file formats are versioned (<code>fairbeam.document/1</code> for portable .fb projects, <code>fairbeam.design/1</code> for designs, <code>fairbeam.project/1</code> for results); breaking changes bump the version.</dd>
             </div>
             <div>
               <dt>VBA macro export not yet validated</dt>
@@ -315,7 +319,7 @@
             </div>
             <div>
               <dt>Windows installer not code-signed, macOS 27+</dt>
-              <dd>The managed macOS solver requires macOS 27+ on Apple silicon. Windows installers are not code-signed and may trigger SmartScreen. Linux currently uses a source setup with compatible openEMS and CSXCAD versions; see the tested configuration and limits. The macOS app is signed with a Developer ID and notarized by Apple.</dd>
+              <dd>The managed macOS solver requires macOS 27+ on Apple silicon. Windows installers are not code-signed and may trigger SmartScreen. Linux currently uses a source setup with compatible openEMS and CSXCAD versions; see the <a href="docs/linux.html#tested-configuration-and-limits">tested configuration and limits</a>. The macOS app is signed with a Developer ID and notarized by Apple.</dd>
             </div>
             <div>
               <dt>Licenses</dt>

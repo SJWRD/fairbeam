@@ -27,12 +27,14 @@ the separately opted-in Elmer integration.
 | --- | --- |
 | [Getting started](GETTING-STARTED.md) | Installing the desktop app (macOS signed with a Developer ID and notarized by Apple, Windows), a walkthrough from the patch starter to results, the other starters, mesh convergence, field planes, sweeps and the optimizer, importing a VBA macro, where files live, reporting a problem |
 | [Running from source](FROM-SOURCE.md) | Requirements, building openEMS and installing Fairbeam from the repository, first run, the test suite, platform notes |
-| [The designer](DESIGNER.md) | The visual workspace: start screen and starters, the one-row ribbon (Home, Modeling, Transform, Simulation, Optimize, Post-processing), navigation tree and components, modeling, checks, simulation settings, mesh view and mesh convergence, running and results (efficiency, gain patterns, field planes), design files, VBA macro import, known limitations, feedback |
+| [The designer](DESIGNER.md) | The visual workspace: start screen and starters, the one-row ribbon (Home, Modeling, Transform, View, Simulation, Optimize, Post-processing), navigation tree and components, modeling, checks, simulation settings, mesh view and mesh convergence, running and results (efficiency, gain patterns, field planes), project files, views and renders, VBA macro import, known limitations and feedback |
 | [Example designs](../examples/designs/README.md) | Five 867 MHz antennas as designer files (wideband, meander and sleeve dipoles, collinear, Yagi), with parameters, results and how to scale them |
 | [CLI reference](CLI.md) | Every `fairbeam` command and the options of `run` |
 | [External Elmer experiment](ELMER-EXPERIMENT.md) | Opt-in native PEC cavity research benchmark |
 | [Dielectric cavity qualification](FEM-QUALIFICATION.md) | Opt-in native Elmer material-mapping, eigenfrequency scaling and refinement controls |
-| [Experimental solvers in the app](RESEARCH-SOLVERS.md) | Bounded periodic unit-cell and Elmer cavity jobs, shared queue, results, supported geometry and limitations |
+| [Experimental solvers](EXPERIMENTAL-SOLVERS.md) | Installed-app Elmer setup, supported geometry and numerical limitations |
+| [Experimental coaxial TEM ports](COAXIAL-PORTS.md) | CPU port contract and retained qualification limits |
+| [Solver research notes](RESEARCH-SOLVERS.md) | Bounded periodic unit-cell and Elmer experiments, evidence and development checks |
 | [Research preparation](RESEARCH-PREPARATION.md) | Floquet channel plans and bounded Design-to-Elmer mesh export; no solver execution |
 | [Writing models](MODELS.md) | Model files (`MODEL`, `PARAMS`, `build`), an example, templates and the in-app editor |
 | [Automatic meshing](MESHING.md) | `sim.auto_mesh()`: options, rules, report, validation against hand meshes |
@@ -57,7 +59,8 @@ the separately opted-in Elmer integration.
 | [Experimental periodic CPU study](../scripts/experimental-periodic/README.md) | Opt-in native source patch and reproducible zero-phase unit-cell research gates; not production Floquet support |
 | [Lumped resistor in openEMS](openems-lumped-resistor.md) | How the lumped resistor behaves, and why the Wilkinson residual is not a resistor error |
 | [Bundle schema](BUNDLE.md) | `fairbeam.project/1`, field by field |
-| [Portable Fairbeam documents](FB-DOCUMENT.md) | Development `.fb` Open/Save workflow, adjacent results, storage checks and remaining platform release gates |
+| [Project files (.fb)](FB-DOCUMENT.md) | Save/Open, adjacent results, move/share and recovery |
+| [Project storage implementation](FB-DOCUMENT-DEVELOPMENT.md) | Storage contracts, metadata policy and platform regression checks |
 | [Architecture](ARCHITECTURE.md) | Data flow, run server, project layout, roadmap |
 | [Design](DESIGN.md) | Visual design rules, tokens, layout primitives, keyboard map |
 | [Turkish UI glossary](i18n-glossary.md) | The Turkish/English terms of the interface and the alternatives considered for each term |

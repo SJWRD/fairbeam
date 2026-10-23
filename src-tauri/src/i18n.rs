@@ -24,42 +24,42 @@ const TEXTS: &[(&str, &str, &str)] = &[
     ("view", "View", "Görünüm"),
     ("window", "Window", "Pencere"),
     ("help", "Help", "Yardım"),
-    ("open-recent", "Open recent", "Son kullanılanlar"),
-    ("export", "Export", "Dışa aktar"),
+    ("open-recent", "Open Recent", "Son Kullanılanlar"),
+    ("export", "Export", "Dışa Aktar"),
     ("export-cst", "Geometry…", "Geometri…"),
     ("export-python", "Python…", "Python…"),
-    ("export-touchstone", "Touchstone of current result…", "Geçerli sonucun Touchstone dosyası…"),
+    ("export-touchstone", "Touchstone of Current Result…", "Geçerli Sonucun Touchstone Dosyası…"),
     ("export-package", "Package…", "Paket…"),
-    ("file-new", "New design…", "Yeni tasarım…"),
-    ("file-import-cst", "Import VBA macro…", "VBA makrosunu içe aktar…"),
-    ("file-import-pcb", "Import PCB artwork…", "PCB çizimini içe aktar…"),
+    ("file-new", "New Design…", "Yeni Tasarım…"),
+    ("file-import-cst", "Import VBA Macro…", "VBA Makrosunu İçe Aktar…"),
+    ("file-import-pcb", "Import PCB Artwork…", "PCB Çizimini İçe Aktar…"),
     ("file-open", "Open…", "Aç…"),
     ("file-save", "Save", "Kaydet"),
-    ("file-save-as", "Save as…", "Farklı kaydet…"),
-    ("file-close", "Close design", "Tasarımı kapat"),
-    ("close-window", "Close window", "Pencereyi kapat"),
+    ("file-save-as", "Save As…", "Farklı Kaydet…"),
+    ("file-close", "Close Design", "Tasarımı Kapat"),
+    ("close-window", "Close Window", "Pencereyi Kapat"),
     ("settings", "Settings…", "Ayarlar…"),
     ("services", "Services", "Servisler"),
-    ("hide-app", "Hide Fairbeam", "Fairbeam'i gizle"),
-    ("hide-others", "Hide Others", "Diğerlerini gizle"),
-    ("show-all", "Show All", "Tümünü göster"),
-    ("quit-macos", "Quit {app}", "{app} uygulamasından çık"),
+    ("hide-app", "Hide Fairbeam", "Fairbeam'i Gizle"),
+    ("hide-others", "Hide Others", "Diğerlerini Gizle"),
+    ("show-all", "Show All", "Tümünü Göster"),
+    ("quit-macos", "Quit {app}", "{app} Uygulamasından Çık"),
     ("quit-windows", "E&xit", "Çı&kış"),
     ("quit-other", "&Quit", "Çı&k"),
-    ("undo", "Undo", "Geri al"),
+    ("undo", "Undo", "Geri Al"),
     ("redo", "Redo", "Yinele"),
     ("cut", "Cut", "Kes"),
     ("copy", "Copy", "Kopyala"),
     ("paste", "Paste", "Yapıştır"),
-    ("select-all", "Select all", "Tümünü seç"),
+    ("select-all", "Select All", "Tümünü Seç"),
     ("delete", "Delete", "Sil"),
-    ("view-start", "Start", "Ana ekran"),
+    ("view-start", "Start", "Ana Ekran"),
     ("view-design", "Design", "Tasarım"),
     ("view-examples", "Examples", "Örnekler"),
-    ("view-tree", "Toggle tree", "Ağacı göster/gizle"),
-    ("view-dock", "Toggle dock", "Alt paneli göster/gizle"),
-    ("view-properties", "Toggle properties", "Özellikleri göster/gizle"),
-    ("view-ribbon", "Minimize ribbon", "Şeridi küçült"),
+    ("view-tree", "Toggle Tree", "Ağacı Göster/Gizle"),
+    ("view-dock", "Toggle Dock", "Alt Paneli Göster/Gizle"),
+    ("view-properties", "Toggle Properties", "Özellikleri Göster/Gizle"),
+    ("view-ribbon", "Minimize Ribbon", "Şeridi Küçült"),
     ("view-iso", "Isometric", "İzometrik"),
     ("view-top", "Top", "Üst"),
     ("view-front", "Front", "Ön"),
@@ -67,21 +67,22 @@ const TEXTS: &[(&str, &str, &str)] = &[
     ("view-bottom", "Bottom", "Alt"),
     ("view-back", "Back", "Arka"),
     ("view-left", "Left", "Sol"),
-    ("view-zoom-in", "Zoom in", "Yakınlaştır"),
-    ("view-zoom-out", "Zoom out", "Uzaklaştır"),
-    ("view-zoom-reset", "Reset zoom", "Yakınlaştırmayı sıfırla"),
-    ("minimize", "Minimize", "Simge durumuna küçült"),
+    ("view-zoom-in", "Zoom In", "Yakınlaştır"),
+    ("view-zoom-out", "Zoom Out", "Uzaklaştır"),
+    ("view-zoom-reset", "Reset Zoom", "Yakınlaştırmayı Sıfırla"),
+    ("minimize", "Minimize", "Simge Durumuna Küçült"),
     ("maximize", "Zoom", "Büyüt"),
-    ("window-fullscreen", "Full screen", "Tam ekran"),
-    ("help-shortcuts", "Keyboard shortcuts", "Klavye kısayolları"),
-    ("about", "About Fairbeam", "Fairbeam hakkında"),
-    ("help-docs", "Getting started guide", "Başlangıç kılavuzu"),
-    ("help-issues", "Report a problem…", "Sorun bildir…"),
-    ("help-updates", "Check for updates", "Güncellemeleri denetle"),
+    ("window-fullscreen", "Full Screen", "Tam Ekran"),
+    ("bring-all-to-front", "Bring All to Front", "Tümünü Öne Getir"),
+    ("help-shortcuts", "Keyboard Shortcuts", "Klavye Kısayolları"),
+    ("about", "About Fairbeam", "Fairbeam Hakkında"),
+    ("help-docs", "Getting Started Guide", "Başlarken Kılavuzu"),
+    ("help-issues", "Report a Problem…", "Sorun Bildir…"),
+    ("help-updates", "Check for Updates…", "Güncellemeleri Denetle…"),
     ("update-title", "Update available", "Güncelleme var"),
     ("update-check-title", "Update check", "Güncelleme denetimi"),
     ("update-up-to-date", "You're up to date. Current version: {version}.", "Güncelsiniz. Geçerli sürüm: {version}."),
-    ("update-unavailable", "Could not reach the update service. Check your connection and try again.", "Güncelleme hizmetine ulaşılamadı. Bağlantınızı denetleyip yeniden deneyin."),
+    ("update-unavailable", "Could not reach the update service. Check your connection and try again.", "Güncelleme hizmetine ulaşılamadı. Bağlantınızı kontrol edip yeniden deneyin."),
     ("update-preview-blocked", "This preview build cannot check for desktop updates.", "Bu önizleme derlemesi masaüstü güncellemelerini denetleyemez."),
     ("update-in-progress", "An update check is already in progress.", "Bir güncelleme denetimi zaten sürüyor."),
     ("update-disabled", "Update checks are disabled in this environment.", "Bu ortamda güncelleme denetimleri kapalı."),
@@ -98,13 +99,13 @@ const TEXTS: &[(&str, &str, &str)] = &[
     ("update-move-title", "Move Fairbeam to Applications", "Fairbeam uygulamasını Uygulamalar klasörüne taşıyın"),
     (
         "update-move",
-        "Fairbeam cannot update itself while macOS runs it from a temporary read-only copy. This happens when an app is opened from Downloads or a disk image without moving it first.\n\nYour copy: {path}\n\nQuit Fairbeam, drag it into the Applications folder, open it from there and choose Help › Check for updates. Your designs and settings stay where they are.",
-        "macOS Fairbeam uygulamasını geçici ve salt okunur bir kopyadan çalıştırdığı için uygulama kendini güncelleyemiyor. Bu, bir uygulama İndirilenler'den ya da bir disk görüntüsünden taşınmadan açıldığında olur.\n\nSizdeki kopya: {path}\n\nFairbeam uygulamasından çıkın, onu Uygulamalar klasörüne sürükleyin, oradan açın ve Yardım › Güncellemeleri denetle'yi seçin. Tasarımlarınız ve ayarlarınız yerinde kalır.",
+        "Fairbeam cannot update itself while macOS runs it from a temporary read-only copy. This happens when an app is opened from Downloads or a disk image without moving it first.\n\nYour copy: {path}\n\nQuit Fairbeam, drag it into the Applications folder, open it from there and choose “Help › Check for Updates…”. Your designs and settings stay where they are.",
+        "macOS Fairbeam uygulamasını geçici ve salt okunur bir kopyadan çalıştırdığı için uygulama kendini güncelleyemiyor. Bu, bir uygulama İndirilenler'den ya da bir disk görüntüsünden taşınmadan açıldığında olur.\n\nSizdeki kopya: {path}\n\nFairbeam uygulamasından çıkın, onu Uygulamalar klasörüne sürükleyin, oradan açın ve “Yardım › Güncellemeleri Denetle…” seçeneğini seçin. Tasarımlarınız ve ayarlarınız yerinde kalır.",
     ),
     (
         "update-move-read-only",
-        "Fairbeam cannot update itself here, because the disk that holds it is read-only:\n{path}\n\nQuit Fairbeam, copy it into the Applications folder, open it from there and choose Help › Check for updates. Your designs and settings stay where they are.",
-        "Fairbeam uygulaması burada kendini güncelleyemiyor, çünkü bulunduğu disk salt okunur:\n{path}\n\nFairbeam uygulamasından çıkın, onu Uygulamalar klasörüne kopyalayın, oradan açın ve Yardım › Güncellemeleri denetle'yi seçin. Tasarımlarınız ve ayarlarınız yerinde kalır.",
+        "Fairbeam cannot update itself here, because the disk that holds it is read-only:\n{path}\n\nQuit Fairbeam, copy it into the Applications folder, open it from there and choose “Help › Check for Updates…”. Your designs and settings stay where they are.",
+        "Fairbeam uygulaması burada kendini güncelleyemiyor, çünkü bulunduğu disk salt okunur:\n{path}\n\nFairbeam uygulamasından çıkın, onu Uygulamalar klasörüne kopyalayın, oradan açın ve “Yardım › Güncellemeleri Denetle…” seçeneğini seçin. Tasarımlarınız ve ayarlarınız yerinde kalır.",
     ),
     ("update-move-unknown-path", "(macOS did not say where; usually your Downloads folder)", "(macOS yerini bildirmedi; genellikle İndirilenler klasörü)"),
     (
@@ -183,13 +184,23 @@ mod tests {
     }
 
     #[test]
+    fn update_dialogs_quote_the_current_help_menu_path() {
+        for language in ["en", "tr"] {
+            let menu_path = format!("{} › {}", text(language, "help"), text(language, "help-updates"));
+            for dialog in ["update-move", "update-move-read-only"] {
+                assert!(text(language, dialog).contains(&menu_path), "{language}: {dialog} quotes an outdated menu path");
+            }
+        }
+    }
+
+    #[test]
     fn falls_back_to_english_and_fills_placeholders() {
         assert_eq!(text("tr", "file"), "Dosya");
         assert_eq!(text("en", "file"), "File");
         assert_eq!(text("de", "file"), "File");
         assert_eq!(
             fill(text("tr", "quit-macos"), &[("app", "Fairbeam")]),
-            "Fairbeam uygulamasından çık"
+            "Fairbeam Uygulamasından Çık"
         );
         assert_eq!(
             fill(text("en", "update-failed"), &[("error", "x")]),

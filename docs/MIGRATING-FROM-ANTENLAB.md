@@ -178,5 +178,5 @@ You do not have to convert anything.
   Fairbeam's package is `fairbeam` and there is no alias. The import rewrites the models in your
   workspace. Models elsewhere need the same one-word change, and scripts that call the `antenlab`
   command or set `ANTENLAB_*` variables must use `fairbeam` and `FAIRBEAM_*`.
-- **Names reserved by the program.** A part of a design may not start with `antenlab_` or
+- **Names reserved by the program.** A solid's name may not start with `antenlab_` or
   `fairbeam_`, because both prefixes were used for the program's own helper objects.

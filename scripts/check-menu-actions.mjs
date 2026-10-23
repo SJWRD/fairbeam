@@ -20,6 +20,62 @@ assert.equal(route(JSON.stringify("not-allowed")), false); assert.match(reported
 assert.equal(route("not json"), false);
 const app = readFileSync(new URL("../src/App.tsx", import.meta.url), "utf8");
 const shell = readFileSync(new URL("../src-tauri/src/main.rs", import.meta.url), "utf8");
+// Exercise the App's actual handlers through the native action router, not a second
+// implementation of document navigation. A text field alone must not block these menu actions.
+const modalPredicate = app.match(/const hasOpenModal = \(\) => [^;]+;/)?.[0];
+assert.ok(modalPredicate, "App shares one modal boundary for native menu and OS opens");
+assert.equal((app.match(/const hasOpenModal =/g) ?? []).length, 1);
+const appRouter = app.slice(app.indexOf("const menuAction = createMenuActionRouter("), app.indexOf("  const notice ="));
+assert.ok(appRouter.endsWith("\n"), "the actual App menu router is available");
+let modal = "", mode = "design", nativeOpens = 0, browserOpens = 0, examplesOpens = 0, native = true, hasDesign = true;
+const recentOpens = [], navigations = [];
+const modalDocument = {
+  activeElement: { tagName: "INPUT" },
+  querySelector(selector) { return selector.split(",").map(value => value.trim()).includes(modal) ? {} : null; },
+};
+const dispatch = Function("createMenuActionRouter", "document", "nativeDocumentsAvailable", "openNativeDocument", "setAppMode", "openInput", "showShortcutHelp", "openExamples", "enterDesign", "designFile",
+  `${modalPredicate}\n${appRouter}\nreturn menuAction;`)(createMenuActionRouter, modalDocument, () => native,
+  () => { nativeOpens++; }, value => { mode = value; navigations.push(value); }, { click() { browserOpens++; } }, () => {},
+  () => { examplesOpens++; }, id => { recentOpens.push(id); }, () => hasDesign ? {} : null);
+for (const marker of [".scrim", "[aria-modal='true']", "dialog[open]"]) {
+  modal = marker;
+  for (native of [true, false]) {
+    for (const action of ["file-new", "file-open", "view-start", "view-design", "view-examples", "file-open-recent:patch_antenna"]) {
+      assert.equal(dispatch(action), true, `${marker}: native action remains recognized`);
+      assert.equal(dispatch(JSON.stringify(action)), true, `${marker}: legacy encoded action is also guarded`);
+    }
+  }
+  assert.equal(mode, "design", `${marker}: navigation cannot change mode behind the modal`);
+  assert.deepEqual(navigations, [], `${marker}: navigation is never dispatched behind the modal`);
+  assert.equal(nativeOpens, 0, `${marker}: no native picker or replace prompt starts`);
+  assert.equal(browserOpens, 0, `${marker}: no browser picker starts`);
+  assert.equal(examplesOpens, 0, `${marker}: no examples request starts`);
+  assert.deepEqual(recentOpens, [], `${marker}: no recent-file request starts`);
+}
+modal = "";
+native = true;
+dispatch("file-open");
+assert.equal(nativeOpens, 1, "after dismissal, Open dispatches once despite text-field focus");
+native = false;
+dispatch("file-open");
+assert.equal(browserOpens, 1, "browser fallback also dispatches once after dismissal");
+dispatch("file-new");
+assert.equal(mode, "home", "New works from a text field outside a modal");
+mode = "design";
+dispatch("view-start");
+assert.equal(mode, "home", "Start works from a text field after dismissal");
+assert.deepEqual(navigations, ["home", "home"], "New and Start each navigate once after dismissal");
+dispatch("view-design");
+assert.equal(mode, "design", "Design works from a text field after dismissal");
+assert.deepEqual(navigations, ["home", "home", "design"], "Design dispatches navigation once after dismissal");
+hasDesign = false;
+dispatch("view-design");
+assert.equal(navigations.length, 3, "Design still requires an open design");
+hasDesign = true;
+dispatch("view-examples");
+assert.equal(examplesOpens, 1, "Examples dispatches once after dismissal");
+dispatch(JSON.stringify("file-open-recent:patch_antenna"));
+assert.deepEqual(recentOpens, ["patch_antenna"], "Recent dispatches once after dismissal with the decoded ID");
 // Execute the real effect body: only the saved snapshot supplies the menu title.
 const rememberEffect = app.match(/createEffect\(\(\) => \{\s*(const saved = designFile\(\);[\s\S]*?)\n  \}\);/)?.[1];
 assert.ok(rememberEffect, "App remembers saved designs in the native recent menu");
@@ -60,7 +116,7 @@ assert.deepEqual([...appAvailabilityIds].sort(), [...nativeAvailabilityIds].sort
 assert.ok(nativeAvailabilityIds.every((id) => MENU_ACTION_IDS.includes(id)), "contextual native IDs remain in the stable menu action allowlist");
 assert.match(app, /const hasViewport = !!currentBundle && viewportPresent\(\) && \(mode === "design" \|\| mode === "results"\)/, "camera and zoom actions require a loaded viewport in Design or Results");
 assert.match(shell, /fn sync_native_menu_availability\([\s\S]*?availability: HashMap<String, bool>/, "native availability accepts typed booleans");
-assert.match(shell, /MenuItem::with_id\(handle, id, label, action_enabled\(handle, id\), None::<&str>\)/, "native menu rebuilds use the stored enabled state");
+assert.match(shell, /MenuItem::with_id\(handle, id, native_action_label\(id, label, cfg!\(target_os = "macos"\)\), action_enabled\(handle, id\),\s*native_action_accelerator\(id, cfg!\(target_os = "macos"\)\)\)/, "native menu rebuilds preserve platform-specific labels, stored enabled state and platform-owned accelerators");
 assert.match(app, /native\.invoke\("sync_native_menu_availability", \{ availability \}\)/, "the viewer synchronizes contextual menu state");
 // ⌘Z on a dialog button is not prevented by the page: the menu must not undo the design behind it
 assert.match(app, /document\.querySelector\("\.scrim, dialog\[open\]"\)\) return;\s*if \(action === "undo"\) undoDesign/);
@@ -92,7 +148,7 @@ assert.doesNotMatch(about, /@[a-z0-9-]+\.[a-z]/i, "no e-mail address in About");
 // website's guide, the fairbeam-releases repository (installers, issue forms) and the source repository
 assert.match(shell, /\("help-docs", tx\("help-docs"\)\)/);
 assert.match(shell, /\("help-issues", tx\("help-issues"\)\)/);
-assert.match(shellText, /\("help-docs", "Getting Started Guide", "Başlangıç Kılavuzu"\)/i);
+assert.match(shellText, /\("help-docs", "Getting Started Guide", "Başlarken Kılavuzu"\)/);
 assert.match(shellText, /\("help-issues", "Report a Problem…", "Sorun Bildir…"\)/i);
 // the menus follow the viewer's language: set_language saves it and rebuilds them
 assert.match(shell, /fn set_language\(app: AppHandle, lang: String\)[\s\S]*?app\.set_menu\(app_menu\(&app\)/);

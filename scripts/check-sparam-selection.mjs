@@ -89,7 +89,7 @@ for (const [lang, d] of [["en", en], ["tr", tr]]) {
 }
 assert.equal(en["home.importCst.button"], "Import VBA macro…");
 assert.equal(tr["home.importCst.button"], "VBA makrosunu içe aktar…");
-assert.match(read("src-tauri/src/i18n.rs"), /"file-import-cst", "Import VBA macro…", "VBA makrosunu içe aktar…"/);
+assert.match(read("src-tauri/src/i18n.rs"), /"file-import-cst", "Import VBA Macro…", "VBA Makrosunu İçe Aktar…"/);
 for (const f of ["docs/GETTING-STARTED.md", "docs/DESIGNER.md", "docs/DESKTOP.md", "docs/DESKTOP-CHECKLIST.md"]) {
   assert.ok(!/Import CST [Ff]ile/.test(read(f)), `${f} still says Import CST file`);
 }

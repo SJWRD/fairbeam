@@ -22,7 +22,6 @@ import { scenarioAttemptDirectory, withScenarioAttemptDiagnostics } from './scen
 import { scenarioAttemptDiagnosticsSelfTest } from './check-scenario-attempt-diagnostics.mjs';
 import { startupDiagnosticsSelfTest } from './check-scenario-startup-diagnostics.mjs';
 import { selfTestArtifactsSelfTest } from './check-scenario-self-test-artifacts.mjs';
-import { captureBudgetSelfTest } from './check-scenario-capture-budget.mjs';
 import { launchWithEvidence } from './scenarios/launch-evidence.mjs';
 import { browserLaunchEvidenceSelfTest } from './check-browser-launch-evidence.mjs';
 
@@ -39,7 +38,7 @@ const t0 = Date.now();
 const stamp = t0.toString(36).slice(-4); // design names stay unique when a dev stack is reused
 
 const SCENARIOS = [];
-for (const file of ['s1-build-patch', 's2-import', 's3-sweep-optimize', 's4-results', 's5-python-edit', 's6-python-design', 's7-designer-workflow', 's8-ports-fieldmap', 's8-appearance-export', 's9-context-export', 's10-rf-workflows', 's11-python-folders', 's12-single-solid-tree', 's13-appearance-presets', 's14-home-design-actions', 's16-cross-project-overlays', 's18-planar-ports', 's20-escape-ownership', 's22-designer-input-feedback', 's23-viewer-feedback']) {
+for (const file of ['s1-build-patch', 's2-import', 's3-sweep-optimize', 's4-results', 's5-python-edit', 's6-python-design', 's7-designer-workflow', 's8-ports-fieldmap', 's8-appearance-export', 's9-context-export', 's10-rf-workflows', 's11-python-folders', 's12-single-solid-tree', 's13-appearance-presets', 's14-home-design-actions', 's16-cross-project-overlays', 's18-planar-ports', 's20-escape-ownership', 's22-designer-input-feedback', 's23-viewer-feedback', 's24-settings-navigation']) {
   SCENARIOS.push((await import(`./scenarios/${file}.mjs`)).default);
 }
 
@@ -164,7 +163,6 @@ for (const sig of ['SIGINT', 'SIGTERM']) process.once(sig, async () => { await c
 const results = [];
 try {
   await browserLaunchEvidenceSelfTest(); console.log('Browser launch evidence checks passed (no browser started).');
-  await captureBudgetSelfTest(); console.log('Startup screenshot budget checks passed (no browser started).');
   const puppeteerModule = process.env.FAIRBEAM_PUPPETEER
     ? await import(pathToFileURL(process.env.FAIRBEAM_PUPPETEER).href)
     : await import(pathToFileURL(createRequire(import.meta.url).resolve('puppeteer-core')).href);

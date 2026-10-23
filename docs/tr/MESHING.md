@@ -188,7 +188,7 @@ GPU motoru, −60 dB durdurma ölçütü. VALIDATION.md'deki yakınsamış, elle
 
 ## Yakınsama çalışması
 
-Kararlı bir sonuç çifti ancak iki koşu da enerji sönümü ölçütünü sağladığında (çok portlu bir
+Kararlı bir sonuç çifti ancak iki çalıştırma da enerji sönümü ölçütünü sağladığında (çok portlu bir
 çalışmada uyarılan bütün portlar dahil) ve otomatik mesh'lerin hiçbirinde yetersiz ince ayrıntı
 bildirilmediğinde kabul edilir. Enerji durumu eksikse denetim geçmez. Rapor bunu rezonans
 değişiminden ayrı belirtir. Beslemelerde `cells_across`, aralık genişliğinin eksen yönündeki ve
@@ -214,14 +214,14 @@ verilerini, tam karmaşık S11/Zin değerlerini, günlükleri ve manifestleri sa
 parçacığıyla aynı anda yalnızca bir çözüm çalıştırır. Önce eski, yalnızca eksen boyunca yapılan
 denetimi yeni denetimle karşılaştırır; ardından besleme merkezi çevresindeki sabit 3 mm bölgede
 hücreleri iki kez yarıya indirir. Geometri, malzemeler, dış bölge, MUR sınırları, kaynak,
-50 ohm referansı ve −60 dB enerji eşiği sabit kalır. Her koşu için 15 dakika zaman sınırı vardır;
-başarısız veya durdurulan koşular çıktı klasöründe korunur.
+50 ohm referansı ve −60 dB enerji eşiği sabit kalır. Her çalıştırma için 15 dakika zaman sınırı vardır;
+başarısız veya durdurulan çalıştırmalar çıktı klasöründe korunur.
 
 Windows ve openEMS 0.37.0-rc3 ile 20 hücre/λ otomatik dikdörtgen patch, eski denetimde 167.040,
 yeni denetimde 266.400 hücre kullandı. İki ek yerel sıklaştırmada 427.056 ve 912.288 hücre oluştu.
 S11 minimumları sırasıyla −40,08, −34,01, −26,70 ve −23,11 dB idi (801 noktalı tam banda ek olarak,
 kaydedilen port verileri 2,43–2,49 GHz arasında 50 kHz adımla değerlendirildi).
-Dört koşu da enerji eşiğini sağladı, ancak çukur derinliği değişmeye devam etti:
+Dört çalıştırma da enerji eşiğini sağladı, ancak çukur derinliği değişmeye devam etti:
 **bu çalışma besleme mesh'inin yakınsadığını kanıtlamaz**. Düzeltme, atlanan çözünürlük denetimini
 tamamlar; üç hücre hedefi bir başlangıçtır, önerilen son mesh değildir. Özellikle bu kadar derin
 ve dar çukurlarda örneklenen minimum, frekans adımına da bağlıdır.

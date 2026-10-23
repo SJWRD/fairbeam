@@ -540,7 +540,7 @@ export const api = {
   models: () => call<{ models: ModelEntry[] }>("GET", "/models").then((d) => d.models),
   preview: (model: string, params: Record<string, ParamValue>, signal?: AbortSignal) =>
     call<PreviewResult>("POST", "/preview", { model, params }, signal),
-  runs: () => call<{ runs: Job[] }>("GET", "/runs?summary=1").then((d) => d.runs),
+  runs: (signal?: AbortSignal) => call<{ runs: Job[] }>("GET", "/runs?summary=1", undefined, signal).then((d) => d.runs),
   submit: (body: { model: string; params: Record<string, ParamValue>; threads: number; engine?: string; name?: string; end_criteria_db?: number; points?: number; cells?: number }) =>
     call<Job>("POST", "/runs", withThreads(body)),
   /** memory / CPU check of a planned run; level "unknown" means it could not be checked */

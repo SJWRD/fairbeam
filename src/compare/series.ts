@@ -193,6 +193,7 @@ export function compareCuts(ts: Trace[], fHz: number, phi: 0 | 90, current?: Far
     out.push({
       id: `cmp-${i}`,
       label: shifted ? `${t.label} · ${fmt.fixed(ff.f / 1e9, 2)} GHz` : t.label,
+      exportLabel: shifted ? `${t.label} · ${(ff.f / 1e9).toFixed(2)} GHz` : t.label,
       color: SERIES_COLORS[i],
       angle: c.angle,
       value: c.value,

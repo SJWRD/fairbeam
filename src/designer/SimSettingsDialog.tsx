@@ -2,13 +2,13 @@
 // mesh, monitors (far-field frequencies and surface-current maps) and solver limits, in one dialog.
 // It edits the draft live (with undo, so the preview follows); Cancel restores what was there when
 // the dialog opened. Opened from the Simulation ribbon's section buttons at their matching section.
-import { createSignal, For, type JSX, onMount, Show } from "solid-js";
+import { createEffect, createSignal, For, type JSX, on, onCleanup, onMount, Show } from "solid-js";
 import { Activity, Box, Gauge, Grid3x3, Radio, Timer, Waves, X } from "lucide-solid";
 import { openMeshConvergence } from "./ConvergenceDialog";
 import { FOCUSABLE, useModal } from "../lib/dialog";
 import { tabKeyTarget } from "../lib/tabKeys";
 import { draftPreview, engine, meshFreshness } from "../runner/store";
-import { setSimSettingsOpen, setSimSettingsSection, simSettingsSection } from "../runner/designRun";
+import { setSimSettingsFocus, setSimSettingsOpen, setSimSettingsSection, simSettingsFocus, simSettingsSection } from "./simSettingsState";
 import { ExprField } from "./DesignPane";
 import FieldPlanesEditor, { addFieldPlane, fieldPlanes } from "./FieldPlanesEditor";
 import { setMeshView } from "./MeshView";
@@ -44,9 +44,9 @@ const toExpr = (text: string): Expr => {
   return s !== "" && /^[+-]?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?$/.test(s) ? Number(s) : s;
 };
 /** Keep incomplete decimals/expressions as typed until focus leaves the field. */
-function MeshOverrideInput(props: { label: string; disabled: boolean; value: Expr | boolean; onValue: (value: Expr) => void }) {
+function MeshOverrideInput(props: { id?: string; label: string; disabled: boolean; value: Expr | boolean; onValue: (value: Expr) => void }) {
   const [text, setText] = createSignal<string | null>(null);
-  return <input autocomplete="off" class="rp-input dz-input mono" aria-label={props.label}
+  return <input id={props.id} autocomplete="off" class="rp-input dz-input mono" aria-label={props.label}
     disabled={props.disabled} value={text() ?? String(props.value)}
     onInput={event => { const typed = event.currentTarget.value; setText(typed); props.onValue(toExpr(typed)); }}
     onBlur={() => setText(null)} />;
@@ -94,7 +94,7 @@ function BoundaryBox(props: { bounds: string[]; selected: number; onSelect: (k: 
         const [c, r] = CELL[k()];
         const ty = () => typeOf(props.bounds[k()]);
         return (
-          <g role="button" tabindex={0} aria-pressed={props.selected === k()} aria-label={`${face}: ${typeLabel(ty())}`}
+          <g id={fieldId(`simulation.boundaries[${k()}]`)} role="button" tabindex={0} aria-pressed={props.selected === k()} aria-label={`${face}: ${typeLabel(ty())}`}
             onClick={() => props.onSelect(k())} onKeyDown={onKey(k())}>
             <rect class="ss-face" classList={{ "ss-on": props.selected === k() }} x={c * S} y={r * S} width={S - 2} height={S - 2} rx={3}
               style={{ fill: ty().color, "fill-opacity": 0.28 }} />
@@ -210,9 +210,48 @@ export default function SimSettingsDialog() {
     const target = pane?.querySelector<HTMLElement>(`#ss-${id}`);
     if (pane && target) pane.scrollTop += target.getBoundingClientRect().top - pane.getBoundingClientRect().top;
   };
+  const fieldInDialog = (path: string): HTMLElement | undefined => {
+    let p = path;
+    for (;;) {
+      const id = fieldId(p);
+      const fields = box?.querySelectorAll<HTMLElement>(FOCUSABLE) ?? [];
+      const match = [...fields].find(el => el.id === id && !el.matches(":disabled"))
+        ?? [...fields].find(el => el.id.startsWith(`${id}-`) && !el.matches(":disabled"));
+      if (match) return match;
+      const up = p.replace(/(\[\d+\]|\.[^.[\]]+)$/, "");
+      if (up === p || !up) return;
+      p = up;
+    }
+  };
+  let focusFrame = 0;
+  createEffect(on(simSettingsFocus, request => {
+    cancelAnimationFrame(focusFrame);
+    if (!request) return;
+    // This effect belongs to the loaded dialog, so a slow import cannot send focus behind it.
+    focusFrame = requestAnimationFrame(() => {
+      if (!box?.isConnected || simSettingsFocus() !== request) return;
+      const boundary = /^simulation\.boundaries\[(\d)\]/.exec(request.path);
+      if (boundary && Number(boundary[1]) < FACES.length) setFace(Number(boundary[1]));
+      const field = fieldInDialog(request.path);
+      const sectionId = field?.closest("section")?.id.replace(/^ss-/, "")
+        ?? (request.path.startsWith("mesh") ? "mesh" : /^(far_field|monitors)/.test(request.path) ? "monitors" : request.path.startsWith("simulation.boundaries") ? "bounds" : /simulation\.(end_criteria_db|max_timesteps)/.test(request.path) ? "solver" : "freq");
+      go(sectionId);
+      const target = field ?? box.querySelector<HTMLElement>(`#ss-tab-${sectionId}`);
+      if (target) {
+        for (let parent = target.parentElement; parent && parent !== box; parent = parent.parentElement)
+          if (parent instanceof HTMLDetailsElement) parent.open = true;
+        target.scrollIntoView({ block: "nearest" });
+        target.focus();
+      }
+      setSimSettingsFocus(null);
+    });
+  }));
+  onCleanup(() => cancelAnimationFrame(focusFrame));
   onMount(() => {
     const start = simSettingsSection();
     setSimSettingsSection("freq");
+    // Checks only reveal an existing field; they must not add a monitor or select a default tab.
+    if (simSettingsFocus()) return;
     // the ribbon's Surface current button: when there is no monitor yet, one at the far-field
     // frequencies (else the band centre), after the snapshot above so Cancel takes it back; then
     // the field to edit it
@@ -224,21 +263,21 @@ export default function SimSettingsDialog() {
         const lo = tryEvaluate(d().simulation.f_min, n).value, hi = tryEvaluate(d().simulation.f_max, n).value;
         if (lo !== undefined && hi !== undefined && hi > 0) setCurrents([Number(((lo + hi) / 2).toPrecision(4))]);
       }
-      requestAnimationFrame(() => { go("monitors"); document.getElementById(fieldId("monitors.currents"))?.focus(); });
+      requestAnimationFrame(() => { go("monitors"); fieldInDialog("monitors.currents")?.focus(); });
       return;
     }
     // the ribbon's Efficiency button: the monitor at the default points when there is none (also
     // after the snapshot, so Cancel takes it back), then its points field
     if (start === "efficiency") {
       if (efficiency() === undefined) setEfficiency({ points: EFFICIENCY_POINTS_DEFAULT });
-      requestAnimationFrame(() => { go("monitors"); document.getElementById(fieldId("monitors.efficiency.points"))?.focus(); });
+      requestAnimationFrame(() => { go("monitors"); fieldInDialog("monitors.efficiency.points")?.focus(); });
       return;
     }
     // the ribbon's Field plane button: a plane just above the model when there is none (after the
     // snapshot, so Cancel takes it back), then the last plane's position field
     if (start === "fieldplanes") {
       if (!fieldPlanes().length) addFieldPlane();
-      requestAnimationFrame(() => { go("monitors"); document.getElementById(fieldId(`monitors.field_planes[${Math.max(0, fieldPlanes().length - 1)}].position`))?.focus(); });
+      requestAnimationFrame(() => { go("monitors"); fieldInDialog(`monitors.field_planes[${Math.max(0, fieldPlanes().length - 1)}].position`)?.focus(); });
       return;
     }
     if (SECTIONS.some((s) => s.id === start)) requestAnimationFrame(() => go(start));
@@ -371,6 +410,7 @@ export default function SimSettingsDialog() {
                   </span>
                   <label class="dz-check">
                     <input
+                      id={`${fieldId("mesh.overrides.pad")}-enable`}
                       type="checkbox"
                       aria-label={t("sim.pad.override")}
                       checked={override("pad") !== undefined}
@@ -380,6 +420,7 @@ export default function SimSettingsDialog() {
                     {t("sim.pad.override")}
                   </label>
                   <MeshOverrideInput
+                    id={fieldId("mesh.overrides.pad")}
                     label={t("sim.mesh.airPadding")}
                     disabled={override("pad") === undefined}
                     value={override("pad") ?? autoValue("pad", t("sim.pendingPreview"))}
@@ -413,6 +454,7 @@ export default function SimSettingsDialog() {
               <label class="dz-field">
                 <span class="dz-label">{t("sim.mesh.mode")}</span>
                 <select
+                  id={fieldId("mesh.mode")}
                   class="rp-input dz-input"
                   aria-label={t("sim.mesh.mode")}
                   value={manualMesh() ? "manual" : designMesh() ? "design" : "auto"}
@@ -456,6 +498,7 @@ export default function SimSettingsDialog() {
                       <div class="ss-auto-field">
                         <label class="dz-check">
                           <input
+                            id={`${fieldId(`mesh.overrides.${key}`)}-enable${key === "pad" ? "-mesh" : ""}`}
                             type="checkbox"
                             aria-label={t("sim.mesh.override", { label: label() })}
                             checked={enabled()}
@@ -468,6 +511,7 @@ export default function SimSettingsDialog() {
                           when={key === "edge_rule"}
                           fallback={
                             <MeshOverrideInput
+                              id={`${fieldId(`mesh.overrides.${key}`)}${key === "pad" ? "-mesh" : ""}`}
                               label={label()}
                               disabled={!enabled()}
                               value={shown() ?? ""}
@@ -476,6 +520,7 @@ export default function SimSettingsDialog() {
                           }
                         >
                           <select
+                            id={fieldId(`mesh.overrides.${key}`)}
                             class="rp-input dz-input"
                             aria-label={label()}
                             disabled={!enabled()}
@@ -509,7 +554,7 @@ export default function SimSettingsDialog() {
               <div class="ss-row">
                 <label class="dz-field">
                   <span class="dz-label">{t("sim.mesh.edgeRule")}</span>
-                  <select class="rp-input dz-input" value={d().mesh.edge_rule ?? "thirds"}
+                  <select id={fieldId("mesh.edge_rule")} class="rp-input dz-input" value={d().mesh.edge_rule ?? "thirds"}
                     onChange={(e) => edit((x) => { x.mesh.edge_rule = e.currentTarget.value === "edge" ? "edge" : undefined; }, "edge-rule")}>
                     <option value="thirds">{t("sim.mesh.edgeRule.thirds")}</option><option value="edge">{t("sim.mesh.edgeRule.edge")}</option>
                   </select>
@@ -522,7 +567,7 @@ export default function SimSettingsDialog() {
               </Show>
               <Show when={!manualMesh()}>
                 <label class="dz-check">
-                  <input type="checkbox" checked={d().mesh.refine_features ?? false}
+                  <input id={fieldId("mesh.refine_features")} type="checkbox" checked={d().mesh.refine_features ?? false}
                     onChange={(e) => edit((x) => { x.mesh.refine_features = e.currentTarget.checked; }, "refine-features")} />
                   {t("sim.mesh.refineFeatures")}
                 </label>
@@ -530,7 +575,7 @@ export default function SimSettingsDialog() {
               </Show>
               <label class="dz-field">
                 <span class="dz-label">{t("sim.mesh.thinMetal")}</span>
-                <select class="rp-input dz-input" value={d().mesh.thin_metal ?? "sheet"}
+                <select id={fieldId("mesh.thin_metal")} class="rp-input dz-input" value={d().mesh.thin_metal ?? "sheet"}
                   onChange={(e) => edit((x) => { x.mesh.thin_metal = e.currentTarget.value === "volume" ? "volume" : undefined; }, "thin")}>
                   <option value="sheet">{t("sim.mesh.thinMetal.sheet")}</option>
                   <option value="volume">{t("sim.mesh.thinMetal.volume")}</option>
@@ -553,12 +598,12 @@ export default function SimSettingsDialog() {
 
             <section id="ss-monitors" class="stack">
               <h3>{t("sim.section.monitors")}</h3>
-              <label class="dz-check"><input type="checkbox" checked={d().far_field.enabled}
+              <label class="dz-check"><input id={fieldId("far_field.enabled")} type="checkbox" checked={d().far_field.enabled}
                 onChange={(e) => { const c = e.currentTarget.checked; edit((x) => { x.far_field.enabled = c; }, "ff"); }} /> {t("sim.mon.farField")}</label>
               <Show when={d().far_field.enabled}>
                 <FreqList label={t("sim.mon.ffFreqs")} path="far_field.frequencies" value={d().far_field.frequencies ?? []} placeholder={t("sim.mon.ffFreqsEmpty")}
                   onChange={(v) => edit((x) => { x.far_field.frequencies = v; }, "fff")} />
-                <label class="dz-check"><input type="checkbox" checked={d().far_field.phase_center !== undefined} onChange={(e) => edit((x) => { x.far_field.phase_center = e.currentTarget.checked ? [0, 0, 0] : undefined; }, "phase-center-toggle")} /> {t("sim.mon.phaseCentre")}</label>
+                <label class="dz-check"><input id={`${fieldId("far_field.phase_center")}-enable`} type="checkbox" checked={d().far_field.phase_center !== undefined} onChange={(e) => edit((x) => { x.far_field.phase_center = e.currentTarget.checked ? [0, 0, 0] : undefined; }, "phase-center-toggle")} /> {t("sim.mon.phaseCentre")}</label>
                 <Show when={d().far_field.phase_center}><div class="dz-vec"><div class="dz-vec-row">
                   <For each={[0, 1, 2]}>{(k) => <ExprField label={["X", "Y", "Z"][k]} unit="mm" compact value={d().far_field.phase_center![k]} path={`far_field.phase_center[${k}]`} onChange={(v) => edit((x) => { const p = [...(x.far_field.phase_center ?? [0, 0, 0])] as [Expr, Expr, Expr]; p[k] = v; x.far_field.phase_center = p; }, `phase-center-${k}`)} />}</For>
                 </div><Show when={issues()["far_field.phase_center"]}><span class="dz-value dz-bad">{issues()["far_field.phase_center"]!.message}</span></Show></div></Show>
@@ -566,7 +611,7 @@ export default function SimSettingsDialog() {
                   <span class="dz-label">{t("sim.mon.ffFaces")}</span>
                   <div class="dz-vec-row">
                     <For each={["x−", "x+", "y−", "y+", "z−", "z+"]}>{(name, k) => (
-                      <label class="dz-check"><input type="checkbox" checked={d().far_field.faces?.[k()] ?? true}
+                      <label class="dz-check"><input id={fieldId(`far_field.faces[${k()}]`)} type="checkbox" checked={d().far_field.faces?.[k()] ?? true}
                         onChange={(e) => { const c = e.currentTarget.checked; edit((x) => {
                           const f = [...(x.far_field.faces ?? Array(6).fill(true))]; f[k()] = c;
                           x.far_field.faces = f.every(Boolean) ? undefined : f;
@@ -578,7 +623,7 @@ export default function SimSettingsDialog() {
                   <For each={[0, 1, 2, 3, 4, 5]}>{(k) => <Show when={issues()[`far_field.faces[${k}]`]}><span class="dz-value">{issues()[`far_field.faces[${k}]`]!.message}</span></Show>}</For>
                 </div>
               </Show>
-              <label class="dz-check"><input type="checkbox" checked={efficiency() !== undefined}
+              <label class="dz-check"><input id={fieldId("monitors.efficiency")} type="checkbox" checked={efficiency() !== undefined}
                 onChange={(e) => setEfficiency(e.currentTarget.checked ? { points: EFFICIENCY_POINTS_DEFAULT } : undefined)} /> {t("sim.mon.efficiency")}</label>
               <Show when={efficiency()}>
                 <label class="dz-field">

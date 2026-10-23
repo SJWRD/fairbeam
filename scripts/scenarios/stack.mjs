@@ -84,9 +84,10 @@ export async function startStack({ log = () => {}, niceSolver = true } = {}) {
 export default { root: ${JSON.stringify(root)}, publicDir: ${JSON.stringify(pub)}, plugins: [solid()], clearScreen: false, cacheDir: ${JSON.stringify(join(dir, 'vite-cache'))},
   // Pre-optimize lazy workspace/editor/export imports so first use does not trigger Vite's
   // "optimized dependencies changed" reload or split CodeMirror across optimizer generations.
-  optimizeDeps: { include: ['three', 'three/addons/controls/OrbitControls.js', 'three/addons/environments/RoomEnvironment.js', 'three/addons/renderers/CSS2DRenderer.js', 'three/addons/exporters/GLTFExporter.js', 'three/addons/exporters/STLExporter.js', 'fflate', 'jspdf',
+  // Scenarios serve the app; scanning other HTML entries can require unbuilt site assets.
+  optimizeDeps: { entries: ['index.html'], include: ['three', 'three/addons/controls/OrbitControls.js', 'three/addons/environments/RoomEnvironment.js', 'three/addons/renderers/CSS2DRenderer.js', 'three/addons/exporters/GLTFExporter.js', 'three/addons/exporters/STLExporter.js', 'fflate', 'jspdf',
     '@codemirror/state', '@codemirror/view', '@codemirror/commands', '@codemirror/lang-python', '@codemirror/language', '@codemirror/search', '@codemirror/lint', '@lezer/highlight'] },
-  server: { host: '127.0.0.1', port: ${vitePort}, strictPort: true, fs: { allow: ${JSON.stringify([root, dependencies])} }, watch: { ignored: ['**/.sim/**', '**/python/**'] },
+  server: { host: '127.0.0.1', port: ${vitePort}, strictPort: true, fs: { allow: ${JSON.stringify([root, dependencies])} }, watch: { ignored: ['**/.sim/**', '**/python/**', '**/src-tauri/target/**'] },
     proxy: { '/api': { target: 'http://127.0.0.1:${apiPort}', changeOrigin: false } } } };\n`);
     const vite = run(process.execPath, [join(root, 'node_modules/vite/bin/vite.js'), '--config', config], { cwd: root }, 'vite');
     await waitFor(`http://127.0.0.1:${vitePort}/`, 'vite', 60000, () => !vite.exited);
