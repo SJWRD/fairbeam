@@ -135,7 +135,11 @@ def study(root):
         folder = root/name
         if not all((folder/f'port{p}/report.json').exists() for p in (1, 2)):
             missing.append(name); continue
-        try: actual, row = f.matrix(folder)
+        try:
+            actual, row = f.matrix(folder)
+            expected = dict(n=n, kind=kind, loss=loss, control=control)
+            if any(row.get(key) != value for key, value in expected.items()):
+                raise ValueError(f'cohort identity mismatch for {name}: expected {expected}')
         except (ValueError, AssertionError, FileNotFoundError) as error:
             rejected.append(dict(name=name, reason=repr(error))); continue
         results[name] = actual; rows.append(row)
@@ -193,6 +197,66 @@ def scattering_reference(freq):
     gamma = 2j*np.pi*freq*np.sqrt(f.ER)/f.C0
     return result*np.exp(-gamma*12e-3)[:,None,None]
 
+
+
+class CohortIdentityTests(unittest.TestCase):
+    """Study admission must bind replayed data to the requested cohort."""
+
+    def test_replayed_identity_and_duplicate_mesh_admission(self):
+        from unittest.mock import patch
+        from contextlib import ExitStack
+        fields = ['n', 'kind', 'loss', 'control']
+        chosen = [c for c in configurations() if c[2] == 'filter'
+                  and c[fields.index('control') + 1] == 'ordinary'
+                  and ('loss' not in fields or c[fields.index('loss') + 1] == 'pec')][:2]
+        self.assertEqual(len(chosen), 2)
+        self.assertNotEqual(chosen[0][1], chosen[1][1])
+        mutations = [('valid', None), ('duplicate mesh', 'n')]
+        mutations += [('wrong ' + key, key) for key in fields if key != 'n']
+        mutations += [('missing ' + key, key) for key in fields]
+        for label, key in mutations:
+            with self.subTest(case=label), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                metadata = {}
+                for config in chosen:
+                    folder = root / config[0]
+                    folder.mkdir()
+                    metadata[config[0]] = dict(zip(fields, config[1:]))
+                    for port in (1, 2):
+                        (folder / f'port{port}').mkdir()
+                        (folder / f'port{port}' / 'report.json').write_text('{}')
+                second = metadata[chosen[1][0]]
+                if label == 'duplicate mesh':
+                    second['n'] = chosen[0][1]
+                elif label.startswith('missing '):
+                    del second[key]
+                elif key is not None:
+                    second[key] = 'wrong-cohort'
+                spectrum = np.zeros((len(f.FREQUENCIES), 2, 2), complex)
+                spectrum[:, 0, 1] = spectrum[:, 1, 0] = 1
+
+                def row_for(folder):
+                    return dict(metadata[Path(folder).name], native_complete=True,
+                                measurement_passes=True, point_target_passes=True,
+                                point_passes=True, requested_spec_passes=True,
+                                reference_spec_passes=True)
+
+                with ExitStack() as stack:
+                    stack.enter_context(patch(__name__ + '.configurations', return_value=chosen))
+                    stack.enter_context(patch.object(f, 'matrix',
+                        side_effect=lambda folder, *args: (spectrum, row_for(folder))))
+                    report = study(root)
+                changes = report.get('mesh_changes', report.get('changes',
+                    report.get('by_order', {}).get('3', {}).get('mesh_changes', [])))
+                if label == 'valid':
+                    self.assertEqual(report['rejected'], [])
+                    self.assertEqual(len(changes), 1)
+                    self.assertTrue(changes[0]['passes'])
+                else:
+                    self.assertEqual([r['name'] for r in report['rejected']], [chosen[1][0]])
+                    self.assertIn('cohort identity mismatch', report['rejected'][0]['reason'])
+                    self.assertEqual(changes, [])
+                    self.assertFalse(report['qualified'])
 
 class CoupledFilterTests(unittest.TestCase):
     def test_independent_scattering_network_agrees_with_impedance_abcd(self):
