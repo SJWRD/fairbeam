@@ -1808,7 +1808,10 @@ class _Lint:
         try:
             check_design(d)
         except DesignError as e:
-            self.error(e.where or "", "expr" if ".group" in (e.where or "") or e.where == "mesh.refine_features" else "structure", e.detail)
+            code = "expr" if ".group" in (e.where or "") or e.where == "mesh.refine_features" else "structure"
+            if (e.where or "").startswith("resistors[") and (e.where or "").endswith(".symbol"):
+                code = "resistor-r"
+            self.error(e.where or "", code, e.detail)
             return self.out
         self.params()
         self.materials()
