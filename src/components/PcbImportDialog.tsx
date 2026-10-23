@@ -19,7 +19,7 @@ import { ensureUserMaterials, userMaterials } from "../designer/userMaterialsSto
 import type { Check } from "../designer/checks";
 import { checkMessage } from "../designer/checkText";
 import { setPcbImportOpen } from "../lib/pcbImport";
-import { carriesFiles } from "../lib/fileDrop";
+import { carriesFiles, leftDropZone } from "../lib/fileDrop";
 import { gapCounts, lineRuns, mergeNotes, type ReportNote } from "../lib/cstReport";
 import {
   admitFiles, buildOptions, designNameFromFiles, guessedRoles, isChosen, noteKey, PCB_DEFAULTS, PCB_LIMITS, PCB_RANGES, pruneMap, reasonKey,
@@ -269,7 +269,7 @@ export default function PcbImportDialog() {
   return (
     <div class="scrim" onPointerDown={(e) => e.target === e.currentTarget && close()}>
       <div class="dialog dialog-sm ci-dialog pi-dialog" role="dialog" aria-modal="true" aria-labelledby="pi-title" aria-describedby="pi-desc" ref={box} tabindex={-1}
-        classList={{ "pi-dragging": dragging() }} onDragOver={onDragOver} onDrop={onDrop} onDragLeave={(e) => { if (e.currentTarget === e.target) setDragging(false); }}>
+        classList={{ "pi-dragging": dragging() }} onDragOver={onDragOver} onDrop={onDrop} onDragLeave={(e) => { if (leftDropZone(e)) setDragging(false); }}>
         <div class="dialog-head">
           <div>
             <h2 id="pi-title">{t("pcbImport.title")}</h2>

@@ -419,6 +419,8 @@ def read_design(path) -> dict:
         raise DesignError(f"not valid JSON: {e.msg} (line {e.lineno}, column {e.colno})") from None
     check_design(design)
     design["schema"] = DESIGN_SCHEMA   # a file fairbeam wrote is read as a Fairbeam design; saving writes the new id
+    for r in design.get("resistors", []):
+        r.setdefault("symbol", "auto")
     return design
 
 
@@ -633,6 +635,8 @@ def check_design(d: dict) -> None:
         if po.get("direction") not in AXES:
             raise DesignError("direction must be x, y or z", f"{w}.direction")
     for i, r in enumerate(d.get("resistors", [])):
+        if r.get("symbol", "auto") not in ("auto", "resistor", "capacitor", "inductor", "network"):
+            raise DesignError("symbol must be auto, resistor, capacitor, inductor or network", f"resistors[{i}].symbol")
         if r.get("topology", "parallel") not in ("parallel", "series"):
             raise DesignError("topology must be parallel or series", f"resistors[{i}].topology")
         if r.get("direction") not in AXES:
@@ -2935,6 +2939,8 @@ def build(d: dict, values: dict):
                            **{key: num(r[key], f"{w}.{key}") for key in ("R", "L", "C") if key in r},
                            topology=r.get("topology", "parallel"),
                             label=r.get("label"), **({"priority": port_priority} if ranks else {}))
+        if "symbol" in r:
+            sim.lumped_elements[-1]["symbol"] = r["symbol"]
         grow(a, c)
     if not np.all(np.isfinite(lo)):
         raise DesignError("the design has no geometry yet", "parts")

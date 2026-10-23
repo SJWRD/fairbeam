@@ -829,6 +829,8 @@ class _Lint:
                 value = self.ev(f"{w}.{key}", re[key])
                 if value is not None and value <= 0:
                     self.error(f"{w}.{key}", "resistor-r", "the resistance must be > 0 Ω" if key == "R" else "lumped values must be > 0")
+            if re.get("symbol", "auto") not in ("auto", "resistor", "capacitor", "inductor", "network"):
+                self.error(f"{w}.symbol", "resistor-r", "symbol must be auto, resistor, capacitor, inductor or network")
             if re.get("topology", "parallel") not in ("parallel", "series"):
                 self.error(f"{w}.topology", "resistor-r", "topology must be parallel or series")
             a, c = self.vec(f"{w}.start", re.get("start")), self.vec(f"{w}.stop", re.get("stop"))
