@@ -190,7 +190,7 @@ editing them, or the prefill stops working.
 One entry per release, newest first. The installers are on the
 [release page](https://github.com/ismailakdag/fairbeam-releases/releases) of each version.
 
-### 0.8.4, 2026-10-21
+### 0.8.4 (release preparation)
 
 - Close and Quit ask before canceling running or queued simulations, including other models,
   sweeps, optimization and research runs. An unavailable run server also prompts. In 0.8.3,
@@ -235,6 +235,13 @@ One entry per release, newest first. The installers are on the
   metadata and source-archive guidance, five opt-in research comparison fixtures, and more
   complete browser-failure diagnostics. These changes make no new solver-accuracy claims.
 
+- Add experimental native microstrip and CPW ports with explicit mesh admission and no substitute
+  feed on unsupported imports or exports. See [planar port limits](PLANAR-PORTS.md); software
+  regression tests do not establish numerical accuracy or CPU/GPU equivalence.
+- Show selectable R/L/C element symbols without changing circuit values, and keep file-drop
+  feedback within the active import dialog, including VBA and PCB imports.
+- Add research-fixture provenance and identity checks. These are opt-in research tools, not
+  new measured validation of the solver.
 Known limitations: Blender renders are not included in the simulation exit check and are canceled
 on quit without a render warning ([#314](https://github.com/ismailakdag/fairbeam/issues/314)). The
 Windows bootstrap investigation [#251](https://github.com/ismailakdag/fairbeam/issues/251), the
