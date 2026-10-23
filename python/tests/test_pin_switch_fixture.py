@@ -131,6 +131,9 @@ def study(root):
         if progress['status']!='complete':rejected.append(dict(name=name,status=progress['status'],reason=progress.get('reason')));continue
         try:
             row=compare(root/name/'capture');m,d,_=f.read(root/name/'capture')
+            expected = dict(n=n, kind=kind, control=control)
+            if any(m.get(key) != value for key, value in expected.items()):
+                raise ValueError(f'cohort identity mismatch for {name}: expected {expected}')
             if m['impedance_scale']!=f.SCALE:raise ValueError('strict study requires its single declared impedance scale')
         except (ValueError,AssertionError,FileNotFoundError)as error:
             rejected.append(dict(name=name,reason=repr(error)));continue
@@ -161,6 +164,70 @@ def study(root):
     return dict(static_load_qualified=qualified,qualified=qualified,fdtd_twoport_switch_validated=False,
         book_example_validated=False,scope=f.SCOPE,missing=missing,rejected=rejected,rows=rows,changes=changes,contrasts=contrasts)
 
+
+
+class CohortIdentityTests(unittest.TestCase):
+    """Study admission must bind replayed data to the requested cohort."""
+
+    def test_replayed_identity_and_duplicate_mesh_admission(self):
+        from unittest.mock import patch
+        from contextlib import ExitStack
+        fields = ['n', 'kind', 'control']
+        chosen = [c for c in configurations() if c[2] == 'forward'
+                  and c[fields.index('control') + 1] == 'ordinary'
+                  and ('loss' not in fields or c[fields.index('loss') + 1] == 'pec')][:2]
+        self.assertEqual(len(chosen), 2)
+        self.assertNotEqual(chosen[0][1], chosen[1][1])
+        mutations = [('valid', None), ('duplicate mesh', 'n')]
+        mutations += [('wrong ' + key, key) for key in fields if key != 'n']
+        mutations += [('missing ' + key, key) for key in fields]
+        for label, key in mutations:
+            with self.subTest(case=label), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                metadata = {}
+                for config in chosen:
+                    folder = root / config[0]
+                    folder.mkdir()
+                    metadata[config[0]] = dict(zip(fields, config[1:]))
+                    (folder / 'progress.json').write_text(json.dumps(dict(status='complete')))
+                second = metadata[chosen[1][0]]
+                if label == 'duplicate mesh':
+                    second['n'] = chosen[0][1]
+                elif label.startswith('missing '):
+                    del second[key]
+                elif key is not None:
+                    second[key] = 'wrong-cohort'
+                spectrum = np.zeros((len(f.FREQUENCIES), 2, 2), complex)
+                spectrum[:, 0, 1] = spectrum[:, 1, 0] = 1
+
+                def row_for(folder):
+                    return dict(metadata[Path(folder).name], native_complete=True,
+                                measurement_passes=True, point_target_passes=True,
+                                point_passes=True, requested_spec_passes=True,
+                                reference_spec_passes=True)
+
+                with ExitStack() as stack:
+                    stack.enter_context(patch(__name__ + '.configurations', return_value=chosen))
+                    stack.enter_context(patch(__name__ + '.compare',
+                        side_effect=lambda folder: row_for(Path(folder).parent)))
+                    def replay(folder):
+                        meta = dict(metadata[Path(folder).parent.name], impedance_scale=f.SCALE,
+                                    reference_ohm=f.Z0*f.SCALE)
+                        z = f.diode_z()*f.SCALE
+                        return meta, dict(v=z, i=np.ones_like(z)), {}
+                    stack.enter_context(patch.object(f, 'read', side_effect=replay))
+                    report = study(root)
+                changes = report.get('mesh_changes', report.get('changes',
+                    report.get('by_order', {}).get('3', {}).get('mesh_changes', [])))
+                if label == 'valid':
+                    self.assertEqual(report['rejected'], [])
+                    self.assertEqual(len(changes), 1)
+                    self.assertTrue(changes[0]['passes'])
+                else:
+                    self.assertEqual([r['name'] for r in report['rejected']], [chosen[1][0]])
+                    self.assertIn('cohort identity mismatch', report['rejected'][0]['reason'])
+                    self.assertEqual(changes, [])
+                    self.assertFalse(report['qualified'])
 
 class PinSwitchTests(unittest.TestCase):
     def test_impedance_scaled_embedding_keeps_the_same_scattering(self):
