@@ -630,6 +630,8 @@ def check_design(d: dict) -> None:
         if po.get("direction") not in AXES:
             raise DesignError("direction must be x, y or z", f"{w}.direction")
     for i, r in enumerate(d.get("resistors", [])):
+        if r.get("symbol", "auto") not in ("auto", "resistor", "capacitor", "inductor", "network"):
+            raise DesignError("symbol must be auto, resistor, capacitor, inductor or network", f"resistors[{i}].symbol")
         if r.get("topology", "parallel") not in ("parallel", "series"):
             raise DesignError("topology must be parallel or series", f"resistors[{i}].topology")
         if r.get("direction") not in AXES:
